@@ -298,9 +298,8 @@ void Radio::loop() {
     if (p->is_truncated()) {
       this->diag_truncated_++;
 
-      // Publish diagnostics to MQTT regardless of diag_verbose_
-      // (so YAML can silence logs but still get drop/trunc events).
-      if (mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+      if (this->diag_verbose_) {
+        // Build payload (optionally with raw)
         char payload[900];
         if (this->diag_publish_raw_) {
           snprintf(payload, sizeof(payload),
@@ -314,10 +313,7 @@ void Radio::loop() {
                    mode, (int) p->get_rssi(), (unsigned) p->want_len(),
                    (unsigned) p->got_len(), (unsigned) p->raw_got_len());
         }
-        mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
-      }
 
-      if (this->diag_verbose_) {
         ESP_LOGW(TAG,
                  "TRUNCATED frame: mode=%s want=%u got=%u raw_got=%u RSSI=%ddBm",
                  mode, (unsigned) p->want_len(), (unsigned) p->got_len(),
@@ -325,6 +321,10 @@ void Radio::loop() {
 
         if (this->diag_publish_raw_) {
           ESP_LOGW(TAG, "TRUNCATED raw(hex)=%s", p->raw_hex().c_str());
+        }
+
+        if (mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+          mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
         }
       }
     } else if (!p->drop_reason().empty()) {
@@ -342,9 +342,7 @@ void Radio::loop() {
         this->diag_mode_crc_failed_[mode_idx]++;
       }
 
-      // Publish diagnostics to MQTT regardless of diag_verbose_
-      // (so YAML can silence logs but still get drop/trunc events).
-      if (mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+      if (this->diag_verbose_) {
         char payload[900];
         if (this->diag_publish_raw_) {
           snprintf(payload, sizeof(payload),
@@ -359,10 +357,7 @@ void Radio::loop() {
                    (unsigned) p->want_len(), (unsigned) p->got_len(),
                    (unsigned) p->raw_got_len());
         }
-        mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
-      }
 
-      if (this->diag_verbose_) {
         ESP_LOGW(TAG,
                  "DROPPED packet: reason=%s mode=%s want=%u got=%u raw_got=%u RSSI=%ddBm",
                  p->drop_reason().c_str(), mode, (unsigned) p->want_len(),
@@ -371,6 +366,10 @@ void Radio::loop() {
 
         if (this->diag_publish_raw_) {
           ESP_LOGW(TAG, "DROPPED raw(hex)=%s", p->raw_hex().c_str());
+        }
+
+        if (mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+          mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
         }
       }
     }
@@ -389,76 +388,13 @@ void Radio::loop() {
     this->diag_mode_rssi_ok_n_[mode_idx]++;
   }
 
-  auto &d = frame->data();
+  ESP_LOGI(TAG, "Have data (%zu bytes) [RSSI: %ddBm, mode: %s %s]",
+           frame->data().size(), frame->rssi(),
+           link_mode_name(frame->link_mode()),
+           frame->format().c_str());
 
-// Bazowo: nie wywalaj niczego, jak nie da się sparsować
-const char *mfr = "???";
-char id_str[9] = "????????";
-uint8_t ver = 0xFF;
-uint8_t dev = 0xFF;
-uint8_t ci = 0xFF;
-
-auto is_bcd = [](uint8_t b) -> bool {
-  return ((b & 0x0F) <= 9) && (((b >> 4) & 0x0F) <= 9);
-};
-
-auto decode_mfr = [](uint16_t m, char out[4]) {
-  out[0] = (char)(((m >> 10) & 0x1F) + 64);
-  out[1] = (char)(((m >> 5) & 0x1F) + 64);
-  out[2] = (char)((m & 0x1F) + 64);
-  out[3] = 0;
-  auto ok = [](char c) { return c >= 'A' && c <= 'Z'; };
-  if (!ok(out[0]) || !ok(out[1]) || !ok(out[2])) {
-    out[0] = out[1] = out[2] = '?';
-  }
-};
-
-char mfr_buf[4] = "???";
-
-// base = indeks C-field
-int base = -1;
-// wariant z L-field (typowo: d[0]=L, d[1]=C)
-if (d.size() >= 10 && (size_t)(d[0] + 1) == d.size())
-  base = 1;
-// wariant bez L-field (gdyby storage kiedyś był inny)
-else if (d.size() >= 9)
-  base = 0;
-
-if (base >= 0 && (int)d.size() >= base + 10) {
-  uint16_t m = (uint16_t)d[base + 1] | ((uint16_t)d[base + 2] << 8);
-  decode_mfr(m, mfr_buf);
-  mfr = mfr_buf;
-
-  // ID bytes: base+3..base+6 (little endian) -> druk 6..3
-  bool bcd_ok = is_bcd(d[base + 3]) && is_bcd(d[base + 4]) && is_bcd(d[base + 5]) && is_bcd(d[base + 6]);
-  if (bcd_ok) {
-    snprintf(id_str, sizeof(id_str), "%01u%01u%01u%01u%01u%01u%01u%01u",
-             (d[base + 6] >> 4) & 0x0F, d[base + 6] & 0x0F,
-             (d[base + 5] >> 4) & 0x0F, d[base + 5] & 0x0F,
-             (d[base + 4] >> 4) & 0x0F, d[base + 4] & 0x0F,
-             (d[base + 3] >> 4) & 0x0F, d[base + 3] & 0x0F);
-  } else {
-    // fallback HEX (żeby nie walić głupot)
-    snprintf(id_str, sizeof(id_str), "%02X%02X%02X%02X",
-             d[base + 6], d[base + 5], d[base + 4], d[base + 3]);
-  }
-
-  ver = d[base + 7];
-  dev = d[base + 8];
-  ci  = d[base + 9];
-}
-
-ESP_LOGI(TAG, "Have data (%zu bytes) [RSSI: %ddBm, mode: %s %s, mfr:%s id:%s ver:%u type:%u ci:%02X]",
-         d.size(), frame->rssi(),
-         link_mode_name(frame->link_mode()),
-         frame->format().c_str(),
-         mfr, id_str, (unsigned)ver, (unsigned)dev, (unsigned)ci);
-
-auto len = d.size();
-if (len >= 240) ESP_LOGW(TAG, "Large telegram (%zu bytes) close to SX1262 limit (255) – risk of truncate/drop", len);
-
-for (auto &handler : this->handlers_)
-  handler(&frame.value());
+  for (auto &handler : this->handlers_)
+    handler(&frame.value());
 
   if (frame->handlers_count())
     ESP_LOGI(TAG, "Telegram handled by %d handlers", frame->handlers_count());

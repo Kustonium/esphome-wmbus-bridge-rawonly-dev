@@ -3,6 +3,12 @@
 #include "transceiver.h"
 #include "esphome/core/hal.h"
 
+// Semtech reference driver HAL (Clear BSD). We use it to avoid command-level bugs.
+// Files are vendored under components/wmbus_radio/semtech_sx126x_driver/
+extern "C" {
+#include "semtech_sx126x_driver/sx126x_hal.h"
+}
+
 #include <vector>
 
 namespace esphome {
@@ -36,6 +42,14 @@ class SX1262 : public RadioTransceiver {
   optional<uint8_t> read() override;
   int8_t get_rssi() override;
   const char *get_name() override;
+
+  // Semtech HAL entry points (friend to access protected pins/spi)
+  friend sx126x_hal_status_t sx126x_hal_write(const void *context, const uint8_t *command, const uint16_t command_length,
+                                              const uint8_t *data, const uint16_t data_length);
+  friend sx126x_hal_status_t sx126x_hal_read(const void *context, const uint8_t *command, const uint16_t command_length,
+                                             uint8_t *data, const uint16_t data_length);
+  friend sx126x_hal_status_t sx126x_hal_reset(const void *context);
+  friend sx126x_hal_status_t sx126x_hal_wakeup(const void *context);
 
  protected:
   void wait_while_busy_();
