@@ -36,6 +36,8 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 // GFSK settings
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
 static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;
+static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;  // 312.0 kHz
+static constexpr uint8_t GFSK_RX_BW_467_0 = 0x09;  // 467.0 kHz
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
@@ -231,7 +233,7 @@ void SX1262::setup() {
 
   this->cmd_write_(CMD_SET_MODULATION_PARAMS,
                    {(uint8_t) ((br >> 16) & 0xFF), (uint8_t) ((br >> 8) & 0xFF), (uint8_t) (br & 0xFF),
-                    GFSK_PULSE_SHAPE_BT_0_5, GFSK_RX_BW_234_3, (uint8_t) ((fdev >> 16) & 0xFF),
+                    GFSK_PULSE_SHAPE_BT_0_5, GFSK_RX_BW_312_0, (uint8_t) ((fdev >> 16) & 0xFF),
                     (uint8_t) ((fdev >> 8) & 0xFF), (uint8_t) (fdev & 0xFF)});
 
   // Packet params
