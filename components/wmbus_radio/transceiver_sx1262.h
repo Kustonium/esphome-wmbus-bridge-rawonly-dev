@@ -43,6 +43,25 @@ class SX1262 : public RadioTransceiver {
   int8_t get_rssi() override;
   const char *get_name() override;
 
+  // Public SPI helpers for Semtech HAL (avoid accessing protected SPIClient members from C HAL)
+  bool spi_delegate_ready_() const { return this->delegate_ != nullptr; }
+  void spi_begin_for_semtech_() {
+    this->wait_while_busy_();
+    this->delegate_->begin_transaction();
+  }
+  void spi_end_for_semtech_() {
+    this->delegate_->end_transaction();
+    this->wait_while_busy_();
+  }
+  uint8_t spi_transfer_for_semtech_(uint8_t v) { return this->delegate_->transfer(v); }
+  bool reset_pin_ready_() const { return this->reset_pin_ != nullptr; }
+  void reset_pulse_for_semtech_() {
+    this->reset_pin_->digital_write(false);
+    esphome::delay(10);
+    this->reset_pin_->digital_write(true);
+    esphome::delay(10);
+  }
+
   // Semtech HAL entry points (friend to access protected pins/spi)
   friend sx126x_hal_status_t sx126x_hal_write(const void *context, const uint8_t *command, const uint16_t command_length,
                                               const uint8_t *data, const uint16_t data_length);

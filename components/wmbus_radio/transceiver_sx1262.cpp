@@ -7,6 +7,7 @@
 extern "C" {
 #include "sx126x_hal.h"
 #include "sx126x.h"
+}
 
 namespace esphome {
 namespace wmbus_radio {
@@ -113,9 +114,10 @@ bool SX1262::load_rx_buffer_() {
     return false;
   }
 
-  uint8_t payload_len = 0;
-  uint8_t start_ptr = 0;
-  (void) sx126x_get_rx_buffer_status(this, &payload_len, &start_ptr);
+  sx126x_rx_buffer_status_t rxbs;
+  (void) sx126x_get_rx_buffer_status(this, &rxbs);
+  const uint8_t payload_len = rxbs.pld_len_in_bytes;
+  const uint8_t start_ptr = rxbs.buffer_start_pointer;
 
   if (payload_len == 0) {
     (void) sx126x_clear_irq_status(this, SX126X_IRQ_ALL);
@@ -200,10 +202,10 @@ void SX1262::setup() {
   // Packet params (variable length, 16-bit sync, no CRC/whitening)
   sx126x_pkt_params_gfsk_t pp{};
   pp.preamble_len_in_bits = 64;
-  pp.preamble_detector = SX126X_GFSK_PREAMBLE_DETECTOR_16_BITS;
+  pp.preamble_detector = SX126X_GFSK_PREAMBLE_DETECTOR_MIN_16BITS;
   pp.sync_word_len_in_bits = 16;
   pp.address_filtering = SX126X_GFSK_ADDRESS_FILTERING_DISABLE;
-  pp.header_type = SX126X_GFSK_PKT_LEN_MODE_VAR;
+  pp.header_type = SX126X_GFSK_PKT_VAR_LEN;
   pp.pld_len_in_bytes = 0xFF;  // max payload accepted
   pp.crc_type = SX126X_GFSK_CRC_OFF;
   pp.dc_free = SX126X_GFSK_DC_FREE_OFF;
