@@ -41,10 +41,12 @@ static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;// legacy
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
-// NOTE: SX126x uses 0x00 for variable length, 0x01 for fixed length.
-// If set wrong, RX payload_len will be truncated (often to a small fixed size).
-static constexpr uint8_t GFSK_PACKET_VARIABLE = 0x00;
-static constexpr uint8_t GFSK_PACKET_FIXED = 0x01;
+// SX126x GFSK header type:
+// 0x00 = FIX_LEN (no length byte in-air)
+// 0x01 = VAR_LEN (first payload byte is length in-air)
+// WMBus does NOT carry a "GFSK length byte" at the start of the payload, so we must use FIX_LEN.
+static constexpr uint8_t GFSK_PACKET_FIX_LEN = 0x00;
+static constexpr uint8_t GFSK_PACKET_VAR_LEN = 0x01;
 
 static constexpr uint8_t GFSK_CRC_OFF = 0x01;
 static constexpr uint8_t GFSK_WHITENING_OFF = 0x00;
@@ -224,11 +226,13 @@ bool SX1262::capture_rx_stream_() {
   uint32_t last_change_ms = start_ms;
 
   size_t copied = 0;
+  uint8_t state_index = 0;  // last read index (wraps 0..255)
   uint8_t last_ptr = this->read_register8_(REG_RX_ADDR_PTR);
 
   // If we were triggered by SyncWordValid, rxAddrPtr may already be >0.
   // Keep RX alive by pushing RxTxPldLen behind the current pointer.
   this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (last_ptr - 1)});
+  state_index = last_ptr;
 
   while (true) {
     const uint32_t now = millis();
@@ -249,15 +253,23 @@ bool SX1262::capture_rx_stream_() {
     }
 
     const uint8_t cur = this->read_register8_(REG_RX_ADDR_PTR);
-    const uint8_t idx = (uint8_t) (copied & 0xFF);
-    const uint8_t avail = (uint8_t) (cur - idx);  // wraps by design
+    uint8_t avail = (uint8_t) (cur - state_index);  // uint8 wrap by design
+
+    // Cap to remaining space (keep arithmetic consistent with AN1200.53)
+    const size_t room = 512 - copied;
+    if (avail > room) {
+      avail = (uint8_t) room;
+    }
+
+    // Compute a "virtual" current_index (may be < cur if capped)
+    const uint8_t current_index = (uint8_t) (state_index + avail);
 
     // Keep receiver alive (force wrap before it reaches RxTxPldLen)
-    this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (cur - 1)});
+    this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (current_index - 1)});
 
     if (avail != 0) {
       uint8_t tmp[256];
-      const uint8_t off = idx;
+      const uint8_t off = state_index;
       const uint8_t first = (off + avail <= 256) ? avail : (uint8_t) (256 - off);
       this->read_buffer_(off, tmp, first);
       if (avail > first) {
@@ -265,6 +277,7 @@ bool SX1262::capture_rx_stream_() {
       }
       this->rx_buffer_.insert(this->rx_buffer_.end(), tmp, tmp + avail);
       copied += avail;
+      state_index = current_index;
       last_change_ms = now;
       last_ptr = cur;
     } else {
@@ -354,7 +367,8 @@ void SX1262::setup() {
   const uint8_t preamble_msb = (uint8_t) ((preamble_bits >> 8) & 0xFF);
   const uint8_t preamble_lsb = (uint8_t) (preamble_bits & 0xFF);
 
-  const uint8_t pkt_len_mode = this->long_gfsk_packets_ ? GFSK_PACKET_FIXED : GFSK_PACKET_VARIABLE;
+  // Always FIX_LEN for WMBus.
+  const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
                    {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_16,
                     0x10,  // 16 bits sync
@@ -401,14 +415,13 @@ void SX1262::restart_rx() {
 
 optional<uint8_t> SX1262::read() {
   if (!this->rx_loaded_) {
-    if (!this->irq_pin_->digital_read())
-      return {};
-
     if (this->long_gfsk_packets_) {
       ESP_LOGD(TAG, "IRQ detected, capturing RX stream (long GFSK)");
       if (!this->capture_rx_stream_())
         return {};
     } else {
+      if (!this->irq_pin_->digital_read())
+        return {};
       ESP_LOGD(TAG, "IRQ detected, loading buffer");
       if (!this->load_rx_buffer_())
         return {};
