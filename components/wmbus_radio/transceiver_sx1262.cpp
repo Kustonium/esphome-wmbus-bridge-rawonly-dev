@@ -22,6 +22,7 @@ static constexpr uint8_t CMD_CLEAR_IRQ_STATUS = 0x02;
 static constexpr uint8_t CMD_GET_RX_BUFFER_STATUS = 0x13;
 static constexpr uint8_t CMD_READ_BUFFER = 0x1E;
 static constexpr uint8_t CMD_GET_PACKET_STATUS = 0x14;
+static constexpr uint8_t CMD_GET_RSSI_INST = 0x15;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
@@ -152,7 +153,7 @@ uint8_t SX1262::read_register8_(uint16_t addr) {
 
 uint16_t SX1262::get_irq_status_() {
   uint8_t st[2]{};
-  this->cmd_read_(CMD_GET_IRQ_STATUS, {}, st, sizeof(st));
+  this->cmd_read_(CMD_GET_IRQ_STATUS, {0x00}, st, sizeof(st));
   return (uint16_t(st[0]) << 8) | uint16_t(st[1]);
 }
 
@@ -182,7 +183,7 @@ void SX1262::set_sync_word_(uint8_t sync2) {
 
 bool SX1262::has_rx_done_() {
   uint8_t irq[2]{};
-  this->cmd_read_(CMD_GET_IRQ_STATUS, {}, irq, sizeof(irq));
+  this->cmd_read_(CMD_GET_IRQ_STATUS, {0x00}, irq, sizeof(irq));
   const uint16_t flags = ((uint16_t) irq[0] << 8) | irq[1];
   return (flags & IRQ_RX_DONE) != 0;
 }
@@ -192,7 +193,7 @@ bool SX1262::load_rx_buffer_() {
     return false;
 
   uint8_t st[2]{};
-  this->cmd_read_(CMD_GET_RX_BUFFER_STATUS, {}, st, sizeof(st));
+  this->cmd_read_(CMD_GET_RX_BUFFER_STATUS, {0x00}, st, sizeof(st));
   const uint8_t payload_len = st[0];
   const uint8_t start_ptr = st[1];
 
@@ -216,8 +217,16 @@ bool SX1262::load_rx_buffer_() {
   // Cache RSSI while the packet context is still valid.
   {
     uint8_t ps[3]{};
-    this->cmd_read_(CMD_GET_PACKET_STATUS, {}, ps, sizeof(ps));
+    this->cmd_read_(CMD_GET_PACKET_STATUS, {0x00}, ps, sizeof(ps));
     this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);
+
+    // Some boards/flows return zeros from GetPacketStatus (especially after RX context changes).
+    // Fall back to instantaneous RSSI, which is available during RX / right after RX done.
+    uint8_t ri{};
+    this->cmd_read_(CMD_GET_RSSI_INST, {0x00}, &ri, 1);
+    if (ri != 0) {
+      this->last_rssi_dbm_ = (int8_t)(-((int) ri) / 2);
+    }
   }
 
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
@@ -247,6 +256,7 @@ bool SX1262::capture_rx_stream_() {
 
   // Capture until RX_DONE/TIMEOUT (latched IRQ), then allow a short drain window.
   bool seen_end_irq = false;
+  bool rssi_sampled = false;
 
   while (true) {
     const uint32_t now = millis();
@@ -278,6 +288,15 @@ bool SX1262::capture_rx_stream_() {
     this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (current_index - 1)});
 
     if (avail != 0) {
+      // Sample instantaneous RSSI during an active burst (more reliable than after RX ends).
+      if (!rssi_sampled) {
+        uint8_t ri{};
+        this->cmd_read_(CMD_GET_RSSI_INST, {0x00}, &ri, 1);
+        if (ri != 0) {
+          this->last_rssi_dbm_ = (int8_t)(-((int) ri) / 2);
+          rssi_sampled = true;
+        }
+      }
       uint8_t tmp[256];
       const uint8_t off = state_index;
       const uint8_t first = (uint8_t) ((off + avail <= 256) ? avail : (256 - off));
@@ -308,8 +327,15 @@ bool SX1262::capture_rx_stream_() {
   // Cache RSSI BEFORE stopping RX (standby), otherwise GetPacketStatus may return zeros.
   {
     uint8_t ps[3]{};
-    this->cmd_read_(CMD_GET_PACKET_STATUS, {}, ps, sizeof(ps));
+    this->cmd_read_(CMD_GET_PACKET_STATUS, {0x00}, ps, sizeof(ps));
     this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);
+
+    // Prefer instantaneous RSSI if available (prevents 0dBm logs when PacketStatus is zero).
+    uint8_t ri{};
+    this->cmd_read_(CMD_GET_RSSI_INST, {0x00}, &ri, 1);
+    if (ri != 0) {
+      this->last_rssi_dbm_ = (int8_t)(-((int) ri) / 2);
+    }
   }
 
   // Stop RX and clear IRQs.
