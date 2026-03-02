@@ -3,8 +3,6 @@
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
 
-#include <algorithm>
-
 namespace esphome {
 namespace wmbus_radio {
 
@@ -24,9 +22,6 @@ static constexpr uint8_t CMD_CLEAR_IRQ_STATUS = 0x02;
 static constexpr uint8_t CMD_GET_RX_BUFFER_STATUS = 0x13;
 static constexpr uint8_t CMD_READ_BUFFER = 0x1E;
 static constexpr uint8_t CMD_GET_PACKET_STATUS = 0x14;
-static constexpr uint8_t CMD_GET_RSSI_INST = 0x15;
-static constexpr uint8_t CMD_GET_DEVICE_ERRORS = 0x17;
-static constexpr uint8_t CMD_CLEAR_DEVICE_ERRORS = 0x07;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
@@ -101,22 +96,20 @@ void SX1262::wait_while_busy_() {
 void SX1262::cmd_write_(uint8_t cmd, std::initializer_list<uint8_t> args) {
   this->wait_while_busy_();
   this->delegate_->begin_transaction();
-  (void) this->delegate_->transfer(cmd);
+  this->delegate_->transfer(cmd);
   for (auto b : args)
-    (void) this->delegate_->transfer(b);
+    this->delegate_->transfer(b);
   this->delegate_->end_transaction();
   this->wait_while_busy_();
 }
 
 void SX1262::cmd_read_(uint8_t cmd, std::initializer_list<uint8_t> args, uint8_t *out, size_t out_len) {
-  // Semtech-style: send full command header (including required NOP dummy bytes),
-  // then clock out the response bytes. Do NOT add any implicit "status" byte here.
-  // The radio status is returned during the header phase (ignored), matching Semtech hal_read.
   this->wait_while_busy_();
   this->delegate_->begin_transaction();
-  (void) this->delegate_->transfer(cmd);
+  this->delegate_->transfer(cmd);
   for (auto b : args)
-    (void) this->delegate_->transfer(b);
+    this->delegate_->transfer(b);
+  (void) this->delegate_->transfer(0x00);  // status
   for (size_t i = 0; i < out_len; i++)
     out[i] = this->delegate_->transfer(0x00);
   this->delegate_->end_transaction();
@@ -142,9 +135,16 @@ void SX1262::write_register_(uint16_t addr, std::initializer_list<uint8_t> data)
 uint8_t SX1262::read_register8_(uint16_t addr) {
   uint8_t msb, lsb;
   u16_to_be(addr, msb, lsb);
-  uint8_t v{};
-  // Semtech: READ_REGISTER [opcode, addrH, addrL, NOP] then read N bytes
-  this->cmd_read_(CMD_READ_REGISTER, {msb, lsb, 0x00}, &v, 1);
+
+  this->wait_while_busy_();
+  this->delegate_->begin_transaction();
+  this->delegate_->transfer(CMD_READ_REGISTER);
+  this->delegate_->transfer(msb);
+  this->delegate_->transfer(lsb);
+  this->delegate_->transfer(0x00);  // dummy
+  uint8_t v = this->delegate_->transfer(0x00);
+  this->delegate_->end_transaction();
+  this->wait_while_busy_();
   return v;
 }
 
@@ -152,26 +152,21 @@ uint8_t SX1262::read_register8_(uint16_t addr) {
 
 uint16_t SX1262::get_irq_status_() {
   uint8_t st[2]{};
-  this->cmd_read_(CMD_GET_IRQ_STATUS, {0x00}, st, sizeof(st));
+  this->cmd_read_(CMD_GET_IRQ_STATUS, {}, st, sizeof(st));
   return (uint16_t(st[0]) << 8) | uint16_t(st[1]);
 }
 
 
 void SX1262::read_buffer_(uint8_t offset, uint8_t *out, size_t out_len) {
-  // Semtech: READ_BUFFER [opcode, offset, NOP] then read N bytes
-  this->cmd_read_(CMD_READ_BUFFER, {offset, 0x00}, out, out_len);
-}
-
-uint16_t SX1262::get_device_errors_() {
-  uint8_t st[2]{};
-  // Semtech: GET_DEVICE_ERRORS [opcode, NOP] then read 2 bytes
-  this->cmd_read_(CMD_GET_DEVICE_ERRORS, {0x00}, st, sizeof(st));
-  return (uint16_t(st[0]) << 8) | uint16_t(st[1]);
-}
-
-void SX1262::clear_device_errors_() {
-  // Semtech: CLR_DEVICE_ERRORS [opcode, 0x00, 0x00]
-  this->cmd_write_(CMD_CLEAR_DEVICE_ERRORS, {0x00, 0x00});
+  this->wait_while_busy_();
+  this->delegate_->begin_transaction();
+  this->delegate_->transfer(CMD_READ_BUFFER);
+  this->delegate_->transfer(offset);
+  (void) this->delegate_->transfer(0x00);  // status
+  for (size_t i = 0; i < out_len; i++)
+    out[i] = this->delegate_->transfer(0x00);
+  this->delegate_->end_transaction();
+  this->wait_while_busy_();
 }
 
 void SX1262::set_rf_frequency_(uint32_t freq_hz) {
@@ -187,7 +182,7 @@ void SX1262::set_sync_word_(uint8_t sync2) {
 
 bool SX1262::has_rx_done_() {
   uint8_t irq[2]{};
-  this->cmd_read_(CMD_GET_IRQ_STATUS, {0x00}, irq, sizeof(irq));
+  this->cmd_read_(CMD_GET_IRQ_STATUS, {}, irq, sizeof(irq));
   const uint16_t flags = ((uint16_t) irq[0] << 8) | irq[1];
   return (flags & IRQ_RX_DONE) != 0;
 }
@@ -197,7 +192,7 @@ bool SX1262::load_rx_buffer_() {
     return false;
 
   uint8_t st[2]{};
-  this->cmd_read_(CMD_GET_RX_BUFFER_STATUS, {0x00}, st, sizeof(st));
+  this->cmd_read_(CMD_GET_RX_BUFFER_STATUS, {}, st, sizeof(st));
   const uint8_t payload_len = st[0];
   const uint8_t start_ptr = st[1];
 
@@ -208,19 +203,21 @@ bool SX1262::load_rx_buffer_() {
 
   this->rx_buffer_.assign(payload_len, 0);
 
-  this->read_buffer_(start_ptr, this->rx_buffer_.data(), this->rx_buffer_.size());
+  this->wait_while_busy_();
+  this->delegate_->begin_transaction();
+  this->delegate_->transfer(CMD_READ_BUFFER);
+  this->delegate_->transfer(start_ptr);
+  (void) this->delegate_->transfer(0x00);
+  for (size_t i = 0; i < this->rx_buffer_.size(); i++)
+    this->rx_buffer_[i] = this->delegate_->transfer(0x00);
+  this->delegate_->end_transaction();
+  this->wait_while_busy_();
 
   // Cache RSSI while the packet context is still valid.
   {
-    // Semtech: GetGfskPacketStatus -> [rx_status, rssi_sync, rssi_avg]
     uint8_t ps[3]{};
-    this->cmd_read_(CMD_GET_PACKET_STATUS, {0x00}, ps, sizeof(ps));
-    this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);  // rssi_avg
-
-    // Prefer instantaneous RSSI if available (more robust across RX context edges).
-    uint8_t ri{};
-    this->cmd_read_(CMD_GET_RSSI_INST, {0x00}, &ri, 1);
-    if (ri != 0) this->last_rssi_dbm_ = (int8_t)(-((int) ri) / 2);
+    this->cmd_read_(CMD_GET_PACKET_STATUS, {}, ps, sizeof(ps));
+    this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);
   }
 
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
@@ -233,12 +230,11 @@ bool SX1262::load_rx_buffer_() {
 
 
 bool SX1262::capture_rx_stream_() {
-  const size_t cap_bytes = this->long_gfsk_packets_ ? 512 : 255;
   // Semtech AN1200.53: stream from the 256-byte internal buffer while RX is still running.
   // We rely on IRQ_RX_DONE / IRQ_TIMEOUT to decide when the burst is complete (not a tiny "silence" window),
   // otherwise we may cut valid frames (WMBus T1 airtime is several ms).
   this->rx_buffer_.clear();
-  this->rx_buffer_.reserve(std::min<size_t>(cap_bytes, 512));
+  this->rx_buffer_.reserve(512);
 
   // Ensure payload length starts at 255 (0xFF) so the packet engine doesn't stop early.
   this->write_register_(REG_RXTX_PAYLOAD_LEN, {0xFF});
@@ -251,7 +247,6 @@ bool SX1262::capture_rx_stream_() {
 
   // Capture until RX_DONE/TIMEOUT (latched IRQ), then allow a short drain window.
   bool seen_end_irq = false;
-  bool rssi_sampled = false;
 
   while (true) {
     const uint32_t now = millis();
@@ -261,9 +256,9 @@ bool SX1262::capture_rx_stream_() {
       ESP_LOGD(TAG, "Long RX capture timeout, copied=%u", (unsigned) copied);
       break;
     }
-    // Hard cap
-    if (copied >= cap_bytes) {
-      ESP_LOGD(TAG, "RX capture capped at %u bytes", (unsigned) cap_bytes);
+    // Hard cap (covers max WMBus T1 raw size comfortably)
+    if (copied >= 512) {
+      ESP_LOGD(TAG, "Long RX capture capped at 512 bytes");
       break;
     }
 
@@ -271,7 +266,7 @@ bool SX1262::capture_rx_stream_() {
     uint8_t avail = (uint8_t) (cur - state_index);  // uint8 wrap by design
 
     // Cap to remaining space
-    const size_t room = cap_bytes - copied;
+    const size_t room = 512 - copied;
     if (avail > room) {
       avail = (uint8_t) room;
     }
@@ -283,15 +278,6 @@ bool SX1262::capture_rx_stream_() {
     this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (current_index - 1)});
 
     if (avail != 0) {
-      // Sample instantaneous RSSI during an active burst (more reliable than after RX ends).
-      if (!rssi_sampled) {
-        uint8_t ri{};
-        this->cmd_read_(CMD_GET_RSSI_INST, {0x00}, &ri, 1);
-        if (ri != 0) {
-          this->last_rssi_dbm_ = (int8_t)(-((int) ri) / 2);
-          rssi_sampled = true;
-        }
-      }
       uint8_t tmp[256];
       const uint8_t off = state_index;
       const uint8_t first = (uint8_t) ((off + avail <= 256) ? avail : (256 - off));
@@ -299,9 +285,8 @@ bool SX1262::capture_rx_stream_() {
       if (avail > first) {
         this->read_buffer_(0, tmp + first, (size_t) (avail - first));
       }
-      const size_t can_copy = std::min<size_t>(avail, cap_bytes - copied);
-      this->rx_buffer_.insert(this->rx_buffer_.end(), tmp, tmp + can_copy);
-      copied += can_copy;
+      this->rx_buffer_.insert(this->rx_buffer_.end(), tmp, tmp + avail);
+      copied += avail;
       state_index = current_index;
       last_change_ms = now;
     } else {
@@ -323,24 +308,16 @@ bool SX1262::capture_rx_stream_() {
   // Cache RSSI BEFORE stopping RX (standby), otherwise GetPacketStatus may return zeros.
   {
     uint8_t ps[3]{};
-    this->cmd_read_(CMD_GET_PACKET_STATUS, {0x00}, ps, sizeof(ps));
+    this->cmd_read_(CMD_GET_PACKET_STATUS, {}, ps, sizeof(ps));
     this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);
-    uint8_t ri{};
-    this->cmd_read_(CMD_GET_RSSI_INST, {0x00}, &ri, 1);
-    if (ri != 0) this->last_rssi_dbm_ = (int8_t)(-((int) ri) / 2);
   }
 
-  // If we captured nothing, DO NOT stop RX.
-  // A spurious IRQ (noise / false sync) would otherwise put the radio into standby
-  // and we would end up with NO_DATA until a manual restart.
-  if (this->rx_buffer_.empty()) {
-    this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
-    return false;
-  }
-
-  // Stop RX and clear IRQs (we already have the frame in RAM).
+  // Stop RX and clear IRQs.
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
+
+  if (this->rx_buffer_.empty())
+    return false;
 
   this->rx_idx_ = 0;
   this->rx_len_ = this->rx_buffer_.size();
@@ -376,9 +353,6 @@ void SX1262::setup() {
 
   this->reset();
   delay(10);
-
-  // Clear sticky device errors after reset (Semtech GET/CLR_DEVICE_ERRORS).
-  this->clear_device_errors_();
 
   // Apply RX gain (datasheet values)
   const uint8_t gain =
@@ -421,10 +395,8 @@ void SX1262::setup() {
   const uint8_t preamble_msb = (uint8_t) ((preamble_bits >> 8) & 0xFF);
   const uint8_t preamble_lsb = (uint8_t) (preamble_bits & 0xFF);
 
-  // Packet length mode:
-  // - in long-GFSK streaming: FIX_LEN with 0xFF so the packet engine does not stop early
-  // - in normal mode: VAR_LEN (legacy behavior) so RX_DONE triggers at end-of-packet
-  const uint8_t pkt_len_mode = this->long_gfsk_packets_ ? GFSK_PACKET_FIX_LEN : GFSK_PACKET_VAR_LEN;
+  // Always FIX_LEN for WMBus.
+  const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
                    {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_16,
                     0x10,  // 16 bits sync
@@ -433,9 +405,8 @@ void SX1262::setup() {
                     GFSK_CRC_OFF, GFSK_WHITENING_OFF});
 
   // IRQ routing -> DIO1
-  // Always enable SyncWordValid. WMBus does not have a dedicated GFSK in-air length byte,
-  // so relying only on RX_DONE can lead to NO_DATA on some setups.
-  const uint16_t mask = (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT);
+  const uint16_t mask = this->long_gfsk_packets_ ? (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT)
+                                      : (IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT);
   const uint8_t mask_msb = (uint8_t) ((mask >> 8) & 0xFF);
   const uint8_t mask_lsb = (uint8_t) (mask & 0xFF);
 
@@ -462,9 +433,6 @@ void SX1262::restart_rx() {
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_XOSC});
 
-  // Reset buffer base (also resets internal write pointer on many SX1262 boards).
-  this->cmd_write_(CMD_SET_BUFFER_BASE_ADDRESS, {0x00, 0x00});
-
   // RX continuous
   this->cmd_write_(CMD_SET_RX, {0xFF, 0xFF, 0xFF});
 
@@ -476,23 +444,22 @@ void SX1262::restart_rx() {
 
 optional<uint8_t> SX1262::read() {
   if (!this->rx_loaded_) {
-    // Use streaming capture for BOTH modes.
-    // WMBus does not provide a dedicated "length byte" for SX1262 VAR_LEN,
-    // so depending purely on RX_DONE can stall (NO_DATA). Streaming is robust.
-    const uint16_t irq = this->get_irq_status_();
-    if ((irq & (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_CRC_ERROR)) == 0) {
-      return {};
-    }
-    ESP_LOGD(TAG, "IRQ=%04X, capturing RX stream", irq);
-    if (!this->capture_rx_stream_()) {
-      const uint16_t dev_err = this->get_device_errors_();
-      if (dev_err != 0) {
-        ESP_LOGD(TAG, "DeviceErrors=0x%04X", dev_err);
-        this->clear_device_errors_();
+    if (this->long_gfsk_packets_) {
+      // Don't start a long capture unless an IRQ is latched (SyncWordValid / RxDone / Timeout / CRCError).
+      // Otherwise we'd stop RX periodically and miss frames.
+      const uint16_t irq = this->get_irq_status_();
+      if ((irq & (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_CRC_ERROR)) == 0) {
+        return {};
       }
-      // Always re-arm RX after a failed capture (prevents NO_DATA lockups).
-      this->restart_rx();
-      return {};
+      ESP_LOGD(TAG, "IRQ=%04X, capturing RX stream (long GFSK)", irq);
+      if (!this->capture_rx_stream_())
+        return {};
+    } else {
+      if (!this->irq_pin_->digital_read())
+        return {};
+      ESP_LOGD(TAG, "IRQ detected, loading buffer");
+      if (!this->load_rx_buffer_())
+        return {};
     }
   }
 

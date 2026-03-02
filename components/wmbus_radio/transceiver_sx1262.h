@@ -45,9 +45,6 @@ class SX1262 : public RadioTransceiver {
 
  protected:
   void wait_while_busy_();
-  // Semtech-style HAL: write/read commands over SPI.
-  // For read commands, the caller must include required dummy bytes (NOP=0x00)
-  // in the command header, exactly like Semtech's sx126x.c.
   void cmd_write_(uint8_t cmd, std::initializer_list<uint8_t> args);
   void cmd_read_(uint8_t cmd, std::initializer_list<uint8_t> args, uint8_t *out, size_t out_len);
   void write_register_(uint16_t addr, std::initializer_list<uint8_t> data);
@@ -56,10 +53,6 @@ class SX1262 : public RadioTransceiver {
   uint8_t read_register8_(uint16_t addr);
   uint16_t get_irq_status_();
   void read_buffer_(uint8_t offset, uint8_t *out, size_t out_len);
-
-  // Semtech helpers (optional, but useful for debugging)
-  uint16_t get_device_errors_();
-  void clear_device_errors_();
 
   void set_rf_frequency_(uint32_t freq_hz);
   void set_sync_word_(uint8_t sync2);
