@@ -13,7 +13,6 @@
 
 #define WMBUS_PREAMBLE_SIZE (3)
 #define WMBUS_MODE_C_PREAMBLE (0x54)
-// For T1 we need more than the 3-byte preamble to reliably decode L-field.
 #define WMBUS_T1_LEN_PROBE_BYTES (18)
 
 #define ASSERT(expr, expected, before_exit)                                    \
@@ -521,7 +520,7 @@ void Radio::receive_frame() {
     return;
   }
 
-  const size_t remaining = total_len - already_read;
+  const size_t remaining = total_len - already_read; 
   if (remaining > 0) {
     auto *rest = packet->append_space(remaining);
     if (!this->radio->read_in_task(rest, remaining)) {

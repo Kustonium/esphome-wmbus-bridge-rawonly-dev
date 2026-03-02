@@ -26,6 +26,7 @@ static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
 static constexpr uint8_t CMD_WRITE_REGISTER = 0x0D;
+static constexpr uint8_t CMD_READ_REGISTER = 0x1D;
 
 // SX126x constants (subset)
 static constexpr uint8_t STANDBY_RC = 0x00;
@@ -35,14 +36,15 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 
 // GFSK settings
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
-static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;  // wider BW helps under frequency offset/noise
-// static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;
+static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;
+static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;// legacy
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
 // NOTE: SX126x uses 0x00 for variable length, 0x01 for fixed length.
 // If set wrong, RX payload_len will be truncated (often to a small fixed size).
 static constexpr uint8_t GFSK_PACKET_VARIABLE = 0x00;
+static constexpr uint8_t GFSK_PACKET_FIXED = 0x01;
 
 static constexpr uint8_t GFSK_CRC_OFF = 0x01;
 static constexpr uint8_t GFSK_WHITENING_OFF = 0x00;
@@ -52,6 +54,7 @@ static constexpr uint8_t DIO3_OUTPUT_3_0 = 0x06;
 
 // IRQ mask bits
 static constexpr uint16_t IRQ_RX_DONE = 0x0002;
+static constexpr uint16_t IRQ_SYNC_WORD_VALID = 0x0008;  // SyncWordValid
 static constexpr uint16_t IRQ_TIMEOUT = 0x0200;   // RxTxTimeout
 static constexpr uint16_t IRQ_CRC_ERROR = 0x0040; // CRC error
 
@@ -62,6 +65,10 @@ static constexpr uint16_t REG_SYNC_WORD_0 = 0x06C0;
 static constexpr uint16_t REG_RX_GAIN = 0x08AC;
 static constexpr uint8_t RX_GAIN_POWER_SAVING = 0x94;
 static constexpr uint8_t RX_GAIN_BOOSTED = 0x96;
+
+// Semtech AN1200.53 long packet reception registers
+static constexpr uint16_t REG_RX_ADDR_PTR = 0x0803;
+static constexpr uint16_t REG_RXTX_PAYLOAD_LEN = 0x06BB;
 
 // RF frequency step for SX126x: 32e6 / 2^25 (Hz)
 static constexpr uint32_t XTAL_FREQ = 32000000UL;
@@ -122,6 +129,35 @@ void SX1262::write_register_(uint16_t addr, std::initializer_list<uint8_t> data)
   this->wait_while_busy_();
 }
 
+
+uint8_t SX1262::read_register8_(uint16_t addr) {
+  uint8_t msb, lsb;
+  u16_to_be(addr, msb, lsb);
+
+  this->wait_while_busy_();
+  this->delegate_->begin_transaction();
+  this->delegate_->transfer(CMD_READ_REGISTER);
+  this->delegate_->transfer(msb);
+  this->delegate_->transfer(lsb);
+  this->delegate_->transfer(0x00);  // dummy
+  uint8_t v = this->delegate_->transfer(0x00);
+  this->delegate_->end_transaction();
+  this->wait_while_busy_();
+  return v;
+}
+
+void SX1262::read_buffer_(uint8_t offset, uint8_t *out, size_t out_len) {
+  this->wait_while_busy_();
+  this->delegate_->begin_transaction();
+  this->delegate_->transfer(CMD_READ_BUFFER);
+  this->delegate_->transfer(offset);
+  (void) this->delegate_->transfer(0x00);  // status
+  for (size_t i = 0; i < out_len; i++)
+    out[i] = this->delegate_->transfer(0x00);
+  this->delegate_->end_transaction();
+  this->wait_while_busy_();
+}
+
 void SX1262::set_rf_frequency_(uint32_t freq_hz) {
   uint64_t rf = ((uint64_t) freq_hz << 25) / XTAL_FREQ;
   cmd_write_(CMD_SET_RF_FREQUENCY,
@@ -173,6 +209,84 @@ bool SX1262::load_rx_buffer_() {
   this->rx_loaded_ = true;
   return true;
 }
+
+bool SX1262::capture_rx_stream_() {
+  // Semtech AN1200.53: stream from the 256-byte internal buffer while RX is still running.
+  // This allows receiving raw streams longer than 255 bytes (rxAddrPtr wrap) by keeping
+  // RxTxPldLen always behind the current rxAddrPtr.
+  this->rx_buffer_.clear();
+  this->rx_buffer_.reserve(512);
+
+  // Ensure payload length starts at 255 (0xFF)
+  this->write_register_(REG_RXTX_PAYLOAD_LEN, {0xFF});
+
+  const uint32_t start_ms = millis();
+  uint32_t last_change_ms = start_ms;
+
+  size_t copied = 0;
+  uint8_t last_ptr = this->read_register8_(REG_RX_ADDR_PTR);
+
+  // If we were triggered by SyncWordValid, rxAddrPtr may already be >0.
+  // Keep RX alive by pushing RxTxPldLen behind the current pointer.
+  this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (last_ptr - 1)});
+
+  while (true) {
+    const uint32_t now = millis();
+
+    // Stop if no new bytes for a bit (end of burst)
+    if (copied > 0 && (now - last_change_ms) > 4) {
+      break;
+    }
+    // Safety stop: don't hang forever
+    if ((now - start_ms) > 120) {
+      ESP_LOGD(TAG, "Long RX capture timeout, copied=%u", (unsigned) copied);
+      break;
+    }
+    // Hard cap (covers max WMBus T1 raw size comfortably)
+    if (copied >= 512) {
+      ESP_LOGD(TAG, "Long RX capture capped at 512 bytes");
+      break;
+    }
+
+    const uint8_t cur = this->read_register8_(REG_RX_ADDR_PTR);
+    const uint8_t idx = (uint8_t) (copied & 0xFF);
+    const uint8_t avail = (uint8_t) (cur - idx);  // wraps by design
+
+    // Keep receiver alive (force wrap before it reaches RxTxPldLen)
+    this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (cur - 1)});
+
+    if (avail != 0) {
+      uint8_t tmp[256];
+      const uint8_t off = idx;
+      const uint8_t first = (off + avail <= 256) ? avail : (uint8_t) (256 - off);
+      this->read_buffer_(off, tmp, first);
+      if (avail > first) {
+        this->read_buffer_(0, tmp + first, (size_t) (avail - first));
+      }
+      this->rx_buffer_.insert(this->rx_buffer_.end(), tmp, tmp + avail);
+      copied += avail;
+      last_change_ms = now;
+      last_ptr = cur;
+    } else {
+      delay(1);
+    }
+  }
+
+  // Stop RX and clear IRQs (drop DIO1)
+  this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
+  this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
+
+  if (this->rx_buffer_.empty())
+    return false;
+
+  this->rx_idx_ = 0;
+  this->rx_len_ = this->rx_buffer_.size();
+  this->rx_loaded_ = true;
+
+  ESP_LOGD(TAG, "Long RX captured %u bytes", (unsigned) this->rx_len_);
+  return true;
+}
+
 
 void SX1262::setup() {
   this->irq_edge_ = gpio::INTERRUPT_RISING_EDGE;
@@ -240,15 +354,17 @@ void SX1262::setup() {
   const uint8_t preamble_msb = (uint8_t) ((preamble_bits >> 8) & 0xFF);
   const uint8_t preamble_lsb = (uint8_t) (preamble_bits & 0xFF);
 
+  const uint8_t pkt_len_mode = this->long_gfsk_packets_ ? GFSK_PACKET_FIXED : GFSK_PACKET_VARIABLE;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
                    {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_16,
                     0x10,  // 16 bits sync
-                    GFSK_ADDRESS_FILT_OFF, GFSK_PACKET_VARIABLE,
+                    GFSK_ADDRESS_FILT_OFF, pkt_len_mode,
                     0xFF,  // max payload
                     GFSK_CRC_OFF, GFSK_WHITENING_OFF});
 
   // IRQ routing -> DIO1
-  const uint16_t mask = IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT;
+  const uint16_t mask = this->long_gfsk_packets_ ? (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT)
+                                      : (IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT);
   const uint8_t mask_msb = (uint8_t) ((mask >> 8) & 0xFF);
   const uint8_t mask_lsb = (uint8_t) (mask & 0xFF);
 
@@ -287,9 +403,16 @@ optional<uint8_t> SX1262::read() {
   if (!this->rx_loaded_) {
     if (!this->irq_pin_->digital_read())
       return {};
-    ESP_LOGD(TAG, "IRQ detected, loading buffer");
-    if (!this->load_rx_buffer_())
-      return {};
+
+    if (this->long_gfsk_packets_) {
+      ESP_LOGD(TAG, "IRQ detected, capturing RX stream (long GFSK)");
+      if (!this->capture_rx_stream_())
+        return {};
+    } else {
+      ESP_LOGD(TAG, "IRQ detected, loading buffer");
+      if (!this->load_rx_buffer_())
+        return {};
+    }
   }
 
   if (this->rx_idx_ < this->rx_len_)
