@@ -22,6 +22,7 @@ static constexpr uint8_t CMD_CLEAR_IRQ_STATUS = 0x02;
 static constexpr uint8_t CMD_GET_RX_BUFFER_STATUS = 0x13;
 static constexpr uint8_t CMD_READ_BUFFER = 0x1E;
 static constexpr uint8_t CMD_GET_PACKET_STATUS = 0x14;
+static constexpr uint8_t CMD_GET_RSSI_INST = 0x15;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
@@ -169,6 +170,13 @@ void SX1262::read_buffer_(uint8_t offset, uint8_t *out, size_t out_len) {
   this->wait_while_busy_();
 }
 
+int8_t SX1262::read_rssi_inst_dbm_() {
+  // Semtech: rssi_dbm = -(rssi_raw >> 1)
+  uint8_t rssi_raw = 0;
+  this->cmd_read_(CMD_GET_RSSI_INST, {}, &rssi_raw, 1);
+  return (int8_t)(-((int) rssi_raw) >> 1);
+}
+
 void SX1262::set_rf_frequency_(uint32_t freq_hz) {
   uint64_t rf = ((uint64_t) freq_hz << 25) / XTAL_FREQ;
   cmd_write_(CMD_SET_RF_FREQUENCY,
@@ -217,7 +225,14 @@ bool SX1262::load_rx_buffer_() {
   {
     uint8_t ps[3]{};
     this->cmd_read_(CMD_GET_PACKET_STATUS, {}, ps, sizeof(ps));
-    this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);
+    // For GFSK: ps[2] is RSSI_avg (raw). In some corner cases (packet context lost)
+    // GET_PACKET_STATUS may return zeros. Fall back to GET_RSSI_INST then.
+    const int8_t rssi_avg = (int8_t)(-((int) ps[2]) >> 1);
+    if (rssi_avg == 0) {
+      this->last_rssi_dbm_ = this->read_rssi_inst_dbm_();
+    } else {
+      this->last_rssi_dbm_ = rssi_avg;
+    }
   }
 
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
@@ -306,10 +321,16 @@ bool SX1262::capture_rx_stream_() {
   }
 
   // Cache RSSI BEFORE stopping RX (standby), otherwise GetPacketStatus may return zeros.
+  // Prefer packet RSSI_avg when available; fall back to instantaneous RSSI.
   {
     uint8_t ps[3]{};
     this->cmd_read_(CMD_GET_PACKET_STATUS, {}, ps, sizeof(ps));
-    this->last_rssi_dbm_ = (int8_t)(-((int) ps[2]) / 2);
+    const int8_t rssi_avg = (int8_t)(-((int) ps[2]) >> 1);
+    if (rssi_avg == 0) {
+      this->last_rssi_dbm_ = this->read_rssi_inst_dbm_();
+    } else {
+      this->last_rssi_dbm_ = rssi_avg;
+    }
   }
 
   // Stop RX and clear IRQs.
