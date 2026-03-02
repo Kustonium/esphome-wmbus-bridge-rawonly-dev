@@ -51,6 +51,7 @@ class SX1262 : public RadioTransceiver {
 
   // Register helpers
   uint8_t read_register8_(uint16_t addr);
+  uint16_t get_irq_status_();
   void read_buffer_(uint8_t offset, uint8_t *out, size_t out_len);
 
   void set_rf_frequency_(uint32_t freq_hz);
