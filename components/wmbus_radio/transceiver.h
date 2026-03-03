@@ -5,27 +5,12 @@
 #include "freertos/task.h"
 #include <cstdint>
 
+#include "chip_diag.h"
+
 #define BYTE(x, n) ((uint8_t)(x >> (n * 8)))
 
 namespace esphome {
 namespace wmbus_radio {
-
-// Lightweight radio-chip diagnostics (Semtech-style).
-// Only some transceivers support this (e.g. SX126x). Others will return false.
-struct RadioChipDiag {
-  // IRQ status latched around the last RX event (best-effort).
-  uint16_t irq_status{0};
-  // SX126x GetDeviceErrors() value (best-effort).
-  uint16_t device_errors{0};
-  // SX126x GetStats() counters (best-effort). For GFSK these are:
-  // received / crc_error / length_error.
-  uint16_t stats_pkt_received{0};
-  uint16_t stats_pkt_crc_error{0};
-  uint16_t stats_pkt_len_error{0};
-  bool has_device_errors{false};
-  bool has_stats{false};
-  bool has_irq{false};
-};
 class RadioTransceiver
     : public Component,
       public spi::SPIDevice<spi::BIT_ORDER_MSB_FIRST, spi::CLOCK_POLARITY_LOW,
@@ -42,8 +27,12 @@ public:
   virtual int8_t get_rssi() = 0;
   virtual const char *get_name() = 0;
 
-  // Optional: read chip-level diagnostics (Semtech-style). Default: not supported.
-  virtual bool read_chip_diag(RadioChipDiag &out) { return false; }
+  // Cached, no-SPI diagnostics snapshot (best-effort).
+  // Filled by the transceiver when it already talks to the radio for RX.
+  virtual bool get_cached_chip_diag(ChipDiagSnapshot &out) { return false; }
+
+  // Boot-time device errors clearing (best-effort, SX126x only).
+  virtual bool get_boot_cleared_device_errors(uint16_t &before, uint16_t &after) { return false; }
 
   bool read_in_task(uint8_t *buffer, size_t length);
 
