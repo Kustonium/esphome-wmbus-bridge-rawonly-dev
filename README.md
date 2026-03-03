@@ -193,12 +193,6 @@ Then JSON messages appear on `diagnostic_topic`:
 Dodatkowo (SX1262) możesz włączyć czyszczenie błędów radia na starcie:
 Additionally (SX1262) you can clear radio error flags on boot:
 
-```yaml
-wmbus_radio:
-  clear_device_errors_on_boot: true
-  publish_dev_err_after_clear: true  # jednorazowy event `dev_err_cleared`
-```
-
 
 #### 1) Summary (co interval)
 
