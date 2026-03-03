@@ -23,6 +23,8 @@ static constexpr uint8_t CMD_GET_RX_BUFFER_STATUS = 0x13;
 static constexpr uint8_t CMD_READ_BUFFER = 0x1E;
 static constexpr uint8_t CMD_GET_PACKET_STATUS = 0x14;
 static constexpr uint8_t CMD_GET_RSSI_INST = 0x15;
+static constexpr uint8_t CMD_GET_DEVICE_ERRORS = 0x17;
+static constexpr uint8_t CMD_CLR_DEVICE_ERRORS = 0x07;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
@@ -436,6 +438,17 @@ void SX1262::setup() {
                     mask_msb, mask_lsb,  // DIO1 mask
                     0x00, 0x00,          // DIO2 mask
                     0x00, 0x00});        // DIO3 mask
+
+  // Optionally clear latched device errors once on boot (Semtech).
+  if (this->clear_device_errors_on_boot_) {
+    uint8_t err[2]{};
+    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {0x00}, err, sizeof(err));
+    this->boot_dev_err_before_ = (uint16_t(err[0]) << 8) | uint16_t(err[1]);
+    this->cmd_write_(CMD_CLR_DEVICE_ERRORS, {0x00, 0x00});
+    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {0x00}, err, sizeof(err));
+    this->boot_dev_err_after_ = (uint16_t(err[0]) << 8) | uint16_t(err[1]);
+    this->boot_dev_err_valid_ = true;
+  }
 
   this->restart_rx();
   ESP_LOGV(TAG, "SX1262 setup done");

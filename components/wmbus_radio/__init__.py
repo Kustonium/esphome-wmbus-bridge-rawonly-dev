@@ -39,6 +39,11 @@ CONF_HAS_TCXO = "has_tcxo"
 CONF_RX_GAIN = "rx_gain"
 CONF_LONG_GFSK_PACKETS = "long_gfsk_packets"
 
+# SX1262 device error handling (Semtech)
+CONF_CLEAR_DEVICE_ERRORS_ON_BOOT = "clear_device_errors_on_boot"
+CONF_PUBLISH_DEV_ERR_AFTER_CLEAR = "publish_dev_err_after_clear"
+
+
 # Log highlighting (optional)
 CONF_HIGHLIGHT_METERS = "highlight_meters"
 CONF_HIGHLIGHT_ANSI = "highlight_ansi"
@@ -88,6 +93,11 @@ CONFIG_SCHEMA = (
                 "boosted", "power_saving", lower=True
             ),
             cv.Optional(CONF_LONG_GFSK_PACKETS, default=False): cv.boolean,
+
+            # SX1262: clear latched device errors on boot (e.g. XOSC_START)
+            cv.Optional(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, default=True): cv.boolean,
+            # SX1262: publish one-time dev_err_cleared event to diagnostic_topic
+            cv.Optional(CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, default=False): cv.boolean,
 
             # Heltec V4 FEM pins (optional, only makes sense for SX1262)
             cv.Optional(CONF_FEM_CTRL_PIN): pins.internal_gpio_output_pin_schema,
@@ -145,6 +155,8 @@ async def to_code(config):
         )
         cg.add(radio_var.set_long_gfsk_packets(config.get(CONF_LONG_GFSK_PACKETS, False)))
 
+        cg.add(radio_var.set_clear_device_errors_on_boot(config.get(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, True)))
+
         # FEM pins (Heltec V4)
         if CONF_FEM_CTRL_PIN in config:
             p = await cg.gpio_pin_expression(config[CONF_FEM_CTRL_PIN])
@@ -178,6 +190,8 @@ async def to_code(config):
     cg.add(var.set_diag_verbose(config.get(CONF_DIAG_VERBOSE, True)))
     cg.add(var.set_diag_publish_raw(config.get(CONF_DIAG_PUBLISH_RAW, True)))
     cg.add(var.set_diag_summary_interval_ms(config[CONF_DIAG_SUMMARY_INTERVAL].total_milliseconds))
+
+    cg.add(var.set_publish_dev_err_after_clear(config.get(CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, False)))
 
     # Log highlight config
     meters = config.get(CONF_HIGHLIGHT_METERS, [])

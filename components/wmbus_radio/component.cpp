@@ -1,4 +1,5 @@
 #include "component.h"
+#include "transceiver_sx1262.h"
 
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -317,10 +318,37 @@ void Radio::setup() {
 
   this->radio->attach_data_interrupt(Radio::wakeup_receiver_task_from_isr,
                                      &(this->receiver_task_handle_));
+
+  // SX1262: optionally publish dev_err cleared status once after boot
+  if (this->publish_dev_err_after_clear_) {
+    auto *sx = dynamic_cast<SX1262 *>(this->radio);
+    if (sx != nullptr) {
+      uint16_t before = 0, after = 0;
+      if (sx->get_boot_device_errors(before, after)) {
+        this->dev_err_before_ = before;
+        this->dev_err_after_ = after;
+        this->dev_err_cleared_pending_ = true;
+      }
+    }
+  }
 }
 
 void Radio::loop() {
   this->maybe_publish_diag_summary_((uint32_t) esphome::millis());
+
+  // Publish one-time SX1262 dev_err clear event once MQTT is up
+  if (this->dev_err_cleared_pending_) {
+    auto *mqtt = esphome::mqtt::global_mqtt_client;
+    if (mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
+      char payload[180];
+      snprintf(payload, sizeof(payload),
+               "{\"event\":\"dev_err_cleared\",\"before\":%u,\"before_hex\":\"%04X\",\"after\":%u,\"after_hex\":\"%04X\"}",
+               (unsigned) this->dev_err_before_, (unsigned) this->dev_err_before_,
+               (unsigned) this->dev_err_after_, (unsigned) this->dev_err_after_);
+      mqtt->publish(this->diag_topic_, payload);
+      this->dev_err_cleared_pending_ = false;
+    }
+  }
   Packet *p;
   if (xQueueReceive(this->packet_queue_, &p, 0) != pdPASS)
     return;

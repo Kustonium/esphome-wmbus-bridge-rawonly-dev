@@ -42,6 +42,9 @@ public:
     this->diag_summary_interval_ms_ = interval_ms < 5000 ? 5000 : interval_ms;
   }
 
+  // SX1262: publish one-time dev_err_cleared event after boot clear
+  void set_publish_dev_err_after_clear(bool v) { this->publish_dev_err_after_clear_ = v; }
+
   void setup() override;
   void loop() override;
   void receive_frame();

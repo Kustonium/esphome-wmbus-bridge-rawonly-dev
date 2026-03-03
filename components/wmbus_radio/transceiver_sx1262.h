@@ -32,6 +32,17 @@ class SX1262 : public RadioTransceiver {
   // Useful for WMBus T-mode where 3-of-6 expands telegrams beyond 255 raw bytes.
   void set_long_gfsk_packets(bool v) { this->long_gfsk_packets_ = v; }
 
+  // SX1262: clear latched device errors on boot (Semtech)
+  void set_clear_device_errors_on_boot(bool v) { this->clear_device_errors_on_boot_ = v; }
+
+  // If boot device errors were read/cleared, expose the values for diagnostics.
+  bool get_boot_device_errors(uint16_t &before, uint16_t &after) const {
+    if (!this->boot_dev_err_valid_) return false;
+    before = this->boot_dev_err_before_;
+    after = this->boot_dev_err_after_;
+    return true;
+  }
+
   // Optional Heltec V4 front-end (FEM/LNA/PA). If configured, we force RX path.
   void set_fem_ctrl_pin(InternalGPIOPin *pin) { this->fem_ctrl_pin_ = pin; }
   void set_fem_en_pin(InternalGPIOPin *pin) { this->fem_en_pin_ = pin; }
