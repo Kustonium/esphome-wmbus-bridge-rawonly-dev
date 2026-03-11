@@ -1,4 +1,4 @@
-#include "transceiver_sx1276_ready.h"
+#include "transceiver_sx1276.h"
 
 #include "esphome/core/log.h"
 #include <esp_timer.h>
