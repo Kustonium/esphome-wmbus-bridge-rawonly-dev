@@ -35,6 +35,9 @@ class SX1276 : public RadioTransceiver {
   // Used to bridge short empty-FIFO gaps near the tail of one frame.
   bool frame_active_{false};
 
+  int8_t last_rssi_dbm_{-127};
+  bool rssi_captured_{false};
+
   // Burst SPI: CS held low for the entire transfer.
   // SAFE only when caller knows at least 'len' bytes are already in FIFO.
   void spi_read_burst_(uint8_t address, uint8_t *dst, size_t len);

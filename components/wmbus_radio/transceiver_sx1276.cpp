@@ -37,12 +37,19 @@ optional<uint8_t> SX1276::drain_fifo_once_() {
     this->chunk_len_ = 0;
     this->chunk_idx_ = 0;
     this->frame_active_ = false;
+    this->rssi_captured_ = false;
+    this->last_rssi_dbm_ = -127;
     ESP_LOGW(TAG, "FIFO overrun");
     return {};
   }
 
   // Safe burst path: FifoLevel guarantees >= SX1276_CHUNK_SIZE bytes in FIFO.
   if (irq2 & FLAG2_FIFO_LEVEL) {
+    if (!this->rssi_captured_) {
+      this->last_rssi_dbm_ = (int8_t)(-(int) this->spi_read(REG_RSSI_VALUE) / 2);
+      this->rssi_captured_ = true;
+    }
+
     this->spi_read_burst_(REG_FIFO, this->chunk_buffer_.data(), SX1276_CHUNK_SIZE);
     this->chunk_len_ = SX1276_CHUNK_SIZE;
     this->chunk_idx_ = 0;
@@ -52,6 +59,11 @@ optional<uint8_t> SX1276::drain_fifo_once_() {
 
   // Tail path: less than threshold left, so only a single-byte read is safe.
   if (!(irq2 & FLAG2_FIFO_EMPTY)) {
+    if (!this->rssi_captured_) {
+      this->last_rssi_dbm_ = (int8_t)(-(int) this->spi_read(REG_RSSI_VALUE) / 2);
+      this->rssi_captured_ = true;
+    }
+
     this->frame_active_ = true;
     return this->spi_read(REG_FIFO);
   }
@@ -163,12 +175,14 @@ void SX1276::restart_rx() {
   this->chunk_len_ = 0;
   this->chunk_idx_ = 0;
   this->frame_active_ = false;
+  this->rssi_captured_ = false;
+  this->last_rssi_dbm_ = -127;
 
   this->spi_write(REG_OP_MODE, (uint8_t) 0b101);  // RX
 }
 
 int8_t SX1276::get_rssi() {
-  return (int8_t) (-(int) this->spi_read(REG_RSSI_VALUE) / 2);
+  return this->last_rssi_dbm_;
 }
 
 const char *SX1276::get_name() { return TAG; }
