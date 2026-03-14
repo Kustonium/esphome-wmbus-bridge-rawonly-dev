@@ -43,13 +43,7 @@ public:
   size_t want_len() const { return this->want_len_; }
   size_t got_len() const { return this->got_len_; }
   size_t raw_got_len() const { return this->raw_got_len_; }
-  size_t decoded_len() const { return this->decoded_len_; }
-  size_t final_len() const { return this->final_len_; }
-  uint16_t dll_crc_removed() const { return this->dll_crc_removed_; }
-  uint8_t suffix_ignored() const { return this->suffix_ignored_; }
   const std::string &drop_reason() const { return this->drop_reason_; }
-  const std::string &drop_stage() const { return this->drop_stage_; }
-  const std::string &drop_detail() const { return this->drop_detail_; }
 
   // Raw packet bytes (hex) captured at the beginning of convert_to_frame().
   // Intended for diagnostics; may be truncated to keep MQTT/log payloads small.
@@ -72,20 +66,12 @@ protected:
 
   std::string frame_format_;
 
-  void set_drop_(const char *stage, const char *reason, const std::string &detail = {});
-
   // Diagnostics
   bool truncated_{false};
   size_t want_len_{0};
   size_t got_len_{0};
   size_t raw_got_len_{0};
-  size_t decoded_len_{0};
-  size_t final_len_{0};
-  uint16_t dll_crc_removed_{0};
-  uint8_t suffix_ignored_{0};
   std::string drop_reason_{};
-  std::string drop_stage_{};
-  std::string drop_detail_{};
   std::string raw_hex_{};
 
   // T1 (3-of-6) symbol diagnostics

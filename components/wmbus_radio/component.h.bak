@@ -95,35 +95,6 @@ protected:
     DB_COUNT
   };
 
-  enum StageBucket : uint8_t {
-    SB_PRECHECK = 0,
-    SB_T1_DECODE3OF6,
-    SB_T1_L_FIELD,
-    SB_T1_LENGTH_CHECK,
-    SB_C1_PRECHECK,
-    SB_C1_PREAMBLE,
-    SB_C1_SUFFIX,
-    SB_C1_L_FIELD,
-    SB_C1_LENGTH_CHECK,
-    SB_DLL_CRC_FIRST,
-    SB_DLL_CRC_MID,
-    SB_DLL_CRC_FINAL,
-    SB_DLL_CRC_B1,
-    SB_DLL_CRC_B2,
-    SB_LINK_MODE,
-    SB_OTHER,
-    SB_COUNT
-  };
-
-  struct RxPathCounters {
-    uint32_t irq_timeout{0};
-    uint32_t preamble_read_failed{0};
-    uint32_t t1_header_read_failed{0};
-    uint32_t payload_size_unknown{0};
-    uint32_t payload_read_failed{0};
-    uint32_t queue_send_failed{0};
-  };
-
   // Windowed counters (reset after each published summary)
   uint32_t diag_total_{0};
   uint32_t diag_ok_{0};
@@ -146,8 +117,6 @@ protected:
   std::array<uint32_t, 3> diag_mode_rssi_drop_n_{};
 
   std::array<uint32_t, DB_COUNT> diag_dropped_by_bucket_{};
-  std::array<uint32_t, SB_COUNT> diag_dropped_by_stage_{};
-  RxPathCounters diag_rx_path_{};
 
   // T1 symbol-level diagnostics (windowed, reset after each summary)
   uint32_t diag_t1_symbols_total_{0};
@@ -155,9 +124,7 @@ protected:
   uint32_t last_diag_summary_ms_{0};
 
   static DropBucket bucket_for_reason_(const std::string &reason);
-  static StageBucket bucket_for_stage_(const std::string &stage);
   void maybe_publish_diag_summary_(uint32_t now_ms);
-  void publish_rx_path_event_(const char *event, const char *stage, const char *detail = nullptr, int rssi = 0);
 
   std::string diag_topic_{"wmbus/diag"};
 };
