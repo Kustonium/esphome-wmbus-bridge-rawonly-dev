@@ -3,7 +3,7 @@
 #include <vector>
 
 namespace esphome {
-namespace wmbus_radio {
+namespace wmbus_common {
 
 // EN 13757 CRC16 used in wM-Bus DLL
 static constexpr uint16_t CRC16_EN_13757_POLY = 0x3D65;
@@ -199,14 +199,12 @@ inline bool trim_dll_crc_format_b(std::vector<uint8_t> &payload, DLLCRCResult *d
   return true;
 }
 
-// Strict helper used by the raw-only bridge. We intentionally keep a different
-// name than a generic removeAnyDLLCRCs() to avoid symbol clashes with the
-// other helper implementations.
-inline bool removeAnyDLLCRCsStrict(std::vector<uint8_t> &payload) {
+// Strict: returns true only if CRC(s) validated and were removed.
+inline bool removeAnyDLLCRCs(std::vector<uint8_t> &payload) {
   if (trim_dll_crc_format_a(payload)) return true;
   if (trim_dll_crc_format_b(payload)) return true;
   return false;
 }
 
-}  // namespace wmbus_radio
+}  // namespace wmbus_common
 }  // namespace esphome
