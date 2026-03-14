@@ -16,11 +16,11 @@ from pathlib import Path
 
 CODEOWNERS = ["@SzczepanLeon", "@kubasaw"]
 
-DEPENDENCIES = ["esp32", "spi", "mqtt"]
+DEPENDENCIES = ["esp32", "spi"]
 
-# Keep this component lightweight: decoding is meant to happen outside ESP.
-# Do not auto-load the full wmbus_common stack.
-#AUTO_LOAD = []
+# Keep the public YAML surface small: wmbus_radio is self-contained and
+# does not auto-load extra top-level helper components.
+AUTO_LOAD = []
 
 MULTI_CONF = True
 
@@ -37,27 +37,6 @@ CONF_HAS_TCXO = "has_tcxo"
 
 # RX gain option (datasheet: boosted / power_saving)
 CONF_RX_GAIN = "rx_gain"
-CONF_LONG_GFSK_PACKETS = "long_gfsk_packets"
-
-# SX1262: clear latched device errors on boot (Semtech Get/ClearDeviceErrors)
-CONF_CLEAR_DEVICE_ERRORS_ON_BOOT = "clear_device_errors_on_boot"
-CONF_PUBLISH_DEV_ERR_AFTER_CLEAR = "publish_dev_err_after_clear"
-
-# Log highlighting (optional)
-CONF_HIGHLIGHT_METERS = "highlight_meters"
-CONF_HIGHLIGHT_ANSI = "highlight_ansi"
-CONF_HIGHLIGHT_TAG = "highlight_tag"
-CONF_HIGHLIGHT_PREFIX = "highlight_prefix"
-
-# Diagnostics
-CONF_DIAG_TOPIC = "diagnostic_topic"
-CONF_DIAG_VERBOSE = "diagnostic_verbose"
-CONF_DIAG_PUBLISH_RAW = "diagnostic_publish_raw"
-CONF_DIAG_SUMMARY_INTERVAL = "diagnostic_summary_interval"
-CONF_DIAG_PUBLISH_SUMMARY = "diagnostic_publish_summary"
-CONF_DIAG_PUBLISH_DROP_EVENTS = "diagnostic_publish_drop_events"
-CONF_DIAG_PUBLISH_RX_PATH_EVENTS = "diagnostic_publish_rx_path_events"
-CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY = "diagnostic_publish_highlight_only"
 
 # Heltec V4 FEM pins (SX1262 external front-end)
 CONF_FEM_CTRL_PIN = "fem_ctrl_pin"
@@ -95,7 +74,6 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_RX_GAIN, default="boosted"): cv.one_of(
                 "boosted", "power_saving", lower=True
             ),
-            cv.Optional(CONF_LONG_GFSK_PACKETS, default=False): cv.boolean,
 
             # Heltec V4 FEM pins (optional, only makes sense for SX1262)
             cv.Optional(CONF_FEM_CTRL_PIN): pins.internal_gpio_output_pin_schema,
@@ -108,30 +86,6 @@ CONFIG_SCHEMA = (
                     cv.Optional(CONF_MARK_AS_HANDLED, default=False): cv.boolean,
                 }
             ),
-
-            # Publish diagnostics (e.g. truncated frames) to MQTT
-            cv.Optional(CONF_DIAG_TOPIC, default="wmbus/diag"): cv.string,
-
-            # Diagnostics verbosity / publication controls
-            cv.Optional(CONF_DIAG_VERBOSE, default=True): cv.boolean,
-            cv.Optional(CONF_DIAG_PUBLISH_RAW, default=True): cv.boolean,
-            cv.Optional(CONF_DIAG_PUBLISH_SUMMARY, default=True): cv.boolean,
-            cv.Optional(CONF_DIAG_PUBLISH_DROP_EVENTS, default=True): cv.boolean,
-            cv.Optional(CONF_DIAG_PUBLISH_RX_PATH_EVENTS, default=True): cv.boolean,
-            # If true, per-packet MQTT diagnostics are published only for meter ids
-            # listed in highlight_meters. Global summary still counts everything.
-            cv.Optional(CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY, default=False): cv.boolean,
-            cv.Optional(CONF_DIAG_SUMMARY_INTERVAL, default="60s"): cv.positive_time_period_milliseconds,
-
-            # Optional log highlighting for selected meter IDs
-            cv.Optional(CONF_HIGHLIGHT_METERS, default=[]): cv.ensure_list(cv.string),
-            cv.Optional(CONF_HIGHLIGHT_ANSI, default=False): cv.boolean,
-            cv.Optional(CONF_HIGHLIGHT_TAG, default="wmbus_user"): cv.string,
-            cv.Optional(CONF_HIGHLIGHT_PREFIX, default="★ "): cv.string,
-
-            # SX1262: device errors handling on boot
-            cv.Optional(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, default=False): cv.boolean,
-            cv.Optional(CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, default=False): cv.boolean,
         }
     )
     .extend(spi.spi_device_schema())
@@ -161,10 +115,6 @@ async def to_code(config):
                 else SX1262RxGain.POWER_SAVING
             )
         )
-        cg.add(radio_var.set_long_gfsk_packets(config.get(CONF_LONG_GFSK_PACKETS, False)))
-
-        # Clear SX1262 device errors on boot (optional)
-        cg.add(radio_var.set_clear_device_errors_on_boot(config.get(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, False)))
 
         # FEM pins (Heltec V4)
         if CONF_FEM_CTRL_PIN in config:
@@ -193,27 +143,6 @@ async def to_code(config):
     cg.add(cg.LineComment("WMBus Component"))
     var = cg.new_Pvariable(config[CONF_ID])
     cg.add(var.set_radio(radio_var))
-
-    cg.add(var.set_diag_topic(config.get(CONF_DIAG_TOPIC, "wmbus/diag")))
-
-    cg.add(var.set_diag_verbose(config.get(CONF_DIAG_VERBOSE, True)))
-    cg.add(var.set_diag_publish_raw(config.get(CONF_DIAG_PUBLISH_RAW, True)))
-    cg.add(var.set_diag_publish_summary(config.get(CONF_DIAG_PUBLISH_SUMMARY, True)))
-    cg.add(var.set_diag_publish_drop_events(config.get(CONF_DIAG_PUBLISH_DROP_EVENTS, True)))
-    cg.add(var.set_diag_publish_rx_path_events(config.get(CONF_DIAG_PUBLISH_RX_PATH_EVENTS, True)))
-    cg.add(var.set_diag_publish_highlight_only(config.get(CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY, False)))
-    cg.add(var.set_diag_summary_interval_ms(config[CONF_DIAG_SUMMARY_INTERVAL].total_milliseconds))
-
-    # Log highlight config
-    meters = config.get(CONF_HIGHLIGHT_METERS, [])
-    meters_csv = ",".join([str(m).strip() for m in meters if str(m).strip()])
-    cg.add(var.set_highlight_meters_csv(meters_csv))
-    cg.add(var.set_highlight_ansi(config.get(CONF_HIGHLIGHT_ANSI, False)))
-    cg.add(var.set_highlight_tag(config.get(CONF_HIGHLIGHT_TAG, "wmbus_user")))
-    cg.add(var.set_highlight_prefix(config.get(CONF_HIGHLIGHT_PREFIX, "★ ")))
-
-    # Optional: publish SX1262 dev_err before/after clear (once after boot)
-    cg.add(var.set_publish_dev_err_after_clear(config.get(CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, False)))
 
     await cg.register_component(var, config)
 
