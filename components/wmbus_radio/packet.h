@@ -55,6 +55,10 @@ public:
   // Intended for diagnostics; may be truncated to keep MQTT/log payloads small.
   const std::string &raw_hex() const { return this->raw_hex_; }
 
+  // Best-effort meter id extraction from the current packet buffer.
+  // Works after successful decode and for some late-stage failures.
+  bool try_get_meter_id(uint32_t &out_id) const;
+
   // T1 (3-of-6) symbol diagnostics (only meaningful for LinkMode::T1)
   uint16_t t1_symbols_total() const { return this->t1_symbols_total_; }
   uint16_t t1_symbols_invalid() const { return this->t1_symbols_invalid_; }
@@ -105,6 +109,7 @@ public:
   std::vector<uint8_t> as_raw();
   std::string as_hex();
   std::string as_rtlwmbus();
+  bool try_get_meter_id(uint32_t &out_id) const;
 
   void mark_as_handled();
   uint8_t handlers_count();

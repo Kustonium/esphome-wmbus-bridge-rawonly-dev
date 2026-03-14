@@ -51,7 +51,42 @@ static std::string dll_crc_detail_(const wmbus_common::DLLCRCResult &crc) {
   return std::string(buf);
 }
 
+
+static bool is_bcd_(uint8_t b) {
+  return ((b & 0x0F) <= 9) && (((b >> 4) & 0x0F) <= 9);
+}
+
+static bool try_extract_meter_id_(const std::vector<uint8_t> &d, uint32_t &out_id) {
+  out_id = 0;
+  if (d.size() < 9) return false;
+
+  int base = -1;
+  // Raw C1 still carrying the two leading suffix bytes.
+  if (d.size() >= 12 && (size_t) (d[2] + 1) == (d.size() - 2)) {
+    base = 2;
+  } else if (d.size() >= 10 && (size_t) (d[0] + 1) == d.size()) {
+    // Final frame with explicit C-field after L-field.
+    base = 1;
+  } else {
+    // Best effort for late-stage / already-trimmed packets.
+    base = 0;
+  }
+
+  if ((size_t) (base + 6) >= d.size()) return false;
+  if (!is_bcd_(d[base + 3]) || !is_bcd_(d[base + 4]) || !is_bcd_(d[base + 5]) || !is_bcd_(d[base + 6])) {
+    return false;
+  }
+
+  out_id = (uint32_t) ((((d[base + 6] >> 4) & 0x0F) * 10000000U) + ((d[base + 6] & 0x0F) * 1000000U) +
+                       (((d[base + 5] >> 4) & 0x0F) * 100000U) + ((d[base + 5] & 0x0F) * 10000U) +
+                       (((d[base + 4] >> 4) & 0x0F) * 1000U) + ((d[base + 4] & 0x0F) * 100U) +
+                       (((d[base + 3] >> 4) & 0x0F) * 10U) + (d[base + 3] & 0x0F));
+  return out_id != 0;
+}
+
 Packet::Packet() { this->data_.reserve(WMBUS_PREAMBLE_SIZE); }
+
+bool Packet::try_get_meter_id(uint32_t &out_id) const { return try_extract_meter_id_(this->data_, out_id); }
 
 void Packet::set_drop_(const char *stage, const char *reason, const std::string &detail) {
   this->drop_stage_ = stage != nullptr ? stage : "";
@@ -317,6 +352,8 @@ std::string Frame::format() { return this->format_; }
 
 std::vector<uint8_t> Frame::as_raw() { return this->data_; }
 std::string Frame::as_hex() { return format_hex(this->data_); }
+
+bool Frame::try_get_meter_id(uint32_t &out_id) const { return try_extract_meter_id_(this->data_, out_id); }
 
 std::string Frame::as_rtlwmbus() {
   const size_t time_repr_size = sizeof("YYYY-MM-DD HH:MM:SS.00Z");

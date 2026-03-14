@@ -40,6 +40,10 @@ public:
   // Diagnostics runtime controls (can be toggled from YAML via template switches)
   void set_diag_verbose(bool enabled) { this->diag_verbose_ = enabled; }
   void set_diag_publish_raw(bool enabled) { this->diag_publish_raw_ = enabled; }
+  void set_diag_publish_summary(bool enabled) { this->diag_publish_summary_ = enabled; }
+  void set_diag_publish_drop_events(bool enabled) { this->diag_publish_drop_events_ = enabled; }
+  void set_diag_publish_rx_path_events(bool enabled) { this->diag_publish_rx_path_events_ = enabled; }
+  void set_diag_publish_highlight_only(bool enabled) { this->diag_publish_highlight_only_ = enabled; }
   void set_diag_summary_interval_ms(uint32_t interval_ms) {
     // Keep it sane: minimum 5s
     this->diag_summary_interval_ms_ = interval_ms < 5000 ? 5000 : interval_ms;
@@ -78,10 +82,16 @@ protected:
   // Diagnostics counters (published periodically if diagnostic_topic is set)
   uint32_t diag_summary_interval_ms_{60000};
 
-  // When false, only the periodic summary is published (still counts internally)
+  // When false, only the periodic summary is published to MQTT (still counts internally)
   bool diag_verbose_{true};
   // When false, per-packet payloads/logs omit the raw hex (much less spam)
   bool diag_publish_raw_{true};
+  bool diag_publish_summary_{true};
+  bool diag_publish_drop_events_{true};
+  bool diag_publish_rx_path_events_{true};
+  // If enabled, publish per-packet MQTT diagnostics only for ids present in
+  // highlight_meters. Summary remains global and still counts everything.
+  bool diag_publish_highlight_only_{false};
 
   enum DropBucket : uint8_t {
     DB_TOO_SHORT = 0,
@@ -156,6 +166,8 @@ protected:
 
   static DropBucket bucket_for_reason_(const std::string &reason);
   static StageBucket bucket_for_stage_(const std::string &stage);
+  bool meter_is_highlighted_(uint32_t meter_id) const;
+  bool should_publish_packet_event_(const Packet *packet) const;
   void maybe_publish_diag_summary_(uint32_t now_ms);
   void publish_rx_path_event_(const char *event, const char *stage, const char *detail = nullptr, int rssi = 0);
 

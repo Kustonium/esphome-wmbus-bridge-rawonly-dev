@@ -101,7 +101,22 @@ Radio::StageBucket Radio::bucket_for_stage_(const std::string &stage) {
   return SB_OTHER;
 }
 
+bool Radio::meter_is_highlighted_(uint32_t meter_id) const {
+  return meter_id != 0 && !this->highlight_meter_ids_.empty() &&
+         std::binary_search(this->highlight_meter_ids_.begin(), this->highlight_meter_ids_.end(), meter_id);
+}
+
+bool Radio::should_publish_packet_event_(const Packet *packet) const {
+  if (packet == nullptr || !this->diag_publish_drop_events_) return false;
+  if (!this->diag_publish_highlight_only_ || this->highlight_meter_ids_.empty()) return true;
+
+  uint32_t meter_id = 0;
+  if (!packet->try_get_meter_id(meter_id)) return false;
+  return this->meter_is_highlighted_(meter_id);
+}
+
 void Radio::publish_rx_path_event_(const char *event, const char *stage, const char *detail, int rssi) {
+  if (!this->diag_publish_rx_path_events_) return;
   auto *mqtt = esphome::mqtt::global_mqtt_client;
   if (mqtt == nullptr || !mqtt->is_connected() || this->diag_topic_.empty()) return;
 
@@ -119,6 +134,7 @@ void Radio::publish_rx_path_event_(const char *event, const char *stage, const c
 }
 
 void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
+  if (!this->diag_publish_summary_) return;
   if (this->diag_topic_.empty()) return;
   if (this->last_diag_summary_ms_ == 0) {
     this->last_diag_summary_ms_ = now_ms;
@@ -442,7 +458,7 @@ void Radio::loop() {
 
     if (p->is_truncated()) {
       this->diag_truncated_++;
-      if (mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+      if (this->should_publish_packet_event_(p) && mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
         char payload[1100];
         if (this->diag_publish_raw_) {
           snprintf(payload, sizeof(payload),
@@ -491,7 +507,7 @@ void Radio::loop() {
         this->diag_mode_crc_failed_[mode_idx]++;
       }
 
-      if (mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+      if (this->should_publish_packet_event_(p) && mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
         char payload[1100];
         if (this->diag_publish_raw_) {
           snprintf(payload, sizeof(payload),
