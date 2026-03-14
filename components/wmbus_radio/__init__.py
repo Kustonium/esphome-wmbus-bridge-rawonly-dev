@@ -18,9 +18,10 @@ CODEOWNERS = ["@SzczepanLeon", "@kubasaw"]
 
 DEPENDENCIES = ["esp32", "spi", "mqtt"]
 
-# Keep this component lightweight: decoding is meant to happen outside ESP.
-# Do not auto-load the full wmbus_common stack.
-#AUTO_LOAD = []
+# Single public component only.
+# Everything needed by the raw-only bridge lives inside wmbus_radio, so the user
+# can keep a simple YAML declaration: components: [wmbus_radio]
+AUTO_LOAD = []
 
 MULTI_CONF = True
 
