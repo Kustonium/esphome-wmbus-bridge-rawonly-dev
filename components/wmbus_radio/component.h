@@ -187,11 +187,15 @@ protected:
   bool meter_is_highlighted_(uint32_t meter_id) const;
   bool should_publish_packet_event_(const Packet *packet) const;
   void maybe_publish_diag_summary_(uint32_t now_ms);
+  void publish_meter_window_for_(const char *trigger, uint32_t elapsed_s,
+                                   const char *id_str, MeterStats &st);
   void maybe_publish_meter_windows_(uint32_t now_ms);
 
-  // Separate timer for meter window summaries (default 15 min, same YAML key as diag_summary_interval)
+  // Periodic timer for meter window summaries (default: 15 min)
   uint32_t meter_window_interval_ms_{900000};
   uint32_t last_meter_window_ms_{0};
+  // Count-based trigger: publish after this many packets per window (0 = disabled)
+  uint32_t meter_window_count_threshold_{10};
   void publish_rx_path_event_(const char *event, const char *stage, const char *detail = nullptr, int rssi = 0);
 
   std::string diag_topic_{"wmbus/diag"};

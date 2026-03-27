@@ -395,6 +395,56 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   this->diag_rx_path_ = {};
 }
 
+// Publish windowed stats for a single meter and reset its window counters.
+// trigger: "count" = packet threshold reached, "time" = periodic timer fired
+void Radio::publish_meter_window_for_(const char *trigger, uint32_t elapsed_s,
+                                      const char *id_str, MeterStats &st) {
+  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected()) return;
+
+  const int32_t win_avg_rssi = (st.rssi_n_window > 0)
+      ? (st.rssi_sum_window / (int32_t) st.rssi_n_window) : 0;
+  const uint32_t avg_interval_s = (st.interval_n > 0)
+      ? (st.interval_sum_ms / st.interval_n) / 1000 : 0;
+
+  char payload[280];
+  snprintf(payload, sizeof(payload),
+           "{"
+           "\"event\":\"meter_window\","
+           "\"trigger\":\"%s\","
+           "\"id\":\"%s\","
+           "\"elapsed_s\":%u,"
+           "\"count_window\":%u,"
+           "\"count_total\":%u,"
+           "\"avg_interval_s\":%u,"
+           "\"last_rssi\":%d,"
+           "\"win_avg_rssi\":%d"
+           "}",
+           trigger, id_str,
+           (unsigned) elapsed_s,
+           (unsigned) st.count_window,
+           (unsigned) st.count,
+           (unsigned) avg_interval_s,
+           (int) st.rssi_last,
+           (int) win_avg_rssi);
+
+  if (!this->diag_topic_.empty()) {
+    std::string meter_topic = this->diag_topic_ + "/meter/" + std::string(id_str);
+    mqtt->publish(meter_topic, payload);
+  }
+  ESP_LOGI(TAG, "METER [%s] id=%s win=%us count_window=%u total=%u avg_interval=%us win_avg_rssi=%ddBm",
+           trigger, id_str,
+           (unsigned) elapsed_s,
+           (unsigned) st.count_window,
+           (unsigned) st.count,
+           (unsigned) avg_interval_s,
+           (int) win_avg_rssi);
+
+  st.count_window = 0;
+  st.rssi_sum_window = 0;
+  st.rssi_n_window = 0;
+}
+
 void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
   if (this->highlight_meter_stats_.empty()) return;
   if (this->diag_topic_.empty()) return;
@@ -404,51 +454,13 @@ void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
     return;
   }
   if (now_ms - this->last_meter_window_ms_ < this->meter_window_interval_ms_) return;
+  const uint32_t elapsed_s = (now_ms - this->last_meter_window_ms_) / 1000;
   this->last_meter_window_ms_ = now_ms;
 
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
-  if (mqtt == nullptr || !mqtt->is_connected()) return;
-
-  const uint32_t window_s = this->meter_window_interval_ms_ / 1000;
   for (auto &kv : this->highlight_meter_stats_) {
-    auto &st = kv.second;
     char id_str[9];
     snprintf(id_str, sizeof(id_str), "%08u", (unsigned) kv.first);
-
-    const int32_t win_avg_rssi = (st.rssi_n_window > 0)
-        ? (st.rssi_sum_window / (int32_t) st.rssi_n_window) : 0;
-    const uint32_t avg_interval_s = (st.interval_n > 0)
-        ? (st.interval_sum_ms / st.interval_n) / 1000 : 0;
-
-    char payload[256];
-    snprintf(payload, sizeof(payload),
-             "{"
-             "\"event\":\"meter_window\","
-             "\"id\":\"%s\","
-             "\"window_s\":%u,"
-             "\"count_window\":%u,"
-             "\"count_total\":%u,"
-             "\"avg_interval_s\":%u,"
-             "\"last_rssi\":%d,"
-             "\"win_avg_rssi\":%d"
-             "}",
-             id_str,
-             (unsigned) window_s,
-             (unsigned) st.count_window,
-             (unsigned) st.count,
-             (unsigned) avg_interval_s,
-             (int) st.rssi_last,
-             (int) win_avg_rssi);
-
-    std::string meter_topic = this->diag_topic_ + "/meter/" + std::string(id_str);
-    mqtt->publish(meter_topic, payload);
-    ESP_LOGI(TAG, "METER window id=%s count_window=%u total=%u avg_interval=%us win_avg_rssi=%ddBm",
-             id_str, (unsigned) st.count_window, (unsigned) st.count,
-             (unsigned) avg_interval_s, (int) win_avg_rssi);
-
-    st.count_window = 0;
-    st.rssi_sum_window = 0;
-    st.rssi_n_window = 0;
+    this->publish_meter_window_for_("time", elapsed_s, id_str, kv.second);
   }
 }
 
@@ -692,10 +704,19 @@ void Radio::loop() {
     stats.rssi_last = frame->rssi();
     stats.rssi_sum += (int32_t) frame->rssi();
     stats.rssi_n++;
-    // Windowed counters (reset each summary interval)
+    // Windowed counters — reset on count threshold or periodic timer
     stats.count_window++;
     stats.rssi_sum_window += (int32_t) frame->rssi();
     stats.rssi_n_window++;
+
+    // Count-based trigger: publish when window reaches threshold
+    if (this->meter_window_count_threshold_ > 0 &&
+        stats.count_window >= this->meter_window_count_threshold_) {
+      const uint32_t elapsed_s = (stats.last_seen_ms > 0 && this->last_meter_window_ms_ > 0)
+          ? ((uint32_t) esphome::millis() - this->last_meter_window_ms_) / 1000 : 0;
+      this->publish_meter_window_for_("count", elapsed_s, id_str, stats);
+    }
+
     if (stats.last_seen_ms != 0) {
       stats.last_interval_ms = now_ms - stats.last_seen_ms;
       stats.interval_sum_ms += stats.last_interval_ms;
