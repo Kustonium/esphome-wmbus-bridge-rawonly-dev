@@ -167,6 +167,7 @@ protected:
   uint32_t diag_ok_{0};
   uint32_t diag_truncated_{0};
   uint32_t diag_dropped_{0};
+  uint32_t diag_filtered_by_listen_mode_{0};
   // RSSI aggregates (integer averages)
   int32_t diag_rssi_ok_sum_{0};
   uint32_t diag_rssi_ok_n_{0};
@@ -177,6 +178,7 @@ protected:
   std::array<uint32_t, 3> diag_mode_total_{};
   std::array<uint32_t, 3> diag_mode_ok_{};
   std::array<uint32_t, 3> diag_mode_dropped_{};
+  std::array<uint32_t, 3> diag_mode_filtered_{};
   std::array<uint32_t, 3> diag_mode_crc_failed_{};
   std::array<int32_t, 3> diag_mode_rssi_ok_sum_{};
   std::array<uint32_t, 3> diag_mode_rssi_ok_n_{};
