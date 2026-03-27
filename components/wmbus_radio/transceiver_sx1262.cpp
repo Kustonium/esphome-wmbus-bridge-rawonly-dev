@@ -577,11 +577,7 @@ void SX1262::restart_rx() {
   if (this->listen_mode_ == LISTEN_MODE_T1) {
     sync2 = 0x3D;
   } else if (this->listen_mode_ == LISTEN_MODE_C1) {
-    // C1 exists with both second sync-byte variants (0x3D / 0xCD).
-    // Bias 3:1 towards 0x3D, same as LISTEN_MODE_BOTH, so C1-only
-    // does not accidentally exclude the more common variant.
-    sync2 = (this->sync_cycle_ == 3) ? 0xCD : 0x3D;
-    this->sync_cycle_ = (uint8_t) ((this->sync_cycle_ + 1) & 0x03);
+    sync2 = 0xCD;
   } else {
     sync2 = (this->sync_cycle_ == 3) ? 0xCD : 0x3D;
     this->sync_cycle_ = (uint8_t) ((this->sync_cycle_ + 1) & 0x03);

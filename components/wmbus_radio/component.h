@@ -51,7 +51,6 @@ public:
   }
 
   void setup() override;
-  void dump_config() override;
   void loop() override;
   void receive_frame();
 
@@ -96,15 +95,6 @@ protected:
   bool dev_err_cleared_pending_{false};
   uint16_t dev_err_before_{0};
   uint16_t dev_err_after_{0};
-
-  // Boot-time listen mode logging/publication. Repeated a few times so API log
-  // viewers connecting late after OTA still catch it. MQTT publication is sent
-  // once as retained state and once as a normal event when broker is available.
-  bool boot_log_done_{false};
-  uint32_t boot_log_last_ms_{0};
-  uint8_t boot_log_count_{0};
-  bool boot_info_mqtt_pending_{true};
-  bool boot_info_event_pending_{true};
 
 
   // Diagnostics counters (published periodically if diagnostic_topic is set)
@@ -167,7 +157,6 @@ protected:
   uint32_t diag_ok_{0};
   uint32_t diag_truncated_{0};
   uint32_t diag_dropped_{0};
-  uint32_t diag_filtered_by_listen_mode_{0};
   // RSSI aggregates (integer averages)
   int32_t diag_rssi_ok_sum_{0};
   uint32_t diag_rssi_ok_n_{0};
@@ -178,7 +167,6 @@ protected:
   std::array<uint32_t, 3> diag_mode_total_{};
   std::array<uint32_t, 3> diag_mode_ok_{};
   std::array<uint32_t, 3> diag_mode_dropped_{};
-  std::array<uint32_t, 3> diag_mode_filtered_{};
   std::array<uint32_t, 3> diag_mode_crc_failed_{};
   std::array<int32_t, 3> diag_mode_rssi_ok_sum_{};
   std::array<uint32_t, 3> diag_mode_rssi_ok_n_{};
