@@ -78,6 +78,12 @@ void SX1276::setup() {
 
   this->common_setup();
   ESP_LOGV(TAG, "Setup");
+  {
+    const char *lm = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"
+                   : (this->listen_mode_ == LISTEN_MODE_C1) ? "C1 only"
+                   : "T1+C1 (both, 3:1 bias)";
+    ESP_LOGI(TAG, "Listen mode: %s", lm);
+  }
   this->reset();
 
   const uint8_t revision = this->spi_read(0x42);

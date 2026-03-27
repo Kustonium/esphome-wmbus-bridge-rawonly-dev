@@ -465,13 +465,6 @@ void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
 }
 
 void Radio::setup() {
-  // Log active listen mode
-  const char *listen_mode_str =
-      (this->radio->get_listen_mode() == LISTEN_MODE_T1) ? "T1 only" :
-      (this->radio->get_listen_mode() == LISTEN_MODE_C1) ? "C1 only" :
-      "T1+C1 (both, 3:1 bias)";
-  ESP_LOGI(TAG, "Listen mode: %s", listen_mode_str);
-
   // Parse optional highlight meter list (CSV provided by python/YAML).
   parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_);
   if (!this->highlight_meter_ids_.empty()) {

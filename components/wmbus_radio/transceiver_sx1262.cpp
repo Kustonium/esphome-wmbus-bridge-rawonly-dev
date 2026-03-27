@@ -468,6 +468,12 @@ void SX1262::setup() {
   this->irq_edge_ = gpio::INTERRUPT_RISING_EDGE;
   this->common_setup();
   ESP_LOGV(TAG, "Setup");
+  {
+    const char *lm = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"
+                   : (this->listen_mode_ == LISTEN_MODE_C1) ? "C1 only"
+                   : "T1+C1 (both, 3:1 bias)";
+    ESP_LOGI(TAG, "Listen mode: %s", lm);
+  }
 
   // MUST be before any SPI transfers
   this->spi_setup();
