@@ -586,23 +586,20 @@ void Radio::loop() {
 
   const uint8_t mode_idx = (uint8_t) p->get_link_mode();
 
-  auto frame = p->convert_to_frame();
-
-  if (frame && this->radio != nullptr) {
+  // Filter by listen_mode BEFORE convert_to_frame() and before any counters.
+  // Use packet's raw link mode (detected from preamble) — valid even if frame
+  // conversion later fails (e.g. T1 3-of-6 decode error).
+  if (this->radio != nullptr) {
     const auto want = this->radio->get_listen_mode();
-    const auto got = frame->link_mode();
-
+    const LinkMode got = p->get_link_mode();
     const bool reject =
         (want == LISTEN_MODE_C1 && got != LinkMode::C1) ||
         (want == LISTEN_MODE_T1 && got != LinkMode::T1);
-
     if (reject) {
-      ESP_LOGD(TAG,
-               "Filtered frame by listen_mode: requested=%s got=%s RSSI=%ddBm",
+      ESP_LOGD(TAG, "Filtered by listen_mode: want=%s got=%s RSSI=%ddBm",
                (want == LISTEN_MODE_C1) ? "C1" : "T1",
                link_mode_name(got),
                (int) p->get_rssi());
-
       delete p;
       return;
     }
@@ -611,6 +608,8 @@ void Radio::loop() {
   // Count only frames that pass the listen_mode filter
   this->diag_total_++;
   if (mode_idx < this->diag_mode_total_.size()) this->diag_mode_total_[mode_idx]++;
+
+  auto frame = p->convert_to_frame();
 
   if (mode_idx == (uint8_t) LinkMode::T1) {
     this->diag_t1_symbols_total_ += (uint32_t) p->t1_symbols_total();
