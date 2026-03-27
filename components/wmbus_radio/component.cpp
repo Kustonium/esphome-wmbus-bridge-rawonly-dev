@@ -395,12 +395,75 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   this->diag_rx_path_ = {};
 }
 
+void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
+  if (this->highlight_meter_stats_.empty()) return;
+  if (this->diag_topic_.empty()) return;
+
+  if (this->last_meter_window_ms_ == 0) {
+    this->last_meter_window_ms_ = now_ms;
+    return;
+  }
+  if (now_ms - this->last_meter_window_ms_ < this->meter_window_interval_ms_) return;
+  this->last_meter_window_ms_ = now_ms;
+
+  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected()) return;
+
+  const uint32_t window_s = this->meter_window_interval_ms_ / 1000;
+  for (auto &kv : this->highlight_meter_stats_) {
+    auto &st = kv.second;
+    char id_str[9];
+    snprintf(id_str, sizeof(id_str), "%08u", (unsigned) kv.first);
+
+    const int32_t win_avg_rssi = (st.rssi_n_window > 0)
+        ? (st.rssi_sum_window / (int32_t) st.rssi_n_window) : 0;
+    const uint32_t avg_interval_s = (st.interval_n > 0)
+        ? (st.interval_sum_ms / st.interval_n) / 1000 : 0;
+
+    char payload[256];
+    snprintf(payload, sizeof(payload),
+             "{"
+             "\"event\":\"meter_window\","
+             "\"id\":\"%s\","
+             "\"window_s\":%u,"
+             "\"count_window\":%u,"
+             "\"count_total\":%u,"
+             "\"avg_interval_s\":%u,"
+             "\"last_rssi\":%d,"
+             "\"win_avg_rssi\":%d"
+             "}",
+             id_str,
+             (unsigned) window_s,
+             (unsigned) st.count_window,
+             (unsigned) st.count,
+             (unsigned) avg_interval_s,
+             (int) st.rssi_last,
+             (int) win_avg_rssi);
+
+    std::string meter_topic = this->diag_topic_ + "/meter/" + std::string(id_str);
+    mqtt->publish(meter_topic, payload);
+    ESP_LOGI(TAG, "METER window id=%s count_window=%u total=%u avg_interval=%us win_avg_rssi=%ddBm",
+             id_str, (unsigned) st.count_window, (unsigned) st.count,
+             (unsigned) avg_interval_s, (int) win_avg_rssi);
+
+    st.count_window = 0;
+    st.rssi_sum_window = 0;
+    st.rssi_n_window = 0;
+  }
+}
+
 void Radio::setup() {
   // Parse optional highlight meter list (CSV provided by python/YAML).
   parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_);
   if (!this->highlight_meter_ids_.empty()) {
-    ESP_LOGI(TAG, "Highlight meters enabled (%u ids) tag=%s ansi=%s", (unsigned) this->highlight_meter_ids_.size(),
-             this->highlight_tag_.empty() ? "wmbus_user" : this->highlight_tag_.c_str(), this->highlight_ansi_ ? "true" : "false");
+    // meter_window_interval_ms_ defaults to 15 min; cap it at diag_summary_interval_ms_ minimum
+    if (this->meter_window_interval_ms_ < this->diag_summary_interval_ms_)
+      this->meter_window_interval_ms_ = this->diag_summary_interval_ms_;
+    ESP_LOGI(TAG, "Highlight meters enabled (%u ids) tag=%s ansi=%s window=%us",
+             (unsigned) this->highlight_meter_ids_.size(),
+             this->highlight_tag_.empty() ? "wmbus_user" : this->highlight_tag_.c_str(),
+             this->highlight_ansi_ ? "true" : "false",
+             (unsigned) (this->meter_window_interval_ms_ / 1000));
   }
 
   ASSERT_SETUP(this->packet_queue_ = xQueueCreate(3, sizeof(Packet *)));
@@ -436,7 +499,9 @@ void Radio::loop() {
     this->dev_err_cleared_pending_ = false;
   }
 
-  this->maybe_publish_diag_summary_((uint32_t) esphome::millis());
+  const uint32_t loop_now_ms = (uint32_t) esphome::millis();
+  this->maybe_publish_diag_summary_(loop_now_ms);
+  this->maybe_publish_meter_windows_(loop_now_ms);
   Packet *p;
   if (xQueueReceive(this->packet_queue_, &p, 0) != pdPASS)
     return;
@@ -627,6 +692,10 @@ void Radio::loop() {
     stats.rssi_last = frame->rssi();
     stats.rssi_sum += (int32_t) frame->rssi();
     stats.rssi_n++;
+    // Windowed counters (reset each summary interval)
+    stats.count_window++;
+    stats.rssi_sum_window += (int32_t) frame->rssi();
+    stats.rssi_n_window++;
     if (stats.last_seen_ms != 0) {
       stats.last_interval_ms = now_ms - stats.last_seen_ms;
       stats.interval_sum_ms += stats.last_interval_ms;
