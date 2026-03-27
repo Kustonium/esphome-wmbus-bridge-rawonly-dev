@@ -109,7 +109,7 @@ Radio::StageBucket Radio::bucket_for_stage_(const std::string &stage) {
   if (stage == "dll_crc_final") return SB_DLL_CRC_FINAL;
   if (stage == "dll_crc_b1") return SB_DLL_CRC_B1;
   if (stage == "dll_crc_b2") return SB_DLL_CRC_B2;
-  if (stage == "link_mode") return SB_LINK_MODE;
+  if (stage == "link_mode" || stage == "listen_mode_filter") return SB_LINK_MODE;
   return SB_OTHER;
 }
 
@@ -551,20 +551,19 @@ void Radio::loop() {
 
   auto *mqtt = mqtt::global_mqtt_client;
   if (this->radio != nullptr && mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
-    char boot_payload[256];
-    snprintf(boot_payload, sizeof(boot_payload),
-             "{\"event\":\"boot\",\"radio\":\"%s\",\"listen_mode\":\"%s\",\"uptime_ms\":%lu}",
-             this->radio->get_name(),
-             listen_mode_to_string_(this->radio->get_listen_mode()),
-             (unsigned long) loop_now_ms);
+    std::string boot_payload = str_sprintf(
+        "{\"event\":\"boot\",\"radio\":\"%s\",\"listen_mode\":\"%s\",\"uptime_ms\":%lu}",
+        this->radio->get_name(),
+        listen_mode_to_string_(this->radio->get_listen_mode()),
+        (unsigned long) loop_now_ms);
 
     if (this->boot_info_mqtt_pending_) {
       std::string boot_topic = this->diag_topic_ + "/boot";
-      mqtt->publish(boot_topic, boot_payload, 0, true);
+      mqtt->publish(boot_topic, boot_payload, static_cast<uint8_t>(0), true);
       this->boot_info_mqtt_pending_ = false;
     }
     if (this->boot_info_event_pending_) {
-      mqtt->publish(this->diag_topic_, boot_payload);
+      mqtt->publish(this->diag_topic_, boot_payload, static_cast<uint8_t>(0), false);
       this->boot_info_event_pending_ = false;
     }
   }
@@ -590,6 +589,39 @@ void Radio::loop() {
   if (mode_idx < this->diag_mode_total_.size()) this->diag_mode_total_[mode_idx]++;
 
   auto frame = p->convert_to_frame();
+
+  if (frame && this->radio != nullptr) {
+    const auto want = this->radio->get_listen_mode();
+    const auto got = frame->link_mode();
+    const uint8_t got_idx = (uint8_t) got;
+
+    const bool reject =
+        (want == LISTEN_MODE_C1 && got != LinkMode::C1) ||
+        (want == LISTEN_MODE_T1 && got != LinkMode::T1);
+
+    if (reject) {
+      this->diag_dropped_++;
+      this->diag_dropped_by_bucket_[DB_OTHER]++;
+      this->diag_dropped_by_stage_[bucket_for_stage_("listen_mode_filter")]++;
+      this->diag_rssi_drop_sum_ += (int32_t) p->get_rssi();
+      this->diag_rssi_drop_n_++;
+
+      if (got_idx < this->diag_mode_dropped_.size()) {
+        this->diag_mode_dropped_[got_idx]++;
+        this->diag_mode_rssi_drop_sum_[got_idx] += (int32_t) p->get_rssi();
+        this->diag_mode_rssi_drop_n_[got_idx]++;
+      }
+
+      ESP_LOGD(TAG,
+               "Filtered frame by listen_mode: requested=%s got=%s RSSI=%ddBm",
+               (want == LISTEN_MODE_C1) ? "C1" : "T1",
+               link_mode_name(got),
+               (int) p->get_rssi());
+
+      delete p;
+      return;
+    }
+  }
 
   if (mode_idx == (uint8_t) LinkMode::T1) {
     this->diag_t1_symbols_total_ += (uint32_t) p->t1_symbols_total();
