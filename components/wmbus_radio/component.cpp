@@ -34,6 +34,18 @@ namespace esphome {
 namespace wmbus_radio {
 static const char *TAG = "wmbus";
 
+static const char *listen_mode_to_string_(ListenMode mode) {
+  switch (mode) {
+    case LISTEN_MODE_T1:
+      return "T1 only";
+    case LISTEN_MODE_C1:
+      return "C1 only";
+    case LISTEN_MODE_BOTH:
+    default:
+      return "T1+C1 (both, 3:1 bias)";
+  }
+}
+
 static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &out) {
   out.clear();
   if (csv.empty()) return;
@@ -498,6 +510,28 @@ void Radio::setup() {
       this->dev_err_cleared_pending_ = true;
     }
   }
+
+  // Delayed one-shot boot log: visible also via OTA/API logs, not only over serial.
+  this->set_timeout("radio_boot_log", 2000, [this]() {
+    if (this->radio == nullptr)
+      return;
+
+    ESP_LOGI(TAG, "Radio active: %s | Listen mode: %s",
+             this->radio->get_name(),
+             listen_mode_to_string_(this->radio->get_listen_mode()));
+  });
+}
+
+void Radio::dump_config() {
+  ESP_LOGCONFIG(TAG, "wM-Bus Radio:");
+  if (this->radio == nullptr) {
+    ESP_LOGCONFIG(TAG, "  Radio: <null>");
+    return;
+  }
+
+  ESP_LOGCONFIG(TAG, "  Radio type: %s", this->radio->get_name());
+  ESP_LOGCONFIG(TAG, "  Listen mode: %s",
+                listen_mode_to_string_(this->radio->get_listen_mode()));
 }
 
 void Radio::loop() {

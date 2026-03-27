@@ -51,6 +51,7 @@ public:
   }
 
   void setup() override;
+  void dump_config() override;
   void loop() override;
   void receive_frame();
 
