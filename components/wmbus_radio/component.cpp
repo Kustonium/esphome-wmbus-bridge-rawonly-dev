@@ -631,6 +631,14 @@ void Radio::loop() {
   }
 
   this->diag_ok_++;
+  if (!this->listen_mode_logged_) {
+    const char *lm =
+        (this->radio->get_listen_mode() == LISTEN_MODE_T1) ? "T1 only" :
+        (this->radio->get_listen_mode() == LISTEN_MODE_C1) ? "C1 only" :
+        "T1+C1 (both, 3:1 bias)";
+    ESP_LOGI(TAG, "Listen mode: %s", lm);
+    this->listen_mode_logged_ = true;
+  }
   this->diag_rssi_ok_sum_ += (int32_t) frame->rssi();
   this->diag_rssi_ok_n_++;
   if (mode_idx < this->diag_mode_ok_.size()) {
