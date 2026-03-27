@@ -37,6 +37,7 @@ public:
   void set_irq_pin(InternalGPIOPin *irq_pin);
   void set_busy_pin(InternalGPIOPin *busy_pin);
   void set_listen_mode(ListenMode mode) { this->listen_mode_ = mode; }
+  ListenMode get_listen_mode() const { return this->listen_mode_; }
 
 protected:
   InternalGPIOPin *reset_pin_;
