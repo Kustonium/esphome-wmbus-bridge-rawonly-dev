@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
 #include <functional>
 #include <string>
@@ -64,6 +65,19 @@ protected:
   QueueHandle_t packet_queue_{nullptr};
 
   std::vector<std::function<void(Frame *)>> handlers_;
+
+  // Per-meter reception statistics (only tracked for highlight_meters IDs)
+  struct MeterStats {
+    uint32_t last_seen_ms{0};      // millis() when last packet was received
+    uint32_t last_interval_ms{0};  // elapsed ms since previous packet (0 = first seen)
+    uint32_t interval_sum_ms{0};   // cumulative sum for average interval
+    uint32_t interval_n{0};        // number of intervals recorded
+    uint32_t count{0};             // total packets received
+    int32_t  rssi_last{0};         // RSSI of the last packet
+    int32_t  rssi_sum{0};          // cumulative RSSI sum
+    uint32_t rssi_n{0};            // number of RSSI samples
+  };
+  std::unordered_map<uint32_t, MeterStats> highlight_meter_stats_{};
 
   // Highlight configuration
   std::string highlight_meters_csv_{};
