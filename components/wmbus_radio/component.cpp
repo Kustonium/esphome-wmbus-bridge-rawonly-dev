@@ -511,15 +511,11 @@ void Radio::setup() {
     }
   }
 
-  // Delayed one-shot boot log: visible also via OTA/API logs, not only over serial.
-  this->set_timeout("radio_boot_log", 2000, [this]() {
-    if (this->radio == nullptr)
-      return;
-
-    ESP_LOGI(TAG, "Radio active: %s | Listen mode: %s",
-             this->radio->get_name(),
-             listen_mode_to_string_(this->radio->get_listen_mode()));
-  });
+  this->boot_log_done_ = false;
+  this->boot_log_last_ms_ = (uint32_t) esphome::millis();
+  this->boot_log_count_ = 0;
+  this->boot_info_mqtt_pending_ = true;
+  this->boot_info_event_pending_ = true;
 }
 
 void Radio::dump_config() {
@@ -532,20 +528,57 @@ void Radio::dump_config() {
   ESP_LOGCONFIG(TAG, "  Radio type: %s", this->radio->get_name());
   ESP_LOGCONFIG(TAG, "  Listen mode: %s",
                 listen_mode_to_string_(this->radio->get_listen_mode()));
+  if (!this->diag_topic_.empty()) {
+    ESP_LOGCONFIG(TAG, "  MQTT boot topic: %s/boot", this->diag_topic_.c_str());
+  }
 }
 
 void Radio::loop() {
-  if (this->dev_err_cleared_pending_ && mqtt::global_mqtt_client != nullptr && !this->diag_topic_.empty()) {
+  const uint32_t loop_now_ms = (uint32_t) esphome::millis();
+
+  if (!this->boot_log_done_ && this->radio != nullptr) {
+    if (loop_now_ms - this->boot_log_last_ms_ >= 5000) {
+      ESP_LOGI(TAG, "Radio active: %s | Listen mode: %s",
+               this->radio->get_name(),
+               listen_mode_to_string_(this->radio->get_listen_mode()));
+      this->boot_log_last_ms_ = loop_now_ms;
+      this->boot_log_count_++;
+      if (this->boot_log_count_ >= 3) {
+        this->boot_log_done_ = true;
+      }
+    }
+  }
+
+  auto *mqtt = mqtt::global_mqtt_client;
+  if (this->radio != nullptr && mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
+    char boot_payload[256];
+    snprintf(boot_payload, sizeof(boot_payload),
+             "{\"event\":\"boot\",\"radio\":\"%s\",\"listen_mode\":\"%s\",\"uptime_ms\":%lu}",
+             this->radio->get_name(),
+             listen_mode_to_string_(this->radio->get_listen_mode()),
+             (unsigned long) loop_now_ms);
+
+    if (this->boot_info_mqtt_pending_) {
+      std::string boot_topic = this->diag_topic_ + "/boot";
+      mqtt->publish(boot_topic, boot_payload, 0, true);
+      this->boot_info_mqtt_pending_ = false;
+    }
+    if (this->boot_info_event_pending_) {
+      mqtt->publish(this->diag_topic_, boot_payload);
+      this->boot_info_event_pending_ = false;
+    }
+  }
+
+  if (this->dev_err_cleared_pending_ && mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
     char payload[180];
     snprintf(payload, sizeof(payload),
              "{\"event\":\"dev_err_cleared\",\"before\":%u,\"before_hex\":\"%04X\",\"after\":%u,\"after_hex\":\"%04X\"}",
              (unsigned) this->dev_err_before_, (unsigned) this->dev_err_before_,
              (unsigned) this->dev_err_after_, (unsigned) this->dev_err_after_);
-    mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
+    mqtt->publish(this->diag_topic_, payload);
     this->dev_err_cleared_pending_ = false;
   }
 
-  const uint32_t loop_now_ms = (uint32_t) esphome::millis();
   this->maybe_publish_diag_summary_(loop_now_ms);
   this->maybe_publish_meter_windows_(loop_now_ms);
   Packet *p;

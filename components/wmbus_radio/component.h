@@ -97,6 +97,15 @@ protected:
   uint16_t dev_err_before_{0};
   uint16_t dev_err_after_{0};
 
+  // Boot-time listen mode logging/publication. Repeated a few times so API log
+  // viewers connecting late after OTA still catch it. MQTT publication is sent
+  // once as retained state and once as a normal event when broker is available.
+  bool boot_log_done_{false};
+  uint32_t boot_log_last_ms_{0};
+  uint8_t boot_log_count_{0};
+  bool boot_info_mqtt_pending_{true};
+  bool boot_info_event_pending_{true};
+
 
   // Diagnostics counters (published periodically if diagnostic_topic is set)
   uint32_t diag_summary_interval_ms_{60000};
