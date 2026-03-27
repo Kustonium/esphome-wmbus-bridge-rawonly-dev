@@ -101,7 +101,6 @@ protected:
   uint32_t diag_summary_interval_ms_{60000};
 
   // When false, only the periodic summary is published to MQTT (still counts internally)
-  bool listen_mode_logged_{false};  // one-shot log after first OK packet
   bool diag_verbose_{true};
   // When false, per-packet payloads/logs omit the raw hex (much less spam)
   bool diag_publish_raw_{true};
