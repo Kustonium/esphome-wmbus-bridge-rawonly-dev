@@ -551,19 +551,20 @@ void Radio::loop() {
 
   auto *mqtt = mqtt::global_mqtt_client;
   if (this->radio != nullptr && mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
-    std::string boot_payload = str_sprintf(
-        "{\"event\":\"boot\",\"radio\":\"%s\",\"listen_mode\":\"%s\",\"uptime_ms\":%lu}",
-        this->radio->get_name(),
-        listen_mode_to_string_(this->radio->get_listen_mode()),
-        (unsigned long) loop_now_ms);
+    char boot_payload[256];
+    snprintf(boot_payload, sizeof(boot_payload),
+             "{\"event\":\"boot\",\"radio\":\"%s\",\"listen_mode\":\"%s\",\"uptime_ms\":%lu}",
+             this->radio->get_name(),
+             listen_mode_to_string_(this->radio->get_listen_mode()),
+             (unsigned long) loop_now_ms);
 
     if (this->boot_info_mqtt_pending_) {
       std::string boot_topic = this->diag_topic_ + "/boot";
-      mqtt->publish(boot_topic, boot_payload, static_cast<uint8_t>(0), true);
+      mqtt->publish(boot_topic, boot_payload, 0, true);
       this->boot_info_mqtt_pending_ = false;
     }
     if (this->boot_info_event_pending_) {
-      mqtt->publish(this->diag_topic_, boot_payload, static_cast<uint8_t>(0), false);
+      mqtt->publish(this->diag_topic_, boot_payload);
       this->boot_info_event_pending_ = false;
     }
   }
