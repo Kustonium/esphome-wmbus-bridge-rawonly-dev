@@ -1,252 +1,185 @@
-# wmbus_radio troubleshooting — EN
+# TROUBLESHOOTING.md
 
 [Polska wersja](TROUBLESHOOTING_PL.md)
 
+Symptom-based troubleshooting for `wmbus_radio`.
+
 ## Golden rule
 
-Do not judge reception only by global `summary` and `drop_pct`.
-
-Recommended order:
+Read diagnostics in this order:
 
 1. `boot`
 2. `summary`
-3. `summary_15min`
-4. `meter_snapshot`
-5. `meter_window`
-6. `dropped` / `truncated`
-7. `rx_path`
-8. `suggestion`
-9. `busy_ether_changed` — SX1276 only
+3. `meter_window`
+4. `dropped` / `truncated`
+5. `rx_path`
+6. `suggestion`
+7. `busy_ether_changed`
 
-If you skip `meter_snapshot`, you can fool yourself. Global `summary` describes the whole RF environment, not only your meters.
+If you skip `meter_window`, you can fool yourself. If you skip `suggestion` and `busy_ether_changed`, you can also miss what the repo is already telling you about why SX1276 changed behaviour.
 
-## Recommended minimal diagnostic YAML
+## 1. `summary` looks good, but the meter is still missing packets
 
-```yaml
-wmbus_radio:
-  topic_name: "${devicename}"
-  listen_mode: t1
+Most likely causes:
 
-  highlight_meters:
-    - "00089907"
-    - "03534159"
-    - "03528221"
+- `SX1276` is dropping bad starts before decode,
+- busy RF environment,
+- `both` scheduling overhead,
+- the meter is fast enough that misses are visible only in per-meter statistics.
 
-  diagnostic_mode: "normal"
-```
+What to check:
 
-This automatically publishes:
-
-```text
-wmbus/<topic_name>/diag/summary
-wmbus/<topic_name>/diag/summary_15min
-wmbus/<topic_name>/diag/meter_snapshot
-```
-
-You no longer need the old explicit:
-
-```yaml
-diagnostic_publish_summary_highlight_meters: true
-```
-
-Old options still work, but are treated as deprecated.
-
-## MQTT topics
-
-Recommended:
-
-```yaml
-topic_name: "xiao_s3"
-```
-
-Do not include `wmbus/`.
-
-The component generates:
-
-```text
-wmbus/xiao_s3/telegram
-wmbus/xiao_s3/diag
-wmbus/xiao_s3/diag/summary
-wmbus/xiao_s3/diag/meter_snapshot
-```
-
-If `topic_name` is omitted, the component uses `esphome.name`.
-
-`friendly_name` is intentionally not used for topics because it may contain spaces, uppercase letters or national characters.
-
-Legacy manual options:
-
-```yaml
-telegram_topic: "..."
-diagnostic_topic: "..."
-```
-
-still work, but are legacy/manual overrides and log bilingual EN/PL warnings.
-
-## Diagnostic modes
-
-```yaml
-diagnostic_mode: "off"
-diagnostic_mode: "low"
-diagnostic_mode: "normal"
-diagnostic_mode: "debug"
-diagnostic_mode: "dev"
-```
-
-Meaning:
-
-- `off` — MQTT diagnostics disabled.
-- `low` — global summary + hint.
-- `normal` — summary + 15-minute summary + `meter_snapshot` for `highlight_meters`.
-- `debug` — `normal` plus drop/RX-path events.
-- `dev` — full developer diagnostics, including raw/debug payloads.
-
-Compatibility aliases:
-
-- `medium` -> `normal`
-- `full` -> `dev`
-- `raw` -> `dev`
-
-## `diagnostic_publish_highlight_only`
-
-This name was misleading.
-
-Old:
-
-```yaml
-diagnostic_publish_highlight_only: true
-```
-
-did not enable meter statistics. It only filtered detailed diagnostic events to `highlight_meters`.
-
-New name:
-
-```yaml
-diagnostic_events_highlight_only: true
-```
-
-The old option remains as a deprecated alias.
-
-## Meter statistics
-
-Recommended:
-
-```yaml
-diagnostic_mode: "normal"
-highlight_meters:
-  - "00089907"
-```
-
-Optional explicit override:
-
-```yaml
-diagnostic_meter_stats: "off"
-diagnostic_meter_stats: "highlighted"
-diagnostic_meter_stats: "all"
-```
-
-`all` is intended for dev/testing because it may increase RAM usage and MQTT/log traffic.
-
-## `listen_mode_filter_after_parse`
-
-Default:
-
-```yaml
-listen_mode_filter_after_parse: false
-```
-
-This is the conservative/stable mode. Recommended when meters are nearby and reception is already good.
-
-Experimental:
-
-```yaml
-listen_mode_filter_after_parse: true
-```
-
-This mode may help with meters farther away, behind walls, or with partially lost frames.
-
-It can increase the number of valid frames, but usually also increases:
-
-- `false_start_like`
-- `payload_size_unknown`
-- `t1_decode3of6` drops
-
-Compare using `meter_snapshot` and real meter statistics, not global `drop_pct` alone.
-
-## `busy_ether_state`
-
-`busy_ether_state` is SX1276-only.
-
-Correct behavior:
-
-```text
-SX1276 -> adaptive_active / adaptive_passive / aggressive / normal
-SX1262 -> n/a
-CC1101 -> n/a
-```
-
-If SX1262 or CC1101 shows `adaptive_passive`, that is a diagnostic bug.
-
-## `summary` looks good, but a meter still misses packets
-
-Common reasons:
-
-- losses happen before final decode,
-- dense RF environment,
-- meter transmits rarely,
-- `both` mode adds reception cost,
-- you are looking at global `summary`, not the specific meter.
-
-Check:
-
-- `meter_snapshot.count_window`
-- `meter_snapshot.win_avg_interval_s`
+- `meter_window.win_avg_interval_s`
 - `meter_window.count_window`
-- whether the meter interval matches expectations.
+- `summary.total` vs your expected meter interval
+- whether you are using `listen_mode: both`
 
-## Higher `drop_pct`, but better meter reception
+Practical conclusion:
 
-This can be normal in the more aggressive mode.
+A clean `summary` does **not** prove good real reception. Trust `meter_window` first.
+
+## 2. `drop_pct` is low, but real results are bad
+
+Most likely on `SX1276` with `adaptive`.
+
+What it usually means:
+
+- losses happen before decode,
+- rejected starts never entered `summary.total`,
+- the radio is cleaner on paper than in reality.
+
+What to do:
+
+- look at `meter_window`,
+- compare with `listen_mode: t1` instead of `both`,
+- keep `sx1276_busy_ether_mode: adaptive` unless you have evidence the environment is calm.
+
+## 3. `meter_window.win_avg_interval_s` is much larger than expected
+
+This is one of the strongest signs of real packet loss.
 
 Example:
 
-- conservative mode sees fewer candidates and has low `drop_pct`,
-- aggressive mode sees more candidates,
-- some fail as drops,
-- but specific meters have a higher `count_window`.
+- meter should transmit every `30 s`,
+- `win_avg_interval_s` is around `90 s`.
 
-Conclusion: `drop_pct` is not the only metric. Use `meter_snapshot`.
+That means you are receiving only about one third of expected packets.
 
-## `both` works, but T1 got worse
+Most likely causes:
 
-This is expected in many real environments.
+- frequent collisions,
+- busy RF,
+- `both` overhead,
+- `SX1276` limit under time pressure.
 
-`both` does not mean two parallel receivers. It is a compromise. It can hurt especially on SX1276.
+## 4. Many `false_start_like`, `probe_start_aborted`, or `preamble_read_failed`
 
-Recommendation:
+Most likely causes:
 
-- start with `listen_mode: t1`,
-- use `c1` only if you know the meter transmits C1,
-- use `both` deliberately,
-- for stable mixed-mode, two dedicated devices are better.
+- busy ether,
+- weak overlapping traffic,
+- distant meters,
+- apartment-block noise,
+- `SX1276` working close to its practical limit.
 
-## CC1101
+What to do:
 
-CC1101 is still experimental.
+- on `SX1276`, start with `adaptive`,
+- avoid `both` unless necessary,
+- focus on `meter_window` for highlighted meters,
+- compare day vs night.
 
-There are no public CC1101 YAML examples in the repository, even if the code is present in `main`.
+## 5. High `dll_crc_failed` with decent RSSI
 
-Explicit opt-in is required:
+This usually points to:
+
+- overload,
+- multipath,
+- local interference,
+- not simply “weak signal”.
+
+What to check:
+
+- `summary.avg_ok_rssi`
+- `summary.avg_drop_rssi`
+- `dropped.stage`
+- antenna placement and local RF noise sources
+
+## 6. `truncated` is high
+
+This usually means the frame tail is not being read cleanly.
+
+Possible causes:
+
+- collisions near frame end,
+- FIFO / RX pressure,
+- weak signal tail,
+- heavy time pressure in a busy environment.
+
+What to check:
+
+- `truncated` events with `want`, `got`, `raw_got`,
+- whether the issue is specific to one large/frequent meter,
+- whether the issue worsens during the day.
+
+## 7. `both` works, but T1 got much worse
+
+That is expected in many real environments.
+
+Why:
+
+- `both` adds switching overhead even when actual C1 traffic is low,
+- the cost is especially painful on `SX1276`.
+
+What to do:
+
+- first compare with `listen_mode: t1`,
+- if you need reliable mixed mode, use two devices,
+- on one device, prefer `SX1262` over `SX1276`.
+
+## 8. Which `sx1276_busy_ether_mode` should I use?
+
+Start here:
 
 ```yaml
-cc1101_allow_experimental: true
+sx1276_busy_ether_mode: adaptive
 ```
 
-CC1101 requires separate pins:
+Stay on `adaptive` if:
+
+- you live in an apartment block,
+- you see many false starts,
+- `meter_window` is worse than `summary` suggests,
+- you do not yet know how calm the environment is.
+
+Try `normal` only if:
+
+- you have few meters,
+- the RF environment is calm,
+- `meter_window` already looks stable.
+
+Treat `aggressive` as a deliberate test setting, not a default.
+
+## 9. I need a sane diagnostic profile
+
+Typical safe profile:
 
 ```yaml
-gdo0_pin:
-gdo2_pin:
+listen_mode: t1
+diagnostic_mode: normal
+highlight_meters:
+  - "12345678"
+
+# Optional, only if you need detailed events limited to highlight_meters:
+# diagnostic_events_highlight_only: true
+
+# SX1276 only:
+sx1276_busy_ether_mode: adaptive
 ```
 
-Do not use `irq_pin` for CC1101.
+## 10. The shortest decision path
+
+- use `SX1262` if reliability matters,
+- use `SX1276` only when the environment is easier or the traffic is slower,
+- do not trust `summary` alone,
+- for mixed T1/C1 environments, two dedicated devices beat one `both` setup.

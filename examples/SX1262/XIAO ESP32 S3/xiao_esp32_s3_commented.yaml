@@ -6,6 +6,9 @@ substitutions:
   devicename: xiao-seed-esp-s3
   friendly_name: "wMBus Bridge XIAO ESP32-S3"
 
+  # EN: Keep topics derived from one device name to avoid copy/paste mistakes.
+  # PL: Topic wyprowadzamy z jednej nazwy urządzenia, żeby uniknąć błędów copy/paste.
+
 esphome:
   name: ${devicename}
   friendly_name: ${friendly_name}
@@ -104,12 +107,18 @@ wmbus_radio:
   # PL: Stabilny domyślny tryb. true testuj tylko A/B przez meter_snapshot.
   listen_mode_filter_after_parse: false
 
-  # EN: Safe MQTT topic base. Do not include "wmbus/".
-  # The component publishes to wmbus/${devicename}/telegram and wmbus/${devicename}/diag/...
-  # PL: Bezpieczna baza topiców MQTT. Nie wpisuj "wmbus/".
-  # Komponent publikuje do wmbus/${devicename}/telegram oraz wmbus/${devicename}/diag/...
-  topic_name: "${devicename}"
+  # MQTT topics are generated automatically.
+  # topic_name is optional; if omitted, esphome.name is used.
+  # Generated topics:
+  #   wmbus/<topic_name>/telegram
+  #   wmbus/<topic_name>/diag/...
+  # topic_name: "${devicename}"
 
+  # EN: Main validated telegram stream for the HA add-on / wmbusmeters.
+  # PL: Główny strumień zweryfikowanych telegramów dla dodatku HA / wmbusmeters.
+
+  # EN: Lightweight diagnostics. Use explicit topic to keep devices separated.
+  # PL: Lekka diagnostyka. Jawny topic rozdziela urządzenia.
   diagnostic_mode: normal
   diagnostic_summary_interval: 60s
 
@@ -122,14 +131,12 @@ wmbus_radio:
   # highlight_tag: "wmbus_user"
   # highlight_prefix: "★ "
   # highlight_ansi: true
-  # diagnostic_mode: normal already enables 15-minute summary and highlighted meter snapshots.
-  # diagnostic_meter_stats: highlighted  # optional explicit override; normal preset already does this
+  # diagnostic_publish_summary_15min: true
 
   # EN: This only filters detailed diagnostic events to highlighted IDs.
   # It does NOT enable meter statistics by itself.
   # PL: To tylko filtruje szczegółowe eventy diagnostyczne do highlightów.
   # Samo w sobie NIE włącza statystyk liczników.
-  # diagnostic_events_highlight_only: true
 
   # EN: Increase only if logs show receiver task stack problems.
   # PL: Zwiększaj tylko, gdy logi pokazują problem ze stosem taska odbiornika.

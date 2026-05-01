@@ -676,11 +676,6 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   const uint32_t t1_sym_invalid = this->diag_t1_symbols_invalid_;
   const uint32_t t1_sym_invalid_pct = (t1_sym_total == 0) ? 0 : (t1_sym_invalid * 100U) / t1_sym_total;
   const bool is_sx1276 = (this->radio != nullptr && strcmp(this->radio->get_name(), "SX1276") == 0);
-  const char *busy_ether_state =
-      !is_sx1276 ? "n/a" :
-      (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::ADAPTIVE)
-          ? (this->busy_ether_was_active_ ? "adaptive_active" : "adaptive_passive")
-          : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE ? "aggressive" : "normal");
   const int32_t ok_vs_drop_rssi_gap =
       (this->diag_rssi_ok_n_ == 0 || this->diag_rssi_drop_n_ == 0) ? 0 : (avg_ok_rssi - avg_drop_rssi);
   const uint32_t rx_false_start_like =
@@ -936,11 +931,13 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
            hint_code,
            hint_en,
            hint_pl,
-           // busy_ether_state: SX1276-only. Non-SX1276 radios report n/a.
-           // For SX1276 adaptive, this reflects state BEFORE evaluating this window.
+           // busy_ether_state: reflects state BEFORE evaluating this window.
            // evaluate_busy_ether_adaptive_() runs after publish to access full window counters.
            // Use busy_ether_changed event for precise transition timestamps.
-           busy_ether_state);
+           !is_sx1276 ? "n/a"
+               : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::ADAPTIVE)
+                   ? (this->busy_ether_was_active_ ? "adaptive_active" : "adaptive_passive")
+                   : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE ? "aggressive" : "normal"));
 
   const std::string summary_topic = this->diag_summary_topic_();
   mqtt->publish(summary_topic, payload);
@@ -1935,9 +1932,8 @@ void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
 
 void Radio::setup() {
   for (const auto &warning : this->config_warnings_) {
-    ESP_LOGW(TAG, "%s", warning.c_str());
+    ESP_LOGW(TAG, "Config warning / ostrzezenie konfiguracji: %s", warning.c_str());
   }
-
   // Parse optional highlight meter list (CSV provided by python/YAML).
   parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_);
   if (!this->target_meter_id_str_.empty()) {
@@ -1962,11 +1958,6 @@ void Radio::setup() {
 
   if (this->publish_radio_raw_) {
     ESP_LOGI(TAG, "Internal radio RAW tap enabled / wlaczono wewnetrzny RAW tap: wmbus_bridge/raw");
-  }
-
-  if (this->diag_meter_stats_all_) {
-    ESP_LOGW(TAG,
-             "diagnostic_meter_stats=all enabled / wlaczono diagnostic_meter_stats=all: tracking all seen meters may increase RAM and MQTT/log traffic");
   }
 
   if (!this->highlight_meter_ids_.empty()) {
@@ -2030,13 +2021,13 @@ void Radio::dump_config() {
   ESP_LOGCONFIG(TAG, "  Listen mode filter: %s",
                 this->listen_mode_filter_after_parse_ ? "after parse (experimental)" : "before parse (legacy)");
   ESP_LOGCONFIG(TAG, "  Receiver task stack: %u bytes", (unsigned) this->receiver_task_stack_size_);
+  const char *busy_mode = (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::NORMAL) ? "normal"
+                           : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE) ? "aggressive"
+                           : "adaptive";
   if (std::strcmp(this->radio->get_name(), "SX1276") == 0) {
-    const char *busy_mode = (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::NORMAL) ? "normal"
-                             : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE) ? "aggressive"
-                             : "adaptive";
     ESP_LOGCONFIG(TAG, "  SX1276 busy ether mode: %s", busy_mode);
   } else {
-    ESP_LOGCONFIG(TAG, "  SX1276 busy ether mode: n/a");
+    ESP_LOGCONFIG(TAG, "  Busy ether mode: n/a (SX1276 only)");
   }
   if (!this->diag_topic_.empty()) {
     ESP_LOGCONFIG(TAG, "  Diagnostics MQTT topic: %s", this->diag_topic_.c_str());
@@ -2055,9 +2046,6 @@ void Radio::loop() {
 if (!this->boot_log_done_ && this->radio != nullptr) {
   if (loop_now_ms - this->boot_log_last_ms_ >= 5000) {
     const char *radio_name = this->radio->get_name();
-
-    const char *rf_params = this->radio->get_rf_params_str();
-    const bool has_rf_params = (rf_params != nullptr && rf_params[0] != '\0');
 
     if (strcmp(radio_name, "SX1276") == 0) {
       const char *busy_mode = "unknown";
@@ -2079,37 +2067,21 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
           break;
       }
 
-      if (has_rf_params) {
-        ESP_LOGI(TAG,
-                 "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s | busy_ether=%s | state=%s",
-                 radio_name,
-                 listen_mode_to_string_(this->radio->get_listen_mode()),
-                 (unsigned) this->receiver_task_stack_size_,
-                 rf_params,
-                 busy_mode,
-                 busy_state);
-      } else {
-        ESP_LOGI(TAG,
-                 "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | busy_ether=%s | state=%s",
-                 radio_name,
-                 listen_mode_to_string_(this->radio->get_listen_mode()),
-                 (unsigned) this->receiver_task_stack_size_,
-                 busy_mode,
-                 busy_state);
-      }
-    } else if (has_rf_params) {
+      ESP_LOGI(TAG,
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | busy_ether=%s | state=%s | RF: %s",
+               radio_name,
+               listen_mode_to_string_(this->radio->get_listen_mode()),
+               (unsigned) this->receiver_task_stack_size_,
+               busy_mode,
+               busy_state,
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
+    } else {
       ESP_LOGI(TAG,
                "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s",
                radio_name,
                listen_mode_to_string_(this->radio->get_listen_mode()),
                (unsigned) this->receiver_task_stack_size_,
-               rf_params);
-    } else {
-      ESP_LOGI(TAG,
-               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes",
-               radio_name,
-               listen_mode_to_string_(this->radio->get_listen_mode()),
-               (unsigned) this->receiver_task_stack_size_);
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
     }
 
     this->boot_log_last_ms_ = loop_now_ms;
@@ -2449,10 +2421,8 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     highlight = std::binary_search(this->highlight_meter_ids_.begin(), this->highlight_meter_ids_.end(), id_val);
   }
 
-  // Update per-meter statistics for highlighted meters, or for all seen meters
-  // when diagnostic_meter_stats: all is explicitly enabled.
-  const bool track_meter_stats = highlight || this->diag_meter_stats_all_;
-  if (track_meter_stats && id_val != 0) {
+  // Update per-meter statistics for highlighted meters, or for all meters in diagnostic_meter_stats: all.
+  if (id_val != 0 && (highlight || this->diag_meter_stats_all_)) {
     uint32_t now_ms = (uint32_t) esphome::millis();
     // Composite key keeps T1 and C1 streams separate for dual-mode meters.
     const uint64_t stats_key = ((uint64_t) id_val << 8) | (uint8_t) frame->link_mode();
@@ -2494,8 +2464,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     stats.last_seen_ms = now_ms;
 
     // Count-based trigger: publish when the dedicated count-window reaches threshold.
-    if (highlight &&
-        this->diag_publish_summary_highlight_meters_ &&
+    if (this->diag_publish_summary_highlight_meters_ &&
         this->meter_window_count_threshold_ > 0 &&
         stats.count_window_count >= this->meter_window_count_threshold_) {
       const uint32_t elapsed_s = (stats.count_window_started_ms > 0)

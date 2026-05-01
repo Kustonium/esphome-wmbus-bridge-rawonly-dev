@@ -1,252 +1,185 @@
-# Diagnostyka wmbus_radio — PL
+# TROUBLESHOOTING_PL.md
 
 [English version](TROUBLESHOOTING.md)
 
+Diagnostyka po objawach dla `wmbus_radio`.
+
 ## Złota zasada
 
-Nie oceniaj odbioru wyłącznie po globalnym `summary` i `drop_pct`.
-
-Najważniejsza kolejność:
+Czytaj diagnostykę w tej kolejności:
 
 1. `boot`
 2. `summary`
-3. `summary_15min`
-4. `meter_snapshot`
-5. `meter_window`
-6. `dropped` / `truncated`
-7. `rx_path`
-8. `suggestion`
-9. `busy_ether_changed` — tylko SX1276
+3. `meter_window`
+4. `dropped` / `truncated`
+5. `rx_path`
+6. `suggestion`
+7. `busy_ether_changed`
 
-Jeśli pominiesz `meter_snapshot`, możesz dojść do złego wniosku. Globalny `summary` pokazuje cały eter, a nie tylko Twoje liczniki.
+Jeśli pominiesz `meter_window`, łatwo oszukasz samego siebie. Jeśli pominiesz `suggestion` i `busy_ether_changed`, łatwo też przegapisz to, co repo już samo mówi o przyczynie zmiany zachowania SX1276.
 
-## Zalecany minimalny YAML diagnostyczny
+## 1. `summary` wygląda dobrze, ale licznik nadal gubi pakiety
 
-```yaml
-wmbus_radio:
-  topic_name: "${devicename}"
-  listen_mode: t1
+Najbardziej prawdopodobne przyczyny:
 
-  highlight_meters:
-    - "00089907"
-    - "03534159"
-    - "03528221"
+- `SX1276` odcina złe starty jeszcze przed decode,
+- gęste środowisko RF,
+- overhead trybu `both`,
+- licznik jest na tyle szybki, że straty widać dopiero w statystykach per licznik.
 
-  diagnostic_mode: "normal"
-```
+Co sprawdzić:
 
-To automatycznie daje:
-
-```text
-wmbus/<topic_name>/diag/summary
-wmbus/<topic_name>/diag/summary_15min
-wmbus/<topic_name>/diag/meter_snapshot
-```
-
-Nie musisz już ręcznie dopisywać starego:
-
-```yaml
-diagnostic_publish_summary_highlight_meters: true
-```
-
-Stare opcje nadal działają, ale są traktowane jako deprecated.
-
-## Topic MQTT
-
-Zalecane:
-
-```yaml
-topic_name: "xiao_s3"
-```
-
-Nie wpisuj `wmbus/`.
-
-Komponent sam wygeneruje:
-
-```text
-wmbus/xiao_s3/telegram
-wmbus/xiao_s3/diag
-wmbus/xiao_s3/diag/summary
-wmbus/xiao_s3/diag/meter_snapshot
-```
-
-Jeśli `topic_name` nie jest podany, komponent użyje `esphome.name`.
-
-Nie używamy `friendly_name` jako domyślnej nazwy topicu, bo może mieć spacje, wielkie litery albo polskie znaki.
-
-Stare ręczne opcje:
-
-```yaml
-telegram_topic: "..."
-diagnostic_topic: "..."
-```
-
-nadal działają, ale są legacy/manual override i generują warning EN/PL.
-
-## Tryby diagnostyki
-
-```yaml
-diagnostic_mode: "off"
-diagnostic_mode: "low"
-diagnostic_mode: "normal"
-diagnostic_mode: "debug"
-diagnostic_mode: "dev"
-```
-
-Znaczenie:
-
-- `off` — diagnostyka MQTT wyłączona.
-- `low` — globalne summary + hint.
-- `normal` — summary + summary 15-minutowe + `meter_snapshot` dla `highlight_meters`.
-- `debug` — `normal` plus eventy drop/RX-path.
-- `dev` — pełna diagnostyka developerska, także raw/debug payloady.
-
-Aliasy kompatybilności:
-
-- `medium` -> `normal`
-- `full` -> `dev`
-- `raw` -> `dev`
-
-## `diagnostic_publish_highlight_only`
-
-Ta nazwa była myląca.
-
-Stare:
-
-```yaml
-diagnostic_publish_highlight_only: true
-```
-
-nie włączało statystyk liczników. Ono tylko filtrowało szczegółowe eventy diagnostyczne do `highlight_meters`.
-
-Nowa nazwa:
-
-```yaml
-diagnostic_events_highlight_only: true
-```
-
-Stara opcja nadal działa jako alias deprecated.
-
-## Statystyki liczników
-
-Zalecane:
-
-```yaml
-diagnostic_mode: "normal"
-highlight_meters:
-  - "00089907"
-```
-
-Opcjonalny jawny override:
-
-```yaml
-diagnostic_meter_stats: "off"
-diagnostic_meter_stats: "highlighted"
-diagnostic_meter_stats: "all"
-```
-
-`all` jest dla testów/dev, bo może zwiększyć zużycie RAM oraz ilość logów/MQTT.
-
-## `listen_mode_filter_after_parse`
-
-Domyślnie:
-
-```yaml
-listen_mode_filter_after_parse: false
-```
-
-To tryb konserwatywny/stabilny. Zalecany, gdy liczniki są blisko i odbiór jest już dobry.
-
-Eksperymentalnie:
-
-```yaml
-listen_mode_filter_after_parse: true
-```
-
-Ten tryb może pomóc przy licznikach dalej od odbiornika, za ścianami albo z częściowo traconymi ramkami.
-
-Może zwiększyć liczbę poprawnych odczytów, ale zwykle zwiększa też:
-
-- `false_start_like`
-- `payload_size_unknown`
-- dropy `t1_decode3of6`
-
-Porównuj po `meter_snapshot` i statystykach konkretnych liczników, nie po samym globalnym `drop_pct`.
-
-## `busy_ether_state`
-
-`busy_ether_state` dotyczy tylko SX1276.
-
-Prawidłowo:
-
-```text
-SX1276 -> adaptive_active / adaptive_passive / aggressive / normal
-SX1262 -> n/a
-CC1101 -> n/a
-```
-
-Jeśli SX1262 albo CC1101 pokazuje `adaptive_passive`, to jest błąd diagnostyki.
-
-## `summary` wygląda dobrze, ale licznik nadal gubi pakiety
-
-Najczęstsze przyczyny:
-
-- straty dzieją się przed finalnym decode,
-- eter jest gęsty,
-- licznik nadaje rzadko,
-- tryb `both` dokłada koszt odbioru,
-- patrzysz na globalny `summary`, a nie na konkretny licznik.
-
-Sprawdź:
-
-- `meter_snapshot.count_window`
-- `meter_snapshot.win_avg_interval_s`
+- `meter_window.win_avg_interval_s`
 - `meter_window.count_window`
-- czy licznik ma spodziewany interwał.
+- `summary.total` względem oczekiwanego interwału licznika
+- czy używasz `listen_mode: both`
 
-## `drop_pct` jest wyższy, ale licznik działa lepiej
+Wniosek praktyczny:
 
-To może być normalne przy trybie bardziej agresywnym.
+Czyste `summary` **nie** dowodzi dobrego realnego odbioru. Najpierw ufaj `meter_window`.
+
+## 2. `drop_pct` jest niski, ale realne wyniki są słabe
+
+Najczęściej dotyczy `SX1276` z `adaptive`.
+
+Co to zwykle oznacza:
+
+- straty dzieją się przed decode,
+- odrzucone starty nie trafiają do `summary.total`,
+- radio wygląda czyściej na papierze niż w rzeczywistości.
+
+Co zrobić:
+
+- patrz na `meter_window`,
+- porównaj z `listen_mode: t1` zamiast `both`,
+- zostaw `sx1276_busy_ether_mode: adaptive`, chyba że masz dowód, że eter jest spokojny.
+
+## 3. `meter_window.win_avg_interval_s` jest dużo większe niż powinno
+
+To jeden z najmocniejszych dowodów realnej utraty pakietów.
 
 Przykład:
 
-- stary tryb widzi mniej kandydatów i ma niski `drop_pct`,
-- nowy tryb widzi więcej kandydatów,
-- część odpada jako drop,
-- ale konkretne liczniki mają większy `count_window`.
+- licznik powinien nadawać co `30 s`,
+- `win_avg_interval_s` wynosi około `90 s`.
 
-Wniosek: `drop_pct` nie jest jedyną metryką. Liczy się `meter_snapshot`.
+To znaczy, że odbierasz tylko około jednej trzeciej oczekiwanych pakietów.
 
-## `both` działa, ale T1 zrobiło się gorsze
+Najbardziej prawdopodobne przyczyny:
+
+- częste kolizje,
+- busy RF,
+- overhead `both`,
+- limit `SX1276` pod presją czasu.
+
+## 4. Dużo `false_start_like`, `probe_start_aborted` albo `preamble_read_failed`
+
+Najbardziej prawdopodobne przyczyny:
+
+- zapchany eter,
+- słaby nakładający się ruch,
+- dalekie liczniki,
+- blokowy noise,
+- `SX1276` pracujący blisko swojego praktycznego limitu.
+
+Co zrobić:
+
+- na `SX1276` zacznij od `adaptive`,
+- unikaj `both`, jeśli nie jest konieczne,
+- skup się na `meter_window` dla liczników z `highlight_meters`,
+- porównaj dzień i noc.
+
+## 5. Wysokie `dll_crc_failed` przy przyzwoitym RSSI
+
+To zwykle wskazuje na:
+
+- przester,
+- multipath,
+- lokalne zakłócenia,
+- a nie tylko „słaby sygnał”.
+
+Co sprawdzić:
+
+- `summary.avg_ok_rssi`
+- `summary.avg_drop_rssi`
+- `dropped.stage`
+- położenie anteny i lokalne źródła zakłóceń RF
+
+## 6. Dużo `truncated`
+
+To zwykle znaczy, że końcówka ramki nie jest doczytywana czysto.
+
+Możliwe przyczyny:
+
+- kolizje pod koniec ramki,
+- presja FIFO / RX,
+- słaba końcówka sygnału,
+- duża presja czasowa w gęstym środowisku.
+
+Co sprawdzić:
+
+- eventy `truncated` z polami `want`, `got`, `raw_got`,
+- czy problem dotyczy konkretnego dużego / częstego licznika,
+- czy problem nasila się w dzień.
+
+## 7. `both` działa, ale T1 zrobiło się dużo gorsze
 
 To jest spodziewane w wielu realnych środowiskach.
 
-`both` nie oznacza dwóch równoległych odbiorników. To kompromis. Szczególnie na SX1276 może zwiększyć straty.
+Dlaczego:
 
-Zalecenie:
+- `both` dokłada overhead przełączania nawet przy małym realnym ruchu C1,
+- ten koszt szczególnie boli na `SX1276`.
 
-- zacznij od `listen_mode: t1`,
-- używaj `c1` tylko jeśli wiesz, że licznik nadaje C1,
-- `both` tylko świadomie,
-- dla stabilnego mixed-mode lepsze są dwa dedykowane urządzenia.
+Co zrobić:
 
-## CC1101
+- najpierw porównaj z `listen_mode: t1`,
+- jeśli chcesz niezawodnego mixed-mode, użyj dwóch urządzeń,
+- przy jednym urządzeniu preferuj `SX1262` zamiast `SX1276`.
 
-CC1101 jest nadal eksperymentalny.
+## 8. Którego `sx1276_busy_ether_mode` używać?
 
-Nie ma publicznych przykładów YAML dla CC1101 w repo, nawet jeśli kod znajduje się w `main`.
-
-Wymagane jest jawne włączenie:
+Zacznij od:
 
 ```yaml
-cc1101_allow_experimental: true
+sx1276_busy_ether_mode: adaptive
 ```
 
-CC1101 wymaga osobnych pinów:
+Zostań przy `adaptive`, jeśli:
+
+- mieszkasz w bloku,
+- widzisz dużo false startów,
+- `meter_window` jest gorszy niż sugeruje `summary`,
+- jeszcze nie wiesz, jak spokojny jest eter.
+
+`normal` testuj dopiero wtedy, gdy:
+
+- masz mało liczników,
+- eter jest spokojny,
+- `meter_window` już wygląda stabilnie.
+
+`aggressive` traktuj jako ustawienie specjalne do testów, nie domyślne.
+
+## 9. Potrzebuję sensownego profilu diagnostycznego
+
+Typowy bezpieczny profil:
 
 ```yaml
-gdo0_pin:
-gdo2_pin:
+listen_mode: t1
+diagnostic_mode: normal
+highlight_meters:
+  - "12345678"
+
+# Opcjonalnie, tylko jeśli chcesz ograniczyć szczegółowe eventy do highlight_meters:
+# diagnostic_events_highlight_only: true
+
+# Tylko SX1276:
+sx1276_busy_ether_mode: adaptive
 ```
 
-Nie używaj `irq_pin` dla CC1101.
+## 10. Najkrótsza ścieżka decyzji
+
+- użyj `SX1262`, jeśli zależy Ci na niezawodności,
+- używaj `SX1276` tylko wtedy, gdy środowisko jest łatwiejsze albo ruch wolniejszy,
+- nie ufaj samemu `summary`,
+- dla środowisk mieszanych T1/C1 dwa dedykowane urządzenia są lepsze niż jeden setup `both`.

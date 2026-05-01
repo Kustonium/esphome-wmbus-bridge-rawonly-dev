@@ -91,20 +91,3 @@ Rule of thumb:
 candidate != valid telegram
 raw diagnostic blob != published telegram_topic payload
 ```
-
-
-## Topic convention
-
-Recommended configuration:
-
-```yaml
-topic_name: "xiao_s3"
-```
-
-The component publishes validated telegrams to:
-
-```text
-wmbus/xiao_s3/telegram
-```
-
-Manual `telegram_topic` still works as a legacy/manual override, but new YAML files should use `topic_name`.

@@ -1,8 +1,6 @@
 substitutions:
   devicename: esphome-wmbus-lilygo-t3s3
   friendly_name: "wMBus Bridge LilyGO T3-S3"
-  mqtt_topic_prefix: "wmbus_bridge/${devicename}"
-  diag_topic: "wmbus/${devicename}/diag"
 
 esphome:
   name: ${devicename}
@@ -61,6 +59,4 @@ wmbus_radio:
   listen_mode: t1
   listen_mode_filter_after_parse: false
   sx1276_busy_ether_mode: adaptive
-  telegram_topic: "${mqtt_topic_prefix}/telegram"
-  diagnostic_mode: low
-  diagnostic_topic: "${diag_topic}"
+  diagnostic_mode: normal

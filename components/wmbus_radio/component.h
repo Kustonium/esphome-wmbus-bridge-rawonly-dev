@@ -179,8 +179,8 @@ protected:
   // highlight_meters. Summary remains global and still counts everything.
   bool diag_publish_highlight_only_{false};
   bool diag_meter_stats_all_{false};
-  bool diag_publish_suggestion_{false};
   std::vector<std::string> config_warnings_{};
+  bool diag_publish_suggestion_{false};
 
   enum DropBucket : uint8_t {
     DB_TOO_SHORT = 0,

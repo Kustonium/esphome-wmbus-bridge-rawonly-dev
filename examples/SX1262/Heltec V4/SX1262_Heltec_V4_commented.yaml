@@ -104,11 +104,14 @@ wmbus_radio:
 
   listen_mode: t1
   listen_mode_filter_after_parse: false
-  # EN: Safe MQTT topic base. Do not include "wmbus/".
-  # The component publishes to wmbus/${devicename}/telegram and wmbus/${devicename}/diag/...
-  # PL: Bezpieczna baza topiców MQTT. Nie wpisuj "wmbus/".
-  # Komponent publikuje do wmbus/${devicename}/telegram oraz wmbus/${devicename}/diag/...
-  topic_name: "${devicename}"
+
+  # MQTT topics are generated automatically.
+  # topic_name is optional; if omitted, esphome.name is used.
+  # Generated topics:
+  #   wmbus/<topic_name>/telegram
+  #   wmbus/<topic_name>/diag/...
+  # topic_name: "${devicename}"
+
 
   diagnostic_mode: normal
   diagnostic_summary_interval: 60s
@@ -124,8 +127,7 @@ wmbus_radio:
   # highlight_ansi: true
   # highlight_tag: "wmbus_user"
   # highlight_prefix: "★ "
-  # diagnostic_mode: normal already enables 15-minute summary and highlighted meter snapshots.
-  # diagnostic_meter_stats: highlighted  # optional explicit override; normal preset already does this
+  # diagnostic_publish_summary_15min: true
 
   # Optional experimental/aggressive parser-side filter.
   # Use only for A/B tests and compare meter_snapshot.

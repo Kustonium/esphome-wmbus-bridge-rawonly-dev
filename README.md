@@ -1,83 +1,88 @@
-# ESPHome wM-Bus Bridge (RAW-only)
+# ESPHome wM-Bus Bridge RAW-only
 
 [Polska wersja](README_PL.md)
 
-Stable **wireless M-Bus RF → MQTT** bridge for **SX1262** and **SX1276**.
+RAW-only wireless M-Bus radio bridge for ESPHome.
 
-This project keeps the ESP focused on one job only:
-- receive wireless M-Bus frames,
-- assemble the telegram,
-- publish RAW HEX to MQTT,
-- leave meter decoding outside the microcontroller.
-
-It intentionally does **not** decode meters on the ESP.  
-It does **not** select drivers, calculate readings, or try to replace `wmbusmeters`.
-
-## Why this project?
-
-Many ESP-based wM-Bus solutions try to do everything on the device.
-
-This one does not.
-
-The goal is a simpler and more stable architecture:
-- less CPU and RAM pressure on the ESP,
-- fewer firmware-side regressions caused by embedded meter logic,
-- easier RF diagnostics,
-- easier maintenance,
-- final decoding stays on **Home Assistant / Linux / wmbusmeters**, where it belongs.
-
-## Architecture
+The ESP receives and validates wM-Bus telegrams, then publishes validated RAW HEX to MQTT. Meter decoding stays outside the ESP, for example in Home Assistant / Linux / `wmbusmeters`.
 
 ```text
 meter -> SX1262/SX1276 -> ESPHome wmbus_radio -> MQTT HEX -> wmbusmeters / Home Assistant
 ```
 
-## Best for
+## Design rule
 
-- users who want a stable ESP-based radio,
-- users who prefer a simple RAW pipeline to MQTT,
-- users who want decoding and higher-level diagnostics outside the ESP.
+The ESP is a radio bridge, not a meter decoder.
 
-## Quick decision guide
+It does not:
+- select `wmbusmeters` drivers,
+- decrypt AES payloads,
+- create meter value sensors,
+- replace `wmbusmeters`.
 
-| Scenario | Recommendation |
-|---|---|
-| House / quiet RF / a few meters / T1 only | `SX1276` is often enough |
-| Apartment block / many meters / frequent packets | Prefer `SX1262` |
-| Mixed T1 + C1 on one device | Works, but with a real reception cost |
-| Best reliability in mixed T1/C1 environment | Use two devices: `T1-only` + `C1-only` |
+It does:
+- receive T1/C1 frames,
+- validate/normalize telegrams,
+- publish valid telegram HEX to MQTT,
+- publish RF diagnostics.
 
-For more detail see:
+## MQTT topic scheme
 
-- **[`CHIP_SELECTION.md`](CHIP_SELECTION.md)**
-- **[`BENCHMARKS.md`](BENCHMARKS.md)**
+The recommended topic scheme is:
 
-## Attribution and license
+```text
+wmbus/<device>/telegram
+wmbus/<device>/diag/summary
+wmbus/<device>/diag/summary_15min
+wmbus/<device>/diag/meter_snapshot
+wmbus/<device>/diag/boot
+```
 
-This project is GPL-3.0-or-later. It was inspired by the ESPHome wireless M-Bus
-component work from `SzczepanLeon/esphome-components` and related `wmbusmeters`
-code paths, but it has diverged into a RAW-only RF->MQTT bridge architecture.
+The Home Assistant bridge add-on should subscribe to:
 
-For details see [`NOTICE`](NOTICE) and [`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md).
+```text
+wmbus/+/telegram
+```
 
-## Home Assistant add-on
+Do not manually build topic paths in normal YAML. Use `topic_name`, or omit it and let the component use `esphome.name`.
 
-This repo works well with the
-[`Kustonium/homeassistant-wmbus-mqtt-bridge`](https://github.com/Kustonium/homeassistant-wmbus-mqtt-bridge)
-add-on.
+```yaml
+wmbus_radio:
+  topic_name: "xiao_s3"
+```
 
-Raw HEX from MQTT is fed there into `wmbusmeters` via `stdin:hex`.
+This generates:
+
+```text
+wmbus/xiao_s3/telegram
+wmbus/xiao_s3/diag/...
+```
+
+If `topic_name` is omitted, `esphome.name` is used. `friendly_name` is not used for topics because it may contain spaces, uppercase characters or non-ASCII characters.
+
+`topic_name` accepts only letters, digits, `_` and `-`. Do not include `wmbus/`, `/`, `+`, `#` or spaces.
+
+Legacy manual overrides still work:
+
+```yaml
+telegram_topic: "..."
+diagnostic_topic: "..."
+```
+
+but they are intended only for compatibility and produce a bilingual warning.
 
 ## Quick start
 
-Use one device name and derive both MQTT topics from it. This avoids the common copy/paste mistake where `telegram_topic` and `diagnostic_topic` point to different receiver names.
+Clean minimal example:
 
 ```yaml
 substitutions:
   devicename: esphome-wmbus-xiao-s3
   friendly_name: "wMBus Bridge XIAO S3"
-  mqtt_topic_prefix: "wmbus_bridge/${devicename}"
-  diag_topic: "wmbus/${devicename}/diag"
+
+esphome:
+  name: ${devicename}
+  friendly_name: ${friendly_name}
 
 external_components:
   - source: github://Kustonium/esphome-wmbus-bridge-rawonly@main
@@ -85,73 +90,81 @@ external_components:
     refresh: 0s
 
 wmbus_radio:
-  radio_type: SX1262   # or SX1276
-  # ... SPI + radio pins ...
-
+  radio_type: SX1262
   listen_mode: t1
-  listen_mode_filter_after_parse: false
 
-  telegram_topic: "${mqtt_topic_prefix}/telegram"
+  # Optional. If omitted, esphome.name is used.
+  # topic_name: "${devicename}"
 
-  diagnostic_mode: low
-  diagnostic_topic: "${diag_topic}"
+  diagnostic_mode: normal
+
+  # Optional. In diagnostic_mode: normal this enables meter_snapshot
+  # for these meters.
+  highlight_meters:
+    - "00089907"
+    - "03534159"
+    - "03528221"
+
+  # ... SPI/radio pins go here ...
 ```
 
-Use a separate MQTT topic prefix for each receiver device.
+## Diagnostic modes
 
-The Home Assistant bridge add-on usually subscribes to:
+Use presets, not a pile of individual flags:
+
+| Mode | Meaning |
+|---|---|
+| `off` | no MQTT diagnostics |
+| `low` | global `summary` + hint |
+| `normal` | `summary` + `summary_15min` + `meter_snapshot` for `highlight_meters` |
+| `debug` | `normal` + drop/RX-path events |
+| `dev` | full developer diagnostics, including raw/debug payloads |
+
+Old modes remain accepted as deprecated aliases:
+- `medium` -> `normal`
+- `full` -> `dev`
+- `raw` -> `dev`
+
+Old detailed options such as `diagnostic_publish_summary_highlight_meters` and `diagnostic_publish_highlight_only` still compile for compatibility, but they are deprecated/advanced. Use the presets first.
+
+`diagnostic_publish_highlight_only` was a confusing name. It filters detailed diagnostic events to `highlight_meters`; it does not enable meter statistics. The clearer name is:
+
+```yaml
+diagnostic_events_highlight_only: true
+```
+
+## Per-meter statistics
+
+For normal use:
+
+```yaml
+diagnostic_mode: normal
+highlight_meters:
+  - "00089907"
+  - "03534159"
+```
+
+This publishes a combined snapshot on:
 
 ```text
-wmbus_bridge/+/telegram
+wmbus/<device>/diag/meter_snapshot
 ```
 
-Diagnostics are normally under:
+For advanced use:
 
-```text
-wmbus/<device>/diag/#
+```yaml
+diagnostic_meter_stats: highlighted
 ```
 
-Use `on_frame` only when you want extra side effects such as LED blink, extra MQTT topics, or custom per-frame logic.
-For standard RAW MQTT publishing, use either `telegram_topic` or a custom `on_frame` publish with `frame->as_hex()`.
-Use `frame->as_rtlwmbus()` only if you intentionally need rtl-wmbus compatible text output.
+or:
 
-## What is published to MQTT
+```yaml
+diagnostic_meter_stats: all
+```
 
-`telegram_topic` publishes only **validated wM-Bus telegram HEX** from `frame->as_hex()`.
-
-It is RAW-only because the ESP does **not** decode meter values, select drivers, or create readings. It does **not** mean that every arbitrary byte blob from the radio is forwarded.
-
-Before publishing, the component has already:
-
-- decoded T1 3-out-of-6 when needed,
-- normalized C1 by removing the C-mode leading bytes,
-- validated and stripped DLL CRC bytes,
-- rejected candidates that fail length, symbol, preamble, or DLL CRC checks.
-
-For the exact receiver path see **[`docs/RX_PIPELINE.md`](docs/RX_PIPELINE.md)**.
-
-## Diagnostic presets
-
-The current component supports `diagnostic_mode: off | low | medium | full`.
-
-`diagnostic_mode` controls **MQTT diagnostic publishing and verbosity only**.
-It does **not** disable internal counters, time windows, or radio-side logic required by features such as SX1276 `adaptive` mode.
-
-By default, diagnostics are **opt-in**.
-If you do not enable them explicitly, behavior is equivalent to `diagnostic_mode: off`.
-
-- `off` — no MQTT diagnostics; `highlight_meters` only affects local highlighted logs
-- `low` — lightweight summary diagnostics
-- `medium` — summary plus useful drop/truncate diagnostics
-- `full` — full MQTT diagnostics, including raw/RX-path details
-
-If detailed `diagnostic_publish_*` options are provided explicitly in YAML, they override the preset.
-
-Important: `diagnostic_publish_highlight_only` filters detailed per-packet diagnostic events to IDs listed in `highlight_meters`. It does **not** enable per-meter statistics by itself. For per-meter snapshots in the current component version, use `highlight_meters` together with `diagnostic_publish_summary_highlight_meters: true` and enable a 15-minute or 60-minute summary window.
+Use `all` only for development or controlled testing in dense RF environments.
 
 ## `listen_mode_filter_after_parse`
-
-`listen_mode_filter_after_parse` is an experimental switch for how strictly the component filters `listen_mode`.
 
 Default:
 
@@ -159,7 +172,7 @@ Default:
 listen_mode_filter_after_parse: false
 ```
 
-This keeps the conservative/stable behavior and is recommended when meters are nearby and reception is already good.
+This is the conservative/stable behavior. It is recommended when meters are nearby and reception is already good.
 
 Experimental mode:
 
@@ -167,110 +180,46 @@ Experimental mode:
 listen_mode_filter_after_parse: true
 ```
 
-This lets the parser/fallback path determine the final T1/C1 mode before applying the `listen_mode` filter. It may recover more frames when meters are farther away, behind walls, or partially lost. It can also increase `false_start_like`, `payload_size_unknown`, and `t1_decode3of6` drops.
+This filters `listen_mode` after frame parsing/CRC/fallback has determined the final T1/C1 mode. It may help when meters are farther away, behind walls, or when frames are partially lost.
 
-Compare this option using `meter_snapshot` / per-meter statistics, not only the global `drop_pct` from `summary`.
+It may also increase:
+- `false_start_like`,
+- `payload_size_unknown`,
+- `t1_decode3of6` drops.
 
-## Advanced YAML features
+Compare this option using `meter_snapshot` for the meters that matter, not only global `drop_pct`.
 
-Beyond the minimal setup, the component also supports:
+## Radio notes
 
-- diagnostic presets with `diagnostic_mode`
-- dedicated receiver task stack sizing with `receiver_task_stack_size`
-- built-in RAW forwarding with `telegram_topic`
-- optional one-meter routing with `target_meter_id` and `target_topic`
-- SX1276 ether filtering modes with `sx1276_busy_ether_mode: normal | aggressive | adaptive`
-- highlighted local logging for selected meters with `highlight_meters`
-- optional diagnostic event filtering with `diagnostic_publish_highlight_only`
-  - note: this filters per-packet diagnostic events only; it does not enable per-meter statistics
-- optional log highlighting controls with `highlight_ansi`, `highlight_tag`, and `highlight_prefix`
-- SX1262 boot-time device error clearing with `clear_device_errors_on_boot`
-- optional publication of cleared SX1262 device errors with `publish_dev_err_after_clear`
-- SX1262 board tuning such as `dio2_rf_switch`, `has_tcxo`, `rx_gain`, `long_gfsk_packets`
-- optional Heltec V4 FEM pin configuration with `fem_ctrl_pin`, `fem_en_pin`, and `fem_pa_pin`
+- SX1262 is preferred for dense RF, frequent packets and long T1 frames.
+- SX1276 can work well, especially in T1-only and quieter environments.
+- For mixed T1/C1 environments, two dedicated receivers are usually better than one receiver in `both`.
 
-The full field list and event details are documented in [`DIAGNOSTIC.md`](DIAGNOSTIC.md).
+`busy_ether_state` is SX1276-only. For SX1262 and CC1101 it is reported as:
 
-## What the repo contains
+```json
+"busy_ether_state": "n/a"
+```
 
-- `wmbus_radio` component,
-- examples for:
-  - `SX1262 / Heltec V4`
-  - `SX1276 / Lilygo T3-S3`
-  - `SX1276 / Heltec V2`
-- MQTT diagnostics:
-  - `boot`
-  - `summary`
-  - `dropped`
-  - `truncated`
-  - `rx_path`
-  - `meter_window`
-  - `busy_ether_changed` (SX1276 adaptive state changes)
-  - `suggestion` (throttled diagnostic hints)
-  - `dev_err_cleared` (SX1262)
+## CC1101
 
-## Documentation map
+CC1101 support exists in the component but is still experimental and intentionally not shown in the public examples. It requires explicit opt-in in YAML and validated GDO0/GDO2 wiring.
 
-- **[`DIAGNOSTIC.md`](DIAGNOSTIC.md)** — MQTT fields, YAML options, event meanings, short/long summary windows, and how to read diagnostics
-- **[`CHIP_SELECTION.md`](CHIP_SELECTION.md)** — practical SX1276 vs SX1262 selection guide
-- **[`BENCHMARKS.md`](BENCHMARKS.md)** — measured benchmark conclusions for `T1-only` and `both`
-- **[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)** — symptom-based diagnostic guide
-- **[`docs/RX_PIPELINE.md`](docs/RX_PIPELINE.md)** — receiver pipeline and frame qualification
+## Documentation
 
-## Important diagnostic warning
+- [`DIAGNOSTIC.md`](DIAGNOSTIC.md)
+- [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
+- [`CHIP_SELECTION.md`](CHIP_SELECTION.md)
+- [`BENCHMARKS.md`](BENCHMARKS.md)
+- [`docs/RX_PIPELINE.md`](docs/RX_PIPELINE.md)
 
-Do **not** treat `summary` as the same thing as real reception quality.
+## Support rule
 
-- `summary` shows parser / decode cleanliness,
-- `meter_window` shows real per-meter reception success.
+No logs, no support.
 
-This matters especially on **SX1276**, where `adaptive` is a real window-based algorithm, not a vague auto mode. Once per summary window it checks false-start-like counters, `drop_pct`, T1 symbol errors, and FIFO overruns; when those thresholds indicate a genuinely noisy window, it enables a 5-minute stronger-filtering hold. That can make `summary` look clean while `meter_window` still shows real losses.
-
-Important: `diagnostic_mode` controls only published diagnostics and verbosity. It does **not** disable the internal counters and window logic used by features such as SX1276 `adaptive` mode.
-
-## Important note about log language
-
-Documentation is split into separate Polish and English files.
-
-Runtime logging follows a practical mixed policy:
-
-- the most important user-facing `INFO` / `WARN` / `ERROR` messages may be short bilingual `EN / PL`,
-- low-level `DEBUG` / `VERBOSE` messages stay in English,
-- YAML option names, MQTT event names, and JSON field names stay in English as the stable technical API.
-
-This keeps the logs readable for Polish users without making low-level debugging harder.
-
-## Examples
-
-See **[`examples/README.md`](examples/README.md)**.
-
-Each board has two variants:
-
-- `*_commented.yaml` — commented/reference version,
-- `*_clean.yaml` — clean copy/paste base.
-
-Examples are published for SX1262 and SX1276 boards.
-
-## How this project was built
-
-This project was built in March 2026 over 26 days — from zero to a working release with diagnostics, support for two transceivers, and full documentation.
-
-It started from a practical need: existing solutions did not behave the way I needed in real use. The project was developed iteratively on actual hardware, with a strong focus on stability, observability, and keeping meter decoding outside the ESP device.
-
-AI tools such as Claude and ChatGPT were used during development for drafting code, refactoring, exploring implementation variants, and accelerating iteration. The project direction, requirements, validation, hardware testing, rejection of bad ideas, and architectural decisions remained on my side.
-
-This is documented openly because that is how the project was actually built: not by blindly accepting generated code, but by using AI as a development tool while testing and shaping the system around real-world constraints.
-
-## Bug reports
-
-For bug reports, please use GitHub Issues and include:
-
-- exact ESPHome version
-- project version / release / commit
-- relevant YAML
-- logs
-- diagnostic output if relevant
-
-## License
-
-**GPL-3.0-or-later** — see `LICENSE` and `NOTICE`.
+Before asking for help provide:
+- YAML without secrets,
+- full boot log,
+- 2-5 minutes of runtime log,
+- radio module and ESP board model,
+- wiring photo if using an external radio.

@@ -1,12 +1,11 @@
 from contextlib import suppress
 import re
-
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins, automation
-from esphome.core import CORE
 from esphome.components import spi
 from esphome.cpp_generator import LambdaExpression
+from esphome.core import CORE
 from esphome.const import (
     CONF_ID,
     CONF_RESET_PIN,
@@ -76,8 +75,8 @@ CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS = "diagnostic_publish_summary_highlig
 CONF_DIAG_PUBLISH_SUMMARY = "diagnostic_publish_summary"
 CONF_DIAG_PUBLISH_DROP_EVENTS = "diagnostic_publish_drop_events"
 CONF_DIAG_PUBLISH_RX_PATH_EVENTS = "diagnostic_publish_rx_path_events"
-CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY = "diagnostic_publish_highlight_only"
 CONF_DIAG_EVENTS_HIGHLIGHT_ONLY = "diagnostic_events_highlight_only"
+CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY = "diagnostic_publish_highlight_only"
 CONF_DIAG_METER_STATS = "diagnostic_meter_stats"
 CONF_DIAG_PUBLISH_SUGGESTION = "diagnostic_publish_suggestion"
 CONF_SX1276_BUSY_ETHER_MODE = "sx1276_busy_ether_mode"
@@ -106,27 +105,27 @@ TRANSCEIVER_NAMES = {
     if r.is_file()
 }
 
-TOPIC_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
-
-def validate_topic_name(value):
-    value = cv.string(value)
+def _validate_topic_name(value):
+    value = str(value).strip()
     if not value:
-        raise cv.Invalid("topic_name must not be empty / topic_name nie może być pusty")
-    if value.startswith("wmbus/"):
-        raise cv.Invalid(
-            "topic_name must not include the 'wmbus/' prefix / "
-            "topic_name nie może zawierać prefiksu 'wmbus/'"
-        )
-    if not TOPIC_NAME_RE.fullmatch(value):
-        raise cv.Invalid(
-            "Invalid topic_name. Use only letters, numbers, '_' or '-'. "
-            "Do not use '/', '+', '#', spaces or national characters / "
-            "Nieprawidłowy topic_name. Użyj tylko liter, cyfr, '_' albo '-'. "
-            "Nie używaj '/', '+', '#', spacji ani polskich znaków."
-        )
+        raise cv.Invalid("topic_name cannot be empty / topic_name nie moze byc pusty")
+    if value.startswith("wmbus/") or "/" in value:
+        raise cv.Invalid("topic_name must not contain '/' or 'wmbus/' prefix / topic_name nie moze zawierac '/' ani prefiksu 'wmbus/'")
+    if "+" in value or "#" in value:
+        raise cv.Invalid("topic_name must not contain MQTT wildcards '+' or '#' / topic_name nie moze zawierac wildcardow MQTT '+' ani '#'")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise cv.Invalid("topic_name may only contain letters, numbers, '_' and '-' / topic_name moze zawierac tylko litery, cyfry, '_' i '-'")
     return value
 
+
+def _normalize_diagnostic_mode(mode):
+    mode = str(mode).lower().strip()
+    if mode == "medium":
+        return "normal"
+    if mode in ("full", "raw"):
+        return "dev"
+    return mode
 
 BASE_CONFIG_SCHEMA = (
     cv.Schema(
@@ -183,10 +182,8 @@ BASE_CONFIG_SCHEMA = (
 
 
             # Optional built-in RAW forwarding (publish full frame hex and/or one selected target meter)
-            # New safe topic scheme: topic_name -> wmbus/<topic_name>/telegram and wmbus/<topic_name>/diag.
-            # If omitted, topic_name defaults to esphome.name. Do not include "wmbus/" here.
-            cv.Optional(CONF_TOPIC_NAME): validate_topic_name,
-            # Legacy/manual override. Kept for compatibility; prefer topic_name.
+            cv.Optional(CONF_TOPIC_NAME): _validate_topic_name,
+            # Legacy/manual override. Prefer topic_name.
             cv.Optional(CONF_TELEGRAM_TOPIC): cv.string,
             cv.Optional(CONF_TARGET_METER_ID, default=""): cv.string,
             cv.Optional(CONF_TARGET_TOPIC, default=""): cv.string,
@@ -199,7 +196,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_DIAGNOSTIC_MODE, default="off"): cv.one_of(
                 "off", "low", "normal", "debug", "dev", "medium", "full", "raw", lower=True
             ),
-            # Legacy/manual override. Kept for compatibility; prefer topic_name.
+            # Legacy/manual override. Prefer topic_name.
             cv.Optional(CONF_DIAG_TOPIC): cv.string,
 
             # Detailed diagnostics controls (all optional; explicit YAML values override
@@ -211,8 +208,8 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_DIAG_PUBLISH_RX_PATH_EVENTS): cv.boolean,
             # If true, per-packet MQTT diagnostics are published only for meter ids
             # listed in highlight_meters. Global summary still counts everything.
-            cv.Optional(CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY): cv.boolean,
             cv.Optional(CONF_DIAG_EVENTS_HIGHLIGHT_ONLY): cv.boolean,
+            cv.Optional(CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY): cv.boolean,
             cv.Optional(CONF_DIAG_METER_STATS): cv.one_of("off", "highlighted", "all", lower=True),
             cv.Optional(CONF_DIAG_PUBLISH_SUGGESTION): cv.boolean,
             cv.Optional(CONF_DIAG_SUMMARY_INTERVAL, default="60s"): cv.positive_time_period_milliseconds,
@@ -349,158 +346,50 @@ async def to_code(config):
     cg.add(var.set_receiver_task_stack_size(config[CONF_RECEIVER_TASK_STACK_SIZE]))
     cg.add(var.set_listen_mode_filter_after_parse(config[CONF_LISTEN_MODE_FILTER_AFTER_PARSE]))
 
-    config_warnings = []
-
-    # ------------------------------------------------------------------
-    # MQTT topic generation
-    # ------------------------------------------------------------------
-    # Preferred safe path: topic_name -> wmbus/<topic_name>/telegram and
-    # wmbus/<topic_name>/diag. If topic_name is omitted, use esphome.name.
-    # friendly_name is intentionally not used because it may contain spaces,
-    # uppercase letters or national characters.
     topic_name = config.get(CONF_TOPIC_NAME) or CORE.name
-    topic_name = validate_topic_name(topic_name)
-    generated_telegram_topic = f"wmbus/{topic_name}/telegram"
-    generated_diag_topic = f"wmbus/{topic_name}/diag"
+    if not topic_name:
+        topic_name = "wmbus"
 
-    manual_telegram_topic = config.get(CONF_TELEGRAM_TOPIC, "")
-    if manual_telegram_topic:
-        telegram_topic = manual_telegram_topic
-        config_warnings.append(
-            "telegram_topic is a legacy/manual override / telegram_topic to ręczne ustawienie legacy. "
-            "Prefer topic_name / zalecane topic_name."
-        )
+    warnings = []
+
+    if CONF_TELEGRAM_TOPIC in config and str(config.get(CONF_TELEGRAM_TOPIC, "")).strip():
+        telegram_topic = config[CONF_TELEGRAM_TOPIC]
+        warnings.append("telegram_topic is a legacy/manual override / telegram_topic to reczne ustawienie legacy. Prefer topic_name / zalecane topic_name.")
     else:
-        telegram_topic = generated_telegram_topic
+        telegram_topic = f"wmbus/{topic_name}/telegram"
 
-    manual_diag_topic = config.get(CONF_DIAG_TOPIC, "")
-    if manual_diag_topic:
-        config_warnings.append(
-            "diagnostic_topic is a legacy/manual override / diagnostic_topic to ręczne ustawienie legacy. "
-            "Prefer topic_name / zalecane topic_name."
-        )
-
-    # ------------------------------------------------------------------
-    # Diagnostic presets and legacy compatibility
-    # ------------------------------------------------------------------
     raw_diag_mode = config.get(CONF_DIAGNOSTIC_MODE, "off")
-    diag_mode = raw_diag_mode
-    if raw_diag_mode == "medium":
-        diag_mode = "normal"
-        config_warnings.append(
-            "diagnostic_mode: medium is deprecated / diagnostic_mode: medium jest przestarzałe. "
-            "Use diagnostic_mode: normal / użyj diagnostic_mode: normal."
-        )
-    elif raw_diag_mode in ("full", "raw"):
-        diag_mode = "dev"
-        config_warnings.append(
-            f"diagnostic_mode: {raw_diag_mode} is deprecated / diagnostic_mode: {raw_diag_mode} jest przestarzałe. "
-            "Use diagnostic_mode: dev / użyj diagnostic_mode: dev."
-        )
+    diag_mode = _normalize_diagnostic_mode(raw_diag_mode)
+    if raw_diag_mode != diag_mode:
+        warnings.append(f"diagnostic_mode: {raw_diag_mode} is deprecated / jest przestarzale. Use / uzyj diagnostic_mode: {diag_mode}.")
 
-    # Presets are MQTT diagnostics presets. Detailed flags are kept as legacy
-    # overrides for compatibility with old YAML files.
     preset_map = {
-        "off": {
-            "verbose": False,
-            "raw": False,
-            "summary": False,
-            "drop": False,
-            "rx_path": False,
-            "events_highlight_only": False,
-            "suggestion": False,
-            "summary_15min": False,
-            "summary_60min": False,
-            "meter_stats": "off",
-        },
-        "low": {
-            "verbose": False,
-            "raw": False,
-            "summary": True,
-            "drop": False,
-            "rx_path": False,
-            "events_highlight_only": False,
-            "suggestion": False,
-            "summary_15min": False,
-            "summary_60min": False,
-            "meter_stats": "off",
-        },
-        "normal": {
-            "verbose": False,
-            "raw": False,
-            "summary": True,
-            "drop": False,
-            "rx_path": False,
-            "events_highlight_only": False,
-            "suggestion": True,
-            "summary_15min": True,
-            "summary_60min": False,
-            "meter_stats": "highlighted",
-        },
-        "debug": {
-            "verbose": False,
-            "raw": False,
-            "summary": True,
-            "drop": True,
-            "rx_path": True,
-            "events_highlight_only": True,
-            "suggestion": True,
-            "summary_15min": True,
-            "summary_60min": False,
-            "meter_stats": "highlighted",
-        },
-        "dev": {
-            "verbose": True,
-            "raw": True,
-            "summary": True,
-            "drop": True,
-            "rx_path": True,
-            "events_highlight_only": False,
-            "suggestion": True,
-            "summary_15min": True,
-            "summary_60min": True,
-            "meter_stats": "all",
-        },
+        "off": {"verbose": False, "raw": False, "summary": False, "drop": False, "rx_path": False, "highlight_only": False, "suggestion": False, "summary_15min": False, "summary_60min": False, "meter_stats": "off"},
+        "low": {"verbose": False, "raw": False, "summary": True, "drop": False, "rx_path": False, "highlight_only": False, "suggestion": False, "summary_15min": False, "summary_60min": False, "meter_stats": "off"},
+        "normal": {"verbose": False, "raw": False, "summary": True, "drop": False, "rx_path": False, "highlight_only": False, "suggestion": True, "summary_15min": True, "summary_60min": False, "meter_stats": "highlighted"},
+        "debug": {"verbose": False, "raw": False, "summary": True, "drop": True, "rx_path": True, "highlight_only": True, "suggestion": True, "summary_15min": True, "summary_60min": False, "meter_stats": "highlighted"},
+        "dev": {"verbose": True, "raw": True, "summary": True, "drop": True, "rx_path": True, "highlight_only": False, "suggestion": True, "summary_15min": True, "summary_60min": True, "meter_stats": "all"},
     }
     diag_preset = preset_map[diag_mode]
 
-    legacy_flags = [
+    legacy_diag_options = [
         CONF_DIAG_VERBOSE,
         CONF_DIAG_PUBLISH_RAW,
         CONF_DIAG_PUBLISH_SUMMARY,
         CONF_DIAG_PUBLISH_DROP_EVENTS,
         CONF_DIAG_PUBLISH_RX_PATH_EVENTS,
+        CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY,
         CONF_DIAG_PUBLISH_SUGGESTION,
         CONF_DIAG_PUBLISH_SUMMARY_15MIN,
         CONF_DIAG_PUBLISH_SUMMARY_60MIN,
         CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS,
     ]
-    for opt in legacy_flags:
+    for opt in legacy_diag_options:
         if opt in config:
-            config_warnings.append(
-                f"{opt} is a legacy/deprecated detailed diagnostic option / {opt} jest starą/przestarzałą opcją szczegółową diagnostyki. "
-                "Prefer diagnostic_mode presets / zalecane presety diagnostic_mode."
-            )
+            warnings.append(f"{opt} is deprecated/advanced / {opt} jest przestarzale/zaawansowane. Prefer diagnostic_mode presets / zalecane presety diagnostic_mode.")
 
-    # Old misleading name: it filters detailed diagnostic events, it does not
-    # enable meter statistics. Keep as deprecated alias.
-    if CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config:
-        config_warnings.append(
-            "diagnostic_publish_highlight_only is deprecated / diagnostic_publish_highlight_only jest przestarzałe. "
-            "Use diagnostic_events_highlight_only / użyj diagnostic_events_highlight_only."
-        )
-
-    if CONF_DIAG_METER_STATS in config:
-        meter_stats_mode = config[CONF_DIAG_METER_STATS]
-    else:
-        meter_stats_mode = diag_preset["meter_stats"]
-
-    # Legacy per-meter stats flag overrides preset/meter_stats when used.
-    if CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS in config:
-        meter_stats_mode = "highlighted" if config[CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS] else "off"
-
-    diag_publish_summary_highlight = meter_stats_mode in ("highlighted", "all")
-    diag_meter_stats_all = meter_stats_mode == "all"
+    if CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config and CONF_DIAG_EVENTS_HIGHLIGHT_ONLY not in config:
+        warnings.append("diagnostic_publish_highlight_only is deprecated / jest przestarzale. Use diagnostic_events_highlight_only / uzyj diagnostic_events_highlight_only.")
 
     explicit_diag_enabled = any([
         config.get(CONF_DIAG_PUBLISH_SUMMARY, False),
@@ -508,16 +397,16 @@ async def to_code(config):
         config.get(CONF_DIAG_PUBLISH_RX_PATH_EVENTS, False),
         config.get(CONF_DIAG_PUBLISH_SUMMARY_15MIN, False),
         config.get(CONF_DIAG_PUBLISH_SUMMARY_60MIN, False),
-        diag_publish_summary_highlight,
+        config.get(CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS, False),
         config.get(CONF_DIAG_PUBLISH_SUGGESTION, False),
-        config.get(CONF_DIAG_EVENTS_HIGHLIGHT_ONLY, False),
-        config.get(CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY, False),
+        CONF_DIAG_METER_STATS in config and config.get(CONF_DIAG_METER_STATS) != "off",
     ])
 
-    if manual_diag_topic:
-        diag_topic = manual_diag_topic
+    if CONF_DIAG_TOPIC in config and str(config.get(CONF_DIAG_TOPIC, "")).strip():
+        diag_topic = config[CONF_DIAG_TOPIC]
+        warnings.append("diagnostic_topic is a legacy/manual override / diagnostic_topic to reczne ustawienie legacy. Prefer topic_name / zalecane topic_name.")
     elif diag_mode != "off" or explicit_diag_enabled:
-        diag_topic = generated_diag_topic
+        diag_topic = f"wmbus/{topic_name}/diag"
     else:
         diag_topic = ""
 
@@ -528,28 +417,34 @@ async def to_code(config):
     cg.add(var.set_target_log(config.get(CONF_TARGET_LOG, True)))
     cg.add(var.set_publish_radio_raw(config.get(CONF_PUBLISH_RADIO_RAW, False)))
 
+    diag_events_highlight_only = (
+        config[CONF_DIAG_EVENTS_HIGHLIGHT_ONLY]
+        if CONF_DIAG_EVENTS_HIGHLIGHT_ONLY in config
+        else (config[CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY]
+              if CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config
+              else diag_preset["highlight_only"])
+    )
+    meter_stats = config.get(CONF_DIAG_METER_STATS, diag_preset["meter_stats"])
+    summary_highlight = meter_stats in ("highlighted", "all")
+    meter_stats_all = meter_stats == "all"
+    if CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS in config:
+        summary_highlight = config[CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS]
+        meter_stats_all = False
+
     cg.add(var.set_diag_verbose(config[CONF_DIAG_VERBOSE] if CONF_DIAG_VERBOSE in config else diag_preset["verbose"]))
     cg.add(var.set_diag_publish_raw(config[CONF_DIAG_PUBLISH_RAW] if CONF_DIAG_PUBLISH_RAW in config else diag_preset["raw"]))
     cg.add(var.set_diag_publish_summary(config[CONF_DIAG_PUBLISH_SUMMARY] if CONF_DIAG_PUBLISH_SUMMARY in config else diag_preset["summary"]))
     cg.add(var.set_diag_publish_drop_events(config[CONF_DIAG_PUBLISH_DROP_EVENTS] if CONF_DIAG_PUBLISH_DROP_EVENTS in config else diag_preset["drop"]))
     cg.add(var.set_diag_publish_rx_path_events(config[CONF_DIAG_PUBLISH_RX_PATH_EVENTS] if CONF_DIAG_PUBLISH_RX_PATH_EVENTS in config else diag_preset["rx_path"]))
-
-    if CONF_DIAG_EVENTS_HIGHLIGHT_ONLY in config:
-        events_highlight_only = config[CONF_DIAG_EVENTS_HIGHLIGHT_ONLY]
-    elif CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config:
-        events_highlight_only = config[CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY]
-    else:
-        events_highlight_only = diag_preset["events_highlight_only"]
-    cg.add(var.set_diag_publish_highlight_only(events_highlight_only))
-
+    cg.add(var.set_diag_publish_highlight_only(diag_events_highlight_only))
     cg.add(var.set_diag_publish_suggestion(config[CONF_DIAG_PUBLISH_SUGGESTION] if CONF_DIAG_PUBLISH_SUGGESTION in config else diag_preset["suggestion"]))
     cg.add(var.set_diag_summary_interval_ms(config[CONF_DIAG_SUMMARY_INTERVAL].total_milliseconds))
     cg.add(var.set_diag_publish_summary_15min(config[CONF_DIAG_PUBLISH_SUMMARY_15MIN] if CONF_DIAG_PUBLISH_SUMMARY_15MIN in config else diag_preset["summary_15min"]))
     cg.add(var.set_diag_publish_summary_60min(config[CONF_DIAG_PUBLISH_SUMMARY_60MIN] if CONF_DIAG_PUBLISH_SUMMARY_60MIN in config else diag_preset["summary_60min"]))
-    cg.add(var.set_diag_publish_summary_highlight_meters(diag_publish_summary_highlight))
-    cg.add(var.set_diag_meter_stats_all(diag_meter_stats_all))
+    cg.add(var.set_diag_publish_summary_highlight_meters(summary_highlight))
+    cg.add(var.set_diag_meter_stats_all(meter_stats_all))
 
-    for warning in config_warnings:
+    for warning in warnings:
         cg.add(var.add_config_warning(warning))
 
     SX1276BusyEtherMode = radio_ns.enum("SX1276BusyEtherMode", is_class=True)

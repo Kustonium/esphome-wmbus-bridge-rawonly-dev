@@ -26,7 +26,6 @@ public:
   virtual void restart_rx() = 0;
   virtual int8_t get_rssi() = 0;
   virtual const char *get_name() = 0;
-  virtual const char *get_rf_params_str() const { return this->rf_params_str_.c_str(); }
 
   // Radio-specific recovery hints for the upper RX pipeline.
   // Default: keep the generic strict path.
@@ -55,6 +54,7 @@ public:
   void set_busy_pin(InternalGPIOPin *busy_pin);
   void set_listen_mode(ListenMode mode) { this->listen_mode_ = mode; }
   ListenMode get_listen_mode() const { return this->listen_mode_; }
+  const std::string &get_rf_params_str() const { return this->rf_params_str_; }
 
 protected:
   InternalGPIOPin *reset_pin_{nullptr};

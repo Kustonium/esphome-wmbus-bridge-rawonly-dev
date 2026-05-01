@@ -5,8 +5,6 @@
 substitutions:
   devicename: esphome-wmbus-lilygo-t3s3
   friendly_name: "wMBus Bridge LilyGO T3-S3"
-  mqtt_topic_prefix: "wmbus_bridge/${devicename}"
-  diag_topic: "wmbus/${devicename}/diag"
 
 esphome:
   name: ${devicename}
@@ -83,14 +81,19 @@ wmbus_radio:
   listen_mode: t1
   listen_mode_filter_after_parse: false
 
+  # MQTT topics are generated automatically.
+  # topic_name is optional; if omitted, esphome.name is used.
+  # Generated topics:
+  #   wmbus/<topic_name>/telegram
+  #   wmbus/<topic_name>/diag/...
+  # topic_name: "${devicename}"
+
   # EN: adaptive is recommended default for dense RF environments.
   # PL: adaptive to zalecany domyślny tryb w gęstym eterze.
   sx1276_busy_ether_mode: adaptive
 
-  telegram_topic: "${mqtt_topic_prefix}/telegram"
 
-  diagnostic_mode: low
-  diagnostic_topic: "${diag_topic}"
+  diagnostic_mode: normal
   diagnostic_summary_interval: 60s
 
   # Optional per-meter stats for selected IDs.
@@ -101,7 +104,6 @@ wmbus_radio:
   # highlight_tag: "wmbus_user"
   # highlight_prefix: "★ "
   # diagnostic_publish_summary_15min: true
-  # diagnostic_publish_summary_highlight_meters: true
 
   # Optional LED blink on validated frame.
   on_frame:

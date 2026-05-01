@@ -260,8 +260,6 @@ void CC1101::set_sync_word_(uint8_t sync2) {
 }
 
 void CC1101::apply_radio_profile_() {
-  this->rf_params_str_ = "compatibility modem profile, infinite packet mode";
-
   // CC1101 RF profile adjusted to the known-working Szczepan/Kubasa-style
   // wM-Bus 868.950 MHz profile. Keep our hardware model intact:
   // - GDO2 = sync detect IRQ
@@ -622,6 +620,7 @@ void CC1101::setup() {
   ESP_LOGI(TAG, "CC1101 VERSION=0x%02X", version);
 
   this->apply_radio_profile_();
+  this->rf_params_str_ = "CC1101 compat: 868.950MHz DR=100kbps fdev~47kHz RxBW~325kHz infinite-packet";
   if (!this->validate_startup_config_()) {
     this->dump_debug_status("startup_config_error");
     this->mark_failed();

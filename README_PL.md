@@ -1,83 +1,88 @@
-# ESPHome wM-Bus Bridge (RAW-only)
+# ESPHome wM-Bus Bridge RAW-only
 
 [English version](README.md)
 
-Stabilny mostek **wireless M-Bus RF → MQTT** dla **SX1262** i **SX1276**.
+Most radiowy wireless M-Bus RAW-only dla ESPHome.
 
-Ten projekt zostawia ESP tylko jedno zadanie:
-- odbiór ramek wireless M-Bus,
-- złożenie telegramu,
-- publikację RAW HEX do MQTT,
-- pozostawienie dekodowania licznika poza mikrokontrolerem.
-
-To repo celowo **nie dekoduje liczników na ESP**.  
-Nie dobiera driverów, nie liczy wartości i nie próbuje zastępować `wmbusmeters`.
-
-## Po co ten projekt?
-
-Wiele projektów wM-Bus na ESP próbuje robić wszystko na urządzeniu.
-
-Ten nie.
-
-Celem jest prostsza i stabilniejsza architektura:
-- mniejsze obciążenie CPU i RAM po stronie ESP,
-- mniej regresji firmware wynikających z logiki liczników na mikrokontrolerze,
-- łatwiejsza diagnostyka RF,
-- łatwiejsze utrzymanie,
-- końcowe dekodowanie zostaje po stronie **Home Assistant / Linux / wmbusmeters**, gdzie jego miejsce.
-
-## Architektura
+ESP odbiera i waliduje telegramy wM-Bus, a następnie publikuje zweryfikowany RAW HEX do MQTT. Dekodowanie liczników zostaje poza ESP, na przykład w Home Assistant / Linux / `wmbusmeters`.
 
 ```text
 licznik -> SX1262/SX1276 -> ESPHome wmbus_radio -> MQTT HEX -> wmbusmeters / Home Assistant
 ```
 
-## Dla kogo to jest
+## Zasada projektu
 
-- dla osób, które chcą stabilne radio na ESP,
-- dla osób, które wolą prosty RAW pipeline do MQTT,
-- dla osób, które chcą dekodowanie i wyższą diagnostykę poza ESP.
+ESP jest mostem radiowym, nie dekoderem liczników.
 
-## Szybka decyzja
+Nie robi:
+- wyboru driverów `wmbusmeters`,
+- deszyfrowania AES,
+- sensorów z wartościami liczników,
+- zastępowania `wmbusmeters`.
 
-| Scenariusz | Rekomendacja |
-|---|---|
-| Dom / spokojny eter / kilka liczników / tylko T1 | `SX1276` zwykle wystarczy |
-| Blok / dużo liczników / częste pakiety | Preferowany `SX1262` |
-| Mieszane T1 + C1 na jednym urządzeniu | Działa, ale ma realny koszt odbioru |
-| Maksymalna niezawodność w środowisku T1/C1 | Dwa urządzenia: `T1-only` + `C1-only` |
+Robi:
+- odbiór ramek T1/C1,
+- walidację i normalizację telegramów,
+- publikację poprawnego HEX telegramu do MQTT,
+- diagnostykę RF.
 
-Więcej szczegółów:
+## Schemat topiców MQTT
 
-- **[`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md)**
-- **[`BENCHMARKS_PL.md`](BENCHMARKS_PL.md)**
+Zalecany schemat:
 
-## Atrybucja i licencja
+```text
+wmbus/<device>/telegram
+wmbus/<device>/diag/summary
+wmbus/<device>/diag/summary_15min
+wmbus/<device>/diag/meter_snapshot
+wmbus/<device>/diag/boot
+```
 
-Projekt jest udostępniany na licencji GPL-3.0-or-later. Powstał z inspiracji
-pracami nad komponentem ESPHome wireless M-Bus z repo
-`SzczepanLeon/esphome-components` oraz powiązanymi ścieżkami `wmbusmeters`, ale
-rozwinął się w architekturę mostu RAW-only RF->MQTT.
+Dodatek bridge w Home Assistant powinien subskrybować:
 
-Szczegóły: [`NOTICE`](NOTICE) oraz [`docs/ATTRIBUTION.md`](docs/ATTRIBUTION.md).
+```text
+wmbus/+/telegram
+```
 
-## Dodatek do Home Assistant
+W normalnym YAML-u nie składaj ręcznie topiców. Użyj `topic_name` albo pomiń tę opcję, a komponent użyje `esphome.name`.
 
-To repo dobrze współpracuje z dodatkiem
-[`Kustonium/homeassistant-wmbus-mqtt-bridge`](https://github.com/Kustonium/homeassistant-wmbus-mqtt-bridge).
+```yaml
+wmbus_radio:
+  topic_name: "xiao_s3"
+```
 
-Surowy HEX z MQTT trafia tam do `wmbusmeters` przez `stdin:hex`.
+To generuje:
+
+```text
+wmbus/xiao_s3/telegram
+wmbus/xiao_s3/diag/...
+```
+
+Jeżeli `topic_name` nie jest podany, używany jest `esphome.name`. `friendly_name` nie jest używany do topiców, bo może zawierać spacje, wielkie litery albo znaki spoza ASCII.
+
+`topic_name` przyjmuje tylko litery, cyfry, `_` i `-`. Nie wpisuj `wmbus/`, `/`, `+`, `#` ani spacji.
+
+Stare ręczne ustawienia dalej działają:
+
+```yaml
+telegram_topic: "..."
+diagnostic_topic: "..."
+```
+
+ale są traktowane jako legacy/manual override i generują dwujęzyczny warning.
 
 ## Szybki start
 
-Używaj jednej nazwy urządzenia i z niej wyprowadzaj oba topiki MQTT. To ogranicza typowy błąd copy/paste, gdy `telegram_topic` i `diagnostic_topic` wskazują różne nazwy odbiornika.
+Minimalny przykład:
 
 ```yaml
 substitutions:
   devicename: esphome-wmbus-xiao-s3
   friendly_name: "wMBus Bridge XIAO S3"
-  mqtt_topic_prefix: "wmbus_bridge/${devicename}"
-  diag_topic: "wmbus/${devicename}/diag"
+
+esphome:
+  name: ${devicename}
+  friendly_name: ${friendly_name}
 
 external_components:
   - source: github://Kustonium/esphome-wmbus-bridge-rawonly@main
@@ -85,73 +90,81 @@ external_components:
     refresh: 0s
 
 wmbus_radio:
-  radio_type: SX1262   # albo SX1276
-  # ... SPI + piny radia ...
-
+  radio_type: SX1262
   listen_mode: t1
-  listen_mode_filter_after_parse: false
 
-  telegram_topic: "${mqtt_topic_prefix}/telegram"
+  # Opcjonalne. Jeśli pominiesz, użyty będzie esphome.name.
+  # topic_name: "${devicename}"
 
-  diagnostic_mode: low
-  diagnostic_topic: "${diag_topic}"
+  diagnostic_mode: normal
+
+  # Opcjonalne. W diagnostic_mode: normal włącza meter_snapshot
+  # dla tych liczników.
+  highlight_meters:
+    - "00089907"
+    - "03534159"
+    - "03528221"
+
+  # ... tutaj piny SPI/radia ...
 ```
 
-Używaj osobnego prefiksu MQTT dla każdego odbiornika.
+## Tryby diagnostyki
 
-Dodatek Home Assistant bridge zwykle subskrybuje:
+Używaj presetów, nie zestawu wielu osobnych flag:
+
+| Tryb | Znaczenie |
+|---|---|
+| `off` | brak diagnostyki MQTT |
+| `low` | globalne `summary` + hint |
+| `normal` | `summary` + `summary_15min` + `meter_snapshot` dla `highlight_meters` |
+| `debug` | `normal` + eventy drop/RX-path |
+| `dev` | pełna diagnostyka developerska, także raw/debug payloady |
+
+Stare tryby są nadal akceptowane jako deprecated aliasy:
+- `medium` -> `normal`
+- `full` -> `dev`
+- `raw` -> `dev`
+
+Stare szczegółowe opcje, takie jak `diagnostic_publish_summary_highlight_meters` i `diagnostic_publish_highlight_only`, dalej się kompilują dla kompatybilności, ale są deprecated/advanced. Najpierw używaj presetów.
+
+`diagnostic_publish_highlight_only` było mylącą nazwą. Ta opcja filtruje szczegółowe eventy diagnostyczne do `highlight_meters`; nie włącza statystyk liczników. Jaśniejsza nazwa to:
+
+```yaml
+diagnostic_events_highlight_only: true
+```
+
+## Statystyki liczników
+
+Do normalnego użycia:
+
+```yaml
+diagnostic_mode: normal
+highlight_meters:
+  - "00089907"
+  - "03534159"
+```
+
+To publikuje zbiorczy snapshot na:
 
 ```text
-wmbus_bridge/+/telegram
+wmbus/<device>/diag/meter_snapshot
 ```
 
-Diagnostyka zwykle jest pod:
+Dla zaawansowanych testów:
 
-```text
-wmbus/<device>/diag/#
+```yaml
+diagnostic_meter_stats: highlighted
 ```
 
-`on_frame` używaj tylko wtedy, gdy chcesz dodać efekty uboczne, np. miganie LED, dodatkowe topiki MQTT albo własną logikę dla każdej ramki.
-Do standardowej publikacji RAW do MQTT używaj albo `telegram_topic`, albo własnego `on_frame` z `frame->as_hex()`.
-`frame->as_rtlwmbus()` stosuj tylko wtedy, gdy celowo potrzebujesz wyjścia zgodnego z rtl-wmbus.
+albo:
 
-## Co jest publikowane do MQTT
+```yaml
+diagnostic_meter_stats: all
+```
 
-`telegram_topic` publikuje tylko **zweryfikowany HEX telegramu wM-Bus** z `frame->as_hex()`.
-
-To jest RAW-only, bo ESP **nie dekoduje wartości licznika**, nie dobiera driverów i nie tworzy odczytów. Nie oznacza to przepychania każdego dowolnego blobu bajtów z radia.
-
-Przed publikacją komponent już:
-
-- zdekodował T1 z 3-out-of-6, jeśli było to potrzebne,
-- znormalizował C1 przez usunięcie początkowych bajtów C-mode,
-- sprawdził i usunął bajty DLL CRC,
-- odrzucił kandydaty, które nie przeszły kontroli długości, symboli, preambuły albo DLL CRC.
-
-Dokładny tor odbioru jest opisany w **[`docs/RX_PIPELINE_PL.md`](docs/RX_PIPELINE_PL.md)**.
-
-## Presety diagnostyki
-
-Obecna wersja komponentu obsługuje `diagnostic_mode: off | low | medium | full`.
-
-`diagnostic_mode` steruje **tylko publikacją diagnostyki MQTT i poziomem gadatliwości**.
-Nie wyłącza wewnętrznych liczników, okien czasowych ani logiki radiowej wymaganej przez funkcje takie jak tryb `adaptive` w SX1276.
-
-Domyślnie diagnostyka jest **opt-in**.
-Jeżeli użytkownik nie włączy jej jawnie, zachowanie jest równoważne `diagnostic_mode: off`.
-
-- `off` — brak diagnostyki MQTT; `highlight_meters` wpływa tylko na lokalne wyróżnienie logów
-- `low` — lekka diagnostyka summary
-- `medium` — summary plus użyteczne eventy drop/truncate
-- `full` — pełna diagnostyka MQTT, w tym raw/RX-path
-
-Jeżeli szczegółowe opcje `diagnostic_publish_*` zostaną jawnie wpisane w YAML, mają pierwszeństwo nad presetem.
-
-Ważne: `diagnostic_publish_highlight_only` filtruje szczegółowe eventy diagnostyczne do ID z `highlight_meters`. Samo w sobie **nie** włącza statystyk per licznik. Dla snapshotów liczników w obecnej wersji komponentu użyj `highlight_meters` razem z `diagnostic_publish_summary_highlight_meters: true` oraz włącz okno 15-minutowe albo 60-minutowe.
+`all` stosuj tylko do developmentu albo kontrolowanych testów w gęstym eterze.
 
 ## `listen_mode_filter_after_parse`
-
-`listen_mode_filter_after_parse` to eksperymentalny przełącznik określający, jak restrykcyjnie komponent filtruje `listen_mode`.
 
 Domyślnie:
 
@@ -159,7 +172,7 @@ Domyślnie:
 listen_mode_filter_after_parse: false
 ```
 
-To zachowuje konserwatywne/stabilne działanie i jest zalecane, gdy liczniki są blisko, a odbiór już jest dobry.
+To tryb konserwatywny/stabilny. Zalecany, gdy liczniki są blisko i odbiór jest już dobry.
 
 Tryb eksperymentalny:
 
@@ -167,110 +180,46 @@ Tryb eksperymentalny:
 listen_mode_filter_after_parse: true
 ```
 
-W tym trybie parser/fallback najpierw ustala finalny tryb T1/C1, a dopiero potem stosowany jest filtr `listen_mode`. Może to odzyskać więcej ramek, gdy liczniki są dalej, za ścianami albo część ramek jest tracona. Zwykle zwiększa też `false_start_like`, `payload_size_unknown` i dropy `t1_decode3of6`.
+W tym trybie filtr `listen_mode` działa dopiero po parsowaniu/CRC/fallback, czyli po finalnym ustaleniu trybu T1/C1. Może pomóc, gdy liczniki są dalej, za ścianami albo część ramek jest tracona.
 
-Tę opcję porównuj przez `meter_snapshot` / statystyki konkretnych liczników, nie po samym globalnym `drop_pct` z `summary`.
+Może też zwiększyć:
+- `false_start_like`,
+- `payload_size_unknown`,
+- dropy `t1_decode3of6`.
 
-## Bardziej zaawansowane opcje YAML
+Porównuj tę opcję po `meter_snapshot` dla ważnych liczników, a nie po samym globalnym `drop_pct`.
 
-Poza minimalną konfiguracją komponent obsługuje także:
+## Uwagi radiowe
 
-- presety diagnostyki przez `diagnostic_mode`
-- osobny rozmiar stosu taska odbiorczego przez `receiver_task_stack_size`
-- wbudowaną publikację RAW przez `telegram_topic`
-- opcjonalne kierowanie jednego licznika przez `target_meter_id` i `target_topic`
-- tryby filtrowania eteru dla SX1276 przez `sx1276_busy_ether_mode: normal | aggressive | adaptive`
-- lokalne wyróżnianie wybranych liczników przez `highlight_meters`
-- opcjonalne filtrowanie eventów diagnostycznych przez `diagnostic_publish_highlight_only`
-  - uwaga: to filtruje tylko eventy per-packet; nie włącza statystyk liczników
-- opcjonalne wyróżnianie logów przez `highlight_ansi`, `highlight_tag` i `highlight_prefix`
-- czyszczenie błędów urządzenia SX1262 przy starcie przez `clear_device_errors_on_boot`
-- opcjonalną publikację wyczyszczonych błędów SX1262 przez `publish_dev_err_after_clear`
-- strojenie SX1262, takie jak `dio2_rf_switch`, `has_tcxo`, `rx_gain`, `long_gfsk_packets`
-- opcjonalną konfigurację pinów FEM dla Heltec V4 przez `fem_ctrl_pin`, `fem_en_pin` i `fem_pa_pin`
+- SX1262 jest preferowany w gęstym eterze, przy częstych pakietach i długich ramkach T1.
+- SX1276 może działać dobrze, szczególnie w T1-only i spokojniejszym eterze.
+- W środowisku mieszanym T1/C1 zwykle lepsze są dwa dedykowane odbiorniki niż jeden odbiornik w `both`.
 
-Pełna lista pól i eventów jest opisana w [`DIAGNOSTIC_PL.md`](DIAGNOSTIC_PL.md).
+`busy_ether_state` dotyczy tylko SX1276. Dla SX1262 i CC1101 raportowane jest:
 
-## Co repo zawiera
+```json
+"busy_ether_state": "n/a"
+```
 
-- komponent `wmbus_radio`,
-- przykłady dla:
-  - `SX1262 / Heltec V4`
-  - `SX1276 / Lilygo T3-S3`
-  - `SX1276 / Heltec V2`
-- diagnostykę MQTT:
-  - `boot`
-  - `summary`
-  - `dropped`
-  - `truncated`
-  - `rx_path`
-  - `meter_window`
-  - `busy_ether_changed` (zmiany stanu adaptive na SX1276)
-  - `suggestion` (ograniczane częstotliwościowo wskazówki diagnostyczne)
-  - `dev_err_cleared` (SX1262)
+## CC1101
 
-## Mapa dokumentacji
+Obsługa CC1101 jest w komponencie, ale nadal jest eksperymentalna i celowo nie ma jej w publicznych przykładach. Wymaga jawnego włączenia w YAML i poprawnego podłączenia GDO0/GDO2.
 
-- **[`DIAGNOSTIC_PL.md`](DIAGNOSTIC_PL.md)** — pola MQTT, opcje YAML, znaczenie eventów, krótkie i długie okna summary oraz sposób czytania diagnostyki
-- **[`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md)** — praktyczny wybór SX1276 vs SX1262
-- **[`BENCHMARKS_PL.md`](BENCHMARKS_PL.md)** — wnioski z benchmarków dla `T1-only` i `both`
-- **[`TROUBLESHOOTING_PL.md`](TROUBLESHOOTING_PL.md)** — diagnostyka po objawach
-- **[`docs/RX_PIPELINE_PL.md`](docs/RX_PIPELINE_PL.md)** — tor RX i kwalifikacja ramek
+## Dokumentacja
 
-## Ważne ostrzeżenie diagnostyczne
+- [`DIAGNOSTIC_PL.md`](DIAGNOSTIC_PL.md)
+- [`TROUBLESHOOTING_PL.md`](TROUBLESHOOTING_PL.md)
+- [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md)
+- [`BENCHMARKS_PL.md`](BENCHMARKS_PL.md)
+- [`docs/RX_PIPELINE_PL.md`](docs/RX_PIPELINE_PL.md)
 
-Nie traktuj `summary` jako synonimu realnej jakości odbioru.
+## Zasada supportu
 
-- `summary` pokazuje czystość parsera / decode,
-- `meter_window` pokazuje realną skuteczność odbioru konkretnego licznika.
+Nie ma logów — nie ma supportu.
 
-To jest szczególnie ważne dla **SX1276**, gdzie `adaptive` jest realnym algorytmem okienkowym, a nie mglistym auto-trybem. Raz na okno `summary` sprawdza liczniki false-start-like, `drop_pct`, błędy symboli T1 i FIFO overruns; gdy progi wskazują faktycznie zapchane okno, włącza 5-minutowy hold z ostrzejszym filtrowaniem. Wtedy `summary` może wyglądać dobrze, a `meter_window` nadal pokaże realne straty.
-
-Ważne: `diagnostic_mode` steruje tylko publikowaną diagnostyką i poziomem gadatliwości. Nie wyłącza wewnętrznych liczników ani logiki okienkowej używanej przez funkcje takie jak `adaptive` w SX1276.
-
-## Ważna uwaga o języku logów
-
-Dokumentacja jest rozdzielona na osobne wersje polską i angielską.
-
-Logowanie runtime przyjmuje praktyczną zasadę:
-
-- najważniejsze komunikaty użytkowe `INFO` / `WARN` / `ERROR` mogą być krótkie i dwujęzyczne `EN / PL`,
-- niskopoziomowe komunikaty `DEBUG` / `VERBOSE` pozostają po angielsku,
-- nazwy opcji YAML, eventów MQTT i pól JSON pozostają po angielsku jako stabilne API techniczne.
-
-Dzięki temu zwykłe logi są czytelniejsze dla polskiego użytkownika, ale niski poziom debugowania nie zamienia się w bałagan.
-
-## Przykłady
-
-Patrz **[`examples/README_PL.md`](examples/README_PL.md)**.
-
-Każda płytka ma dwie wersje:
-
-- `*_commented.yaml` — wersja z komentarzami / referencyjna,
-- `*_clean.yaml` — czysta baza do kopiowania.
-
-Przykłady są publikowane dla płytek SX1262 i SX1276.
-
-## Jak powstał ten projekt
-
-Projekt powstał w marcu 2026 w ciągu 26 dni — od zera do działającego release’u z diagnostyką, obsługą dwóch transceiverów i pełną dokumentacją.
-
-Zaczął się od praktycznej potrzeby: istniejące rozwiązania nie działały tak, jak było to potrzebne w realnym użyciu. Projekt rozwijał się iteracyjnie na prawdziwym sprzęcie, z naciskiem na stabilność, dobrą diagnostykę oraz pozostawienie dekodowania liczników poza urządzeniem ESP.
-
-W trakcie prac wykorzystywane były narzędzia AI, takie jak Claude i ChatGPT — do szkicowania kodu, refaktoryzacji, analizowania wariantów implementacji i przyspieszania iteracji. Kierunek projektu, wymagania, weryfikacja, testy na sprzęcie, odrzucanie złych pomysłów i decyzje architektoniczne pozostawały po mojej stronie.
-
-To jest opisane wprost, bo tak właśnie ten projekt powstawał: nie przez bezrefleksyjne kopiowanie wygenerowanego kodu, tylko przez użycie AI jako narzędzia programistycznego, z ciągłą weryfikacją i dopasowaniem całości do realnych ograniczeń sprzętu i praktyki.
-
-## Zgłaszanie błędów
-
-Do zgłaszania błędów używaj GitHub Issues i podawaj:
-
-- dokładną wersję ESPHome
-- wersję projektu / release / commit
-- istotny fragment YAML
-- logi
-- dane diagnostyczne, jeśli mają znaczenie
-
-## Licencja
-
-**GPL-3.0-or-later** — patrz `LICENSE` i `NOTICE`.
+Przed pytaniem o pomoc podaj:
+- YAML bez haseł,
+- pełny log startowy,
+- 2-5 minut logu pracy,
+- model ESP i radia,
+- zdjęcie połączeń, jeśli używasz zewnętrznego radia.

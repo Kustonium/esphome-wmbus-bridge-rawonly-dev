@@ -1,103 +1,58 @@
-# ESPHome YAML examples
+# Examples
 
 [Polska wersja](README_PL.md)
 
-This directory contains public board examples for the SX1262/SX1276 path.
+Public examples are provided only for SX1262 and SX1276 boards.
 
-CC1101 is intentionally not documented in public examples. It is still experimental even if the code is present in `main`.
+CC1101 support exists in the component, but it is still experimental and intentionally not documented here as a normal user path.
 
-Each supported board can have two variants:
+## Topic model
 
-- `*_commented.yaml` — recommended learning/reference config with comments.
-- `*_clean.yaml` — minimal copy/paste base.
+Examples use the new automatic MQTT topic model.
 
-## MQTT topic convention
-
-The examples use the new safer `topic_name` option:
-
-```yaml
-substitutions:
-  devicename: esphome-wmbus-xiao-s3
-
-wmbus_radio:
-  topic_name: "${devicename}"
-```
-
-Do **not** include the `wmbus/` prefix in `topic_name`.
-
-The component generates:
+If `topic_name` is omitted, the component uses `esphome.name` and generates:
 
 ```text
-wmbus/<topic_name>/telegram
-wmbus/<topic_name>/diag
-wmbus/<topic_name>/diag/summary
-wmbus/<topic_name>/diag/summary_15min
-wmbus/<topic_name>/diag/meter_snapshot
-wmbus/<topic_name>/diag/boot
+wmbus/<esphome.name>/telegram
+wmbus/<esphome.name>/diag/...
 ```
 
-Recommended Home Assistant add-on subscription:
+So the Home Assistant bridge add-on should subscribe to:
 
 ```text
 wmbus/+/telegram
 ```
 
-Diagnostic topics:
+Do not copy old `telegram_topic` / `diagnostic_topic` snippets unless you intentionally need a legacy/manual override.
 
-```text
-wmbus/+/diag/#
-```
+## Diagnostic model
 
-Legacy manual options `telegram_topic` and `diagnostic_topic` are still supported for old YAML files, but new examples should use `topic_name`.
-
-## Diagnostics
-
-Use presets instead of many individual flags:
+Examples use:
 
 ```yaml
-diagnostic_mode: "normal"
+diagnostic_mode: normal
 ```
 
-Preset meaning:
+This gives:
+- global `summary`,
+- `summary_15min`,
+- `meter_snapshot` for IDs listed in `highlight_meters`.
 
-- `off` — MQTT diagnostics disabled.
-- `low` — global summary + hint.
-- `normal` — summary + 15-minute summary + `meter_snapshot` for `highlight_meters`.
-- `debug` — `normal` plus drop/RX-path events.
-- `dev` — full developer diagnostics, including raw/debug payloads.
-
-For per-meter statistics, set `highlight_meters` and use `diagnostic_mode: normal`:
+For a quieter setup use:
 
 ```yaml
-highlight_meters:
-  - "00089907"
-  - "03534159"
-
-diagnostic_mode: "normal"
+diagnostic_mode: low
 ```
 
-`diagnostic_publish_highlight_only` is deprecated. If you need to limit detailed diagnostic events to highlighted IDs, use:
+For deeper troubleshooting use:
 
 ```yaml
-diagnostic_events_highlight_only: true
+diagnostic_mode: debug
 ```
 
-## listen_mode_filter_after_parse
+## File naming
 
-Default:
+Each board has two variants:
 
-```yaml
-listen_mode_filter_after_parse: false
-```
-
-This is the conservative/stable mode, recommended when meters are nearby and reception is already good.
-
-Experimental:
-
-```yaml
-listen_mode_filter_after_parse: true
-```
-
-This may help with distant meters, walls, or partially lost frames. It can increase valid frames, but usually also increases `false_start_like`, `payload_size_unknown`, and `t1_decode3of6` drops.
-
-Compare using `meter_snapshot` for your actual meters, not global `drop_pct` alone.
+- `*_clean.yaml` — minimal practical config,
+- `*_commented.yaml` — same idea with comments and explanations.

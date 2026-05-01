@@ -67,5 +67,4 @@ wmbus_radio:
   long_gfsk_packets: true
   listen_mode: t1
   listen_mode_filter_after_parse: false
-  topic_name: "${devicename}"
   diagnostic_mode: normal

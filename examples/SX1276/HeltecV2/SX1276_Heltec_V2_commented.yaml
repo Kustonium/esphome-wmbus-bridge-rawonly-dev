@@ -67,12 +67,15 @@ wmbus_radio:
 
   listen_mode: t1
   listen_mode_filter_after_parse: false
+
+  # MQTT topics are generated automatically.
+  # topic_name is optional; if omitted, esphome.name is used.
+  # Generated topics:
+  #   wmbus/<topic_name>/telegram
+  #   wmbus/<topic_name>/diag/...
+  # topic_name: "${devicename}"
   sx1276_busy_ether_mode: adaptive
-  # EN: Safe MQTT topic base. Do not include "wmbus/".
-  # The component publishes to wmbus/${devicename}/telegram and wmbus/${devicename}/diag/...
-  # PL: Bezpieczna baza topiców MQTT. Nie wpisuj "wmbus/".
-  # Komponent publikuje do wmbus/${devicename}/telegram oraz wmbus/${devicename}/diag/...
-  topic_name: "${devicename}"
+
 
   diagnostic_mode: normal
   diagnostic_summary_interval: 60s
@@ -80,5 +83,4 @@ wmbus_radio:
   # Optional per-meter stats.
   # highlight_meters:
   #   - "00089907"
-  # diagnostic_mode: normal already enables 15-minute summary and highlighted meter snapshots.
-  # diagnostic_meter_stats: highlighted  # optional explicit override; normal preset already does this
+  # diagnostic_publish_summary_15min: true

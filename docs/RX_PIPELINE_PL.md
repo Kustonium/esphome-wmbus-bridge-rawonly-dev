@@ -91,20 +91,3 @@ Zasada w skrócie:
 kandydat != poprawny telegram
 surowy blob diagnostyczny != payload z telegram_topic
 ```
-
-
-## Konwencja topiców
-
-Zalecana konfiguracja:
-
-```yaml
-topic_name: "xiao_s3"
-```
-
-Komponent publikuje poprawnie zweryfikowane telegramy do:
-
-```text
-wmbus/xiao_s3/telegram
-```
-
-Ręczne `telegram_topic` nadal działa jako legacy/manual override, ale nowe YAML-e powinny używać `topic_name`.
