@@ -1,0 +1,136 @@
+# ESPHome wM-Bus Bridge RAW-only — Heltec WiFi LoRa 32 V4 / SX1262
+# EN: Commented example with optional LED blink and Heltec V4 FEM pins.
+# PL: Przykład z komentarzami, opcjonalnym LED i pinami FEM Heltec V4.
+
+substitutions:
+  devicename: esphome-wmbus-heltec-v4
+  friendly_name: "wMBus Bridge Heltec V4"
+
+esphome:
+  name: ${devicename}
+  friendly_name: ${friendly_name}
+  min_version: 2026.1.3
+  name_add_mac_suffix: false
+
+esp32:
+  variant: esp32s3
+  flash_size: 16MB
+  cpu_frequency: 160MHz
+  framework:
+    type: esp-idf
+
+psram:
+  mode: quad
+
+external_components:
+  - source: github://Kustonium/esphome-wmbus-bridge-rawonly@main
+    components: [wmbus_radio]
+    refresh: 0s
+
+logger:
+  level: info
+  logs:
+    mqtt: warn
+    component: warn
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+api:
+ota:
+  - platform: esphome
+mdns:
+  disabled: false
+improv_serial:
+time:
+  - platform: homeassistant
+
+# Optional basic ESP diagnostics.
+debug:
+
+spi:
+  clk_pin: GPIO9
+  mosi_pin: GPIO10
+  miso_pin: GPIO11
+
+# Optional status LED on Heltec V4, active-low.
+output:
+  - platform: gpio
+    id: led_output
+    pin:
+      number: GPIO35
+      inverted: true
+
+light:
+  - platform: binary
+    id: status_led
+    name: "LED"
+    output: led_output
+    restore_mode: ALWAYS_OFF
+
+script:
+  - id: blink_led
+    mode: single
+    then:
+      - light.turn_on: status_led
+      - delay: 50ms
+      - light.turn_off: status_led
+
+wmbus_radio:
+  radio_type: SX1262
+  cs_pin: GPIO8
+  reset_pin: GPIO12
+  busy_pin: GPIO13
+  irq_pin:
+    number: GPIO14
+    mode: input
+
+  # Heltec V4 external FEM/LNA pins.
+  fem_en_pin: GPIO2
+  fem_ctrl_pin: GPIO7
+  fem_pa_pin: GPIO46
+
+  dio2_rf_switch: true
+  has_tcxo: true
+  rx_gain: boosted
+  long_gfsk_packets: true
+
+  listen_mode: t1
+  listen_mode_filter_after_parse: false
+  # EN: Safe MQTT topic base. Do not include "wmbus/".
+  # The component publishes to wmbus/${devicename}/telegram and wmbus/${devicename}/diag/...
+  # PL: Bezpieczna baza topiców MQTT. Nie wpisuj "wmbus/".
+  # Komponent publikuje do wmbus/${devicename}/telegram oraz wmbus/${devicename}/diag/...
+  topic_name: "${devicename}"
+
+  diagnostic_mode: normal
+  diagnostic_summary_interval: 60s
+
+  # Optional SX1262 boot diagnostics.
+  # clear_device_errors_on_boot: true
+  # publish_dev_err_after_clear: true
+
+  # Optional 15-minute per-meter statistics for selected IDs.
+  # highlight_meters:
+  #   - "00089907"
+  #   - "03534159"
+  # highlight_ansi: true
+  # highlight_tag: "wmbus_user"
+  # highlight_prefix: "★ "
+  # diagnostic_mode: normal already enables 15-minute summary and highlighted meter snapshots.
+  # diagnostic_meter_stats: highlighted  # optional explicit override; normal preset already does this
+
+  # Optional experimental/aggressive parser-side filter.
+  # Use only for A/B tests and compare meter_snapshot.
+  # listen_mode_filter_after_parse: true
+
+  on_frame:
+    then:
+      - script.execute: blink_led

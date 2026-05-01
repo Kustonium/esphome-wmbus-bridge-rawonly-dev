@@ -1,0 +1,66 @@
+substitutions:
+  devicename: esphome-wmbus-lilygo-t3s3
+  friendly_name: "wMBus Bridge LilyGO T3-S3"
+  mqtt_topic_prefix: "wmbus_bridge/${devicename}"
+  diag_topic: "wmbus/${devicename}/diag"
+
+esphome:
+  name: ${devicename}
+  friendly_name: ${friendly_name}
+  min_version: 2026.1.3
+  name_add_mac_suffix: false
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  cpu_frequency: 160MHz
+  framework:
+    type: esp-idf
+
+external_components:
+  - source: github://Kustonium/esphome-wmbus-bridge-rawonly@main
+    components: [wmbus_radio]
+    refresh: 0s
+
+logger:
+  level: info
+  logs:
+    mqtt: warn
+    component: warn
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+
+api:
+ota:
+  - platform: esphome
+
+spi:
+  id: spi_lora
+  clk_pin: GPIO05
+  mosi_pin: GPIO06
+  miso_pin: GPIO03
+
+wmbus_radio:
+  radio_type: SX1276
+  spi_id: spi_lora
+  cs_pin: GPIO07
+  reset_pin: GPIO08
+  irq_pin:
+    number: GPIO33
+    mode:
+      input: true
+      pullup: true
+  listen_mode: t1
+  listen_mode_filter_after_parse: false
+  sx1276_busy_ether_mode: adaptive
+  telegram_topic: "${mqtt_topic_prefix}/telegram"
+  diagnostic_mode: low
+  diagnostic_topic: "${diag_topic}"
