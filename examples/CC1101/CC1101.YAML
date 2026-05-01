@@ -15,43 +15,24 @@
 substitutions:
   devicename: esphome-wmbus-cc1101
   friendly_name: "wMBus Bridge CC1101"
-  mqtt_topic_prefix: "wmbus_bridge/cc1101"
-  diag_topic: "wmbus/cc1101/diag"
 
-# -----------------------------------------------------------------------------
-# ESPHOME CORE
-# -----------------------------------------------------------------------------
 esphome:
   name: ${devicename}
   friendly_name: ${friendly_name}
   min_version: 2026.1.3
   name_add_mac_suffix: false
 
-# -----------------------------------------------------------------------------
-# ESP32-C3
-#
-# Przykład dla ESP32-C3 Super Mini / DevKitM.
-# Przy innej płytce zmień board oraz piny.
-# -----------------------------------------------------------------------------
 esp32:
   board: esp32-c3-devkitm-1
   variant: esp32c3
   framework:
     type: esp-idf
 
-# -----------------------------------------------------------------------------
-# EXTERNAL COMPONENT
-#
-# CC1101 jest na branchu dev, dopóki nie zostanie przetestowany.
-# -----------------------------------------------------------------------------
 external_components:
-  - source: github://Kustonium/esphome-wmbus-bridge-rawonly-dev@main
+  - source: github://Kustonium/esphome-wmbus-bridge-rawonly@main
     components: [wmbus_radio]
     refresh: 0s
 
-# -----------------------------------------------------------------------------
-# LOGGER
-# -----------------------------------------------------------------------------
 logger:
   level: DEBUG
   logs:
@@ -59,9 +40,6 @@ logger:
     component: WARN
     wmbus: DEBUG
 
-# -----------------------------------------------------------------------------
-# NETWORK
-# -----------------------------------------------------------------------------
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -79,24 +57,19 @@ ota:
 time:
   - platform: homeassistant
 
-# -----------------------------------------------------------------------------
-# MQTT BROKER
-# -----------------------------------------------------------------------------
 mqtt:
   broker: !secret mqtt_broker
   username: !secret mqtt_user
   password: !secret mqtt_password
 
-  # Logi ESPHome do MQTT — opcjonalne.
-  # Przy testach CC1101 lepiej najpierw patrzeć w log po USB/API.
+  # Opcjonalne logi ESPHome do MQTT.
+  # Przy pierwszych testach CC1101 lepiej patrzeć w log po USB/API.
   log_topic:
     topic: "${devicename}/debug"
     level: DEBUG
 
 # =============================================================================
-# SPI BUS – przykład dla ESP32-C3 Super Mini
-#
-# CC1101 pinout / przykład:
+# SPI BUS – przykład dla ESP32-C3 Super Mini / DevKitM
 #
 # CC1101        ESP32-C3
 # ----------------------
@@ -108,10 +81,6 @@ mqtt:
 # MOSI      ->  GPIO6
 # MISO/GDO1 ->  GPIO7
 # GDO2      ->  GPIO2
-#
-# WAŻNE:
-# GDO2 NIE może być n/c.
-# Jeśli Twoja płytka nie ma wyprowadzonego GDO2, nie używaj jej do tego testu.
 # =============================================================================
 spi:
   clk_pin: GPIO5
@@ -122,108 +91,43 @@ spi:
 # WMBUS RADIO – CC1101 EXPERIMENTAL
 # =============================================================================
 wmbus_radio:
-  # ---------------------------------------------------------------------------
-  # RADIO TYPE
-  # ---------------------------------------------------------------------------
-  radio_type: CC1101
+  - radio_type: CC1101
 
-  # ---------------------------------------------------------------------------
-  # CC1101 jest eksperymentalny.
-  #
-  # Flaga jest celowa: ma zatrzymać przypadkowe copy/paste.
-  # ---------------------------------------------------------------------------
-  cc1101_allow_experimental: true
+    # Celowa bramka bezpieczeństwa. Bez tego CC1101 nie przejdzie walidacji.
+    # cc1101_allow_experimental: true
 
-  # ---------------------------------------------------------------------------
-  # SPI / CS
-  # ---------------------------------------------------------------------------
-  cs_pin: GPIO4
+    # CC1101 może wymagać ręcznej korekty częstotliwości zależnie od modułu.
+    # Nominalnie W-MBus T/C: 868.950 MHz.
+    frequency: 868.950
 
-  # ---------------------------------------------------------------------------
-  # CC1101 GDO PINS
-  #
-  # GDO2 = sync detect / początek telegramu
-  # GDO0 = FIFO threshold / dane w FIFO
-  #
-  # Dla CC1101 NIE używamy irq_pin.
-  # ---------------------------------------------------------------------------
-  gdo0_pin:
-    number: GPIO3
-    mode: input
+    cs_pin: GPIO4
 
-  gdo2_pin:
-    number: GPIO2
-    mode: input
+    # CC1101: GDO2 = sync detect / początek telegramu, GDO0 = FIFO threshold / dane w FIFO.
+    # Dla CC1101 nie używamy irq_pin/reset_pin/busy_pin.
+    gdo0_pin:
+      number: GPIO3
+      mode: input
 
-  # ---------------------------------------------------------------------------
-  # LISTEN MODE
-  #
-  # t1   = tylko T1
-  # c1   = tylko C1
-  # both = T1 + C1
-  #
-  # Na start dla CC1101 testuj T1-only.
-  # ---------------------------------------------------------------------------
-  listen_mode: t1
+    gdo2_pin:
+      number: GPIO2
+      mode: input
 
-  # ---------------------------------------------------------------------------
-  # RX GAIN
-  # ---------------------------------------------------------------------------
-  rx_gain: boosted
+    listen_mode: t1
+    listen_mode_filter_after_parse: false
 
-  # ---------------------------------------------------------------------------
-  # MAIN RAW TELEGRAM TOPIC
-  #
-  # Tu trafiają tylko telegramy, które przeszły walidację komponentu.
-  # To NIE jest śmietnik "raw packet" z radia.
-  # ---------------------------------------------------------------------------
-  telegram_topic: "${mqtt_topic_prefix}/telegram"
+    # Nowy styl topiców MQTT.
+    # Komponent wygeneruje:
+    # - wmbus/cc1101/telegram
+    # - wmbus/cc1101/diag
+    # - wmbus/cc1101/diag/summary
+    # - wmbus/cc1101/diag/meter_snapshot
+    topic_name: "cc1101"
 
-  # ---------------------------------------------------------------------------
-  # DIAGNOSTICS
-  # ---------------------------------------------------------------------------
-  diagnostic_topic: "${diag_topic}"
+    # Preset diagnostyczny zamiast ręcznego zestawu starych opcji.
+    diagnostic_mode: normal
+    diagnostic_summary_interval: 60s
 
-  diagnostic_publish_summary: true
-  diagnostic_summary_interval: 60s
-
-  diagnostic_publish_summary_15min: true
-  diagnostic_publish_summary_60min: false
-
-  diagnostic_publish_drop_events: true
-  diagnostic_publish_rx_path_events: true
-
-  # Przy normalnym użyciu false.
-  # Włącz tylko do brutalnego debugowania.
-  diagnostic_verbose: true
-
-  # Nie publikuj surowego śmiecia jako RAW.
-  # Telegram do wmbusmeters idzie przez telegram_topic.
-  diagnostic_publish_raw: false
-
-  # ---------------------------------------------------------------------------
-  # HIGHLIGHT METERS – opcjonalnie
-  #
-  # Wpisz ID liczników, które chcesz wyróżniać w logach.
-  # Zostaw puste / zakomentowane przy pierwszym uruchomieniu.
-  # ---------------------------------------------------------------------------
-  # highlight_meters:
-  #   - "12345678"
-  # highlight_ansi: true
-  # highlight_tag: "wmbus_user"
-  # highlight_prefix: "★ "
-
-  # ---------------------------------------------------------------------------
-  # ON_FRAME – opcjonalne dodatki
-  #
-  # Nie publikuj tutaj drugi raz tego samego HEX-a do MQTT,
-  # bo telegram_topic robi to automatycznie.
-  # ---------------------------------------------------------------------------
-  # on_frame:
-  #   then:
-  #     - logger.log:
-  #         format: "Validated telegram: RSSI=%ddBm mode=%s size=%d"
-  #         args:
-  #           - frame->rssi()
-  #           - frame->format().c_str()
-  #           - frame->data().size()
+    # Opcjonalnie: wyróżnione liczniki do meter_snapshot w trybie normal.
+    # highlight_meters:
+    #   - "12345678"
+    #   - "87654321"
