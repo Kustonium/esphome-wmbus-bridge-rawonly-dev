@@ -250,14 +250,14 @@ protected:
   uint32_t diag_rssi_drop_n_{0};
 
   // Per-mode window stats (index: (uint8_t)LinkMode)
-  std::array<uint32_t, 3> diag_mode_total_{};
-  std::array<uint32_t, 3> diag_mode_ok_{};
-  std::array<uint32_t, 3> diag_mode_dropped_{};
-  std::array<uint32_t, 3> diag_mode_crc_failed_{};
-  std::array<int32_t, 3> diag_mode_rssi_ok_sum_{};
-  std::array<uint32_t, 3> diag_mode_rssi_ok_n_{};
-  std::array<int32_t, 3> diag_mode_rssi_drop_sum_{};
-  std::array<uint32_t, 3> diag_mode_rssi_drop_n_{};
+  std::array<uint32_t, 4> diag_mode_total_{};
+  std::array<uint32_t, 4> diag_mode_ok_{};
+  std::array<uint32_t, 4> diag_mode_dropped_{};
+  std::array<uint32_t, 4> diag_mode_crc_failed_{};
+  std::array<int32_t, 4> diag_mode_rssi_ok_sum_{};
+  std::array<uint32_t, 4> diag_mode_rssi_ok_n_{};
+  std::array<int32_t, 4> diag_mode_rssi_drop_sum_{};
+  std::array<uint32_t, 4> diag_mode_rssi_drop_n_{};
 
   std::array<uint32_t, DB_COUNT> diag_dropped_by_bucket_{};
   std::array<uint32_t, SB_COUNT> diag_dropped_by_stage_{};
@@ -272,14 +272,14 @@ protected:
   uint32_t diag_15m_rssi_ok_n_{0};
   int32_t diag_15m_rssi_drop_sum_{0};
   uint32_t diag_15m_rssi_drop_n_{0};
-  std::array<uint32_t, 3> diag_15m_mode_total_{};
-  std::array<uint32_t, 3> diag_15m_mode_ok_{};
-  std::array<uint32_t, 3> diag_15m_mode_dropped_{};
-  std::array<uint32_t, 3> diag_15m_mode_crc_failed_{};
-  std::array<int32_t, 3> diag_15m_mode_rssi_ok_sum_{};
-  std::array<uint32_t, 3> diag_15m_mode_rssi_ok_n_{};
-  std::array<int32_t, 3> diag_15m_mode_rssi_drop_sum_{};
-  std::array<uint32_t, 3> diag_15m_mode_rssi_drop_n_{};
+  std::array<uint32_t, 4> diag_15m_mode_total_{};
+  std::array<uint32_t, 4> diag_15m_mode_ok_{};
+  std::array<uint32_t, 4> diag_15m_mode_dropped_{};
+  std::array<uint32_t, 4> diag_15m_mode_crc_failed_{};
+  std::array<int32_t, 4> diag_15m_mode_rssi_ok_sum_{};
+  std::array<uint32_t, 4> diag_15m_mode_rssi_ok_n_{};
+  std::array<int32_t, 4> diag_15m_mode_rssi_drop_sum_{};
+  std::array<uint32_t, 4> diag_15m_mode_rssi_drop_n_{};
   std::array<uint32_t, DB_COUNT> diag_15m_dropped_by_bucket_{};
   std::array<uint32_t, SB_COUNT> diag_15m_dropped_by_stage_{};
   RxPathCounters diag_15m_rx_path_{};
@@ -293,14 +293,14 @@ protected:
   uint32_t diag_60min_rssi_ok_n_{0};
   int32_t diag_60min_rssi_drop_sum_{0};
   uint32_t diag_60min_rssi_drop_n_{0};
-  std::array<uint32_t, 3> diag_60min_mode_total_{};
-  std::array<uint32_t, 3> diag_60min_mode_ok_{};
-  std::array<uint32_t, 3> diag_60min_mode_dropped_{};
-  std::array<uint32_t, 3> diag_60min_mode_crc_failed_{};
-  std::array<int32_t, 3> diag_60min_mode_rssi_ok_sum_{};
-  std::array<uint32_t, 3> diag_60min_mode_rssi_ok_n_{};
-  std::array<int32_t, 3> diag_60min_mode_rssi_drop_sum_{};
-  std::array<uint32_t, 3> diag_60min_mode_rssi_drop_n_{};
+  std::array<uint32_t, 4> diag_60min_mode_total_{};
+  std::array<uint32_t, 4> diag_60min_mode_ok_{};
+  std::array<uint32_t, 4> diag_60min_mode_dropped_{};
+  std::array<uint32_t, 4> diag_60min_mode_crc_failed_{};
+  std::array<int32_t, 4> diag_60min_mode_rssi_ok_sum_{};
+  std::array<uint32_t, 4> diag_60min_mode_rssi_ok_n_{};
+  std::array<int32_t, 4> diag_60min_mode_rssi_drop_sum_{};
+  std::array<uint32_t, 4> diag_60min_mode_rssi_drop_n_{};
   std::array<uint32_t, DB_COUNT> diag_60min_dropped_by_bucket_{};
   std::array<uint32_t, SB_COUNT> diag_60min_dropped_by_stage_{};
   RxPathCounters diag_60min_rx_path_{};

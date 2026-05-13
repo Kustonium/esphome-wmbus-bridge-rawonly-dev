@@ -51,6 +51,8 @@ static const char *listen_mode_to_string_(ListenMode mode) {
       return "T1 only";
     case LISTEN_MODE_C1:
       return "C1 only";
+    case LISTEN_MODE_S1:
+      return "S1 only";
     case LISTEN_MODE_BOTH:
     default:
       return "T1+C1 (both, 3:1 bias)";
@@ -550,8 +552,8 @@ void Radio::maybe_publish_suggestion_(uint32_t now_ms) {
         chip, "NO_METERS_DETECTED",
         "listen_mode", "t1",
         "listen_mode: t1",
-        "No wM-Bus frames received. Check antenna, SPI pins, listen_mode (t1/c1/both) and radio_type.",
-        "Brak odebranych ramek wM-Bus. Sprawdź antenę, piny SPI, listen_mode (t1/c1/both) i radio_type.");
+        "No wM-Bus frames received. Check antenna, SPI pins, listen_mode (t1/c1/s1/both) and radio_type.",
+        "Brak odebranych ramek wM-Bus. Sprawdź antenę, piny SPI, listen_mode (t1/c1/s1/both) i radio_type.");
     return; // nothing more to suggest until we have data
   }
 
@@ -1018,7 +1020,7 @@ void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s,
     const uint8_t mode_byte = (uint8_t)(key & 0xFF);
     char id_str[12];
     snprintf(id_str, sizeof(id_str), "%08" PRIu32, meter_id);
-    const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : "T1";
+    const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : ((mode_byte == (uint8_t) LinkMode::S1) ? "S1" : "T1");
 
     // Use dedicated 60min counters for summary_60min trigger to avoid
     // showing only the last 15min of data (count_window_time is reset every 15min).
@@ -1395,7 +1397,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
       const uint8_t mode_byte = key & 0xFF;
       char id_str[12];
       snprintf(id_str, sizeof(id_str), "%08" PRIu32, meter_id);
-      const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : "T1";
+      const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : ((mode_byte == (uint8_t) LinkMode::S1) ? "S1" : "T1");
       const uint32_t st_elapsed_s = elapsed / 1000U;
       this->publish_meter_window_for_("summary_15min", st_elapsed_s, id_str, mode_str, st,
                                       st.count_window_time, st.rssi_sum_window_time,
@@ -1760,7 +1762,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
       const uint8_t mode_byte = key & 0xFF;
       char id_str[12];
       snprintf(id_str, sizeof(id_str), "%08" PRIu32, meter_id);
-      const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : "T1";
+      const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : ((mode_byte == (uint8_t) LinkMode::S1) ? "S1" : "T1");
       const uint32_t st_elapsed_s = elapsed / 1000U;
       this->publish_meter_window_for_("summary_60min", st_elapsed_s, id_str, mode_str, st,
                                       st.count_window_60min, st.rssi_sum_window_60min,
@@ -1919,7 +1921,8 @@ void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
     char id_str[9];
     snprintf(id_str, sizeof(id_str), "%08" PRIu32, key_id);
     const char *mode_str = (key_mode == (uint8_t) LinkMode::T1) ? "T1"
-                         : (key_mode == (uint8_t) LinkMode::C1) ? "C1" : "UNK";
+                         : (key_mode == (uint8_t) LinkMode::C1) ? "C1"
+                         : (key_mode == (uint8_t) LinkMode::S1) ? "S1" : "UNK";
     auto &st = kv.second;
     this->publish_meter_window_for_("time", elapsed_s, id_str, mode_str, st,
                                     st.count_window_time,
@@ -2146,10 +2149,11 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     const LinkMode got = p->get_link_mode();
     const bool reject =
         (want == LISTEN_MODE_C1 && got != LinkMode::C1) ||
-        (want == LISTEN_MODE_T1 && got != LinkMode::T1);
+        (want == LISTEN_MODE_T1 && got != LinkMode::T1) ||
+        (want == LISTEN_MODE_S1 && got != LinkMode::S1);
     if (reject) {
       ESP_LOGD(TAG, "Filtered by listen_mode before parse: want=%s got=%s RSSI=%ddBm",
-               (want == LISTEN_MODE_C1) ? "C1" : "T1",
+               (want == LISTEN_MODE_C1) ? "C1" : ((want == LISTEN_MODE_S1) ? "S1" : "T1"),
                link_mode_name(got),
                (int) p->get_rssi());
       delete p;
@@ -2166,10 +2170,11 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
       const LinkMode got = p->get_link_mode();
       const bool reject =
           (want == LISTEN_MODE_C1 && got != LinkMode::C1) ||
-          (want == LISTEN_MODE_T1 && got != LinkMode::T1);
+          (want == LISTEN_MODE_T1 && got != LinkMode::T1) ||
+          (want == LISTEN_MODE_S1 && got != LinkMode::S1);
       if (reject) {
         ESP_LOGD(TAG, "Filtered by listen_mode after parse: want=%s got=%s RSSI=%ddBm",
-                 (want == LISTEN_MODE_C1) ? "C1" : "T1",
+                 (want == LISTEN_MODE_C1) ? "C1" : ((want == LISTEN_MODE_S1) ? "S1" : "T1"),
                  link_mode_name(got),
                  (int) p->get_rssi());
         delete p;
@@ -2470,7 +2475,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
         stats.count_window_count >= this->meter_window_count_threshold_) {
       const uint32_t elapsed_s = (stats.count_window_started_ms > 0)
           ? ((uint32_t) esphome::millis() - stats.count_window_started_ms) / 1000 : 0;
-      const char *count_mode_str = (((uint8_t) frame->link_mode()) == (uint8_t) LinkMode::T1) ? "T1" : "C1";
+      const char *count_mode_str = link_mode_name(frame->link_mode());
       this->publish_meter_window_for_("count", elapsed_s, id_str, count_mode_str, stats,
                                       stats.count_window_count,
                                       stats.rssi_sum_window_count,
@@ -2580,6 +2585,29 @@ void Radio::receive_frame() {
     ESP_LOGW(TAG, "Queue send failed / wyslanie do kolejki nie powiodlo sie");
     return false;
   };
+
+  if (this->radio != nullptr && this->radio->get_listen_mode() == LISTEN_MODE_S1) {
+    packet->set_forced_link_mode(LinkMode::S1);
+    const size_t max_raw = WMBUS_RAW_DRAIN_MAX_BYTES;
+    auto *raw = packet->append_space(max_raw);
+    size_t got_raw = 0;
+    this->radio->read_in_task_partial(raw, max_raw, got_raw, 1, 3);
+    packet->resize(got_raw);
+    if (got_raw == 0) {
+      this->diag_rx_path_.preamble_read_failed++;
+      this->diag_15m_rx_path_.preamble_read_failed++;
+      this->diag_60min_rx_path_.preamble_read_failed++;
+      this->collect_radio_rx_diag_();
+      this->publish_rx_path_event_("rx_path", "receive_s1_raw", "no_bytes_after_s1_sync", this->radio->get_rssi());
+      ESP_LOGV(TAG, "S1 sync IRQ but no raw bytes read");
+      return;
+    }
+    char detail[96];
+    snprintf(detail, sizeof(detail), "s1_raw_len=%u", (unsigned) got_raw);
+    this->publish_rx_path_event_("rx_path", "receive_s1_raw", detail, this->radio->get_rssi());
+    queue_packet(packet);
+    return;
+  }
 
   auto raw_drain_fallback = [this, &packet, &queue_packet](const char *stage, const char *reason_detail,
                                                            size_t already_read, bool is_c_mode) -> bool {

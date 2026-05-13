@@ -84,6 +84,7 @@ void SX1276::setup() {
   {
     const char *lm = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"
                    : (this->listen_mode_ == LISTEN_MODE_C1) ? "C1 only"
+                   : (this->listen_mode_ == LISTEN_MODE_S1) ? "S1 only"
                    : "T1+C1 (both, 3:1 bias)";
     ESP_LOGI(TAG, "Listen mode / tryb nasluchu: %s", lm);
   }
@@ -117,7 +118,7 @@ void SX1276::setup() {
   const uint16_t frd = ((uint64_t) freq_dev * (1 << 19)) / F_OSC;
   this->spi_write(0x04, {BYTE(frd, 1), BYTE(frd, 0)});
 
-  const uint32_t bitrate = 100000;
+  const uint32_t bitrate = (this->listen_mode_ == LISTEN_MODE_S1) ? 32768UL : 100000UL;
   uint32_t br = (F_OSC << 4) / bitrate;
   this->spi_write(0x5D, (uint8_t) (br & 0x0F));
   br >>= 4;
@@ -130,8 +131,12 @@ void SX1276::setup() {
   this->spi_write(0x0D, (uint8_t) ((1 << 4) | (1 << 3) | 0b110));
   this->spi_write(0x24, (uint8_t) 0b111);
 
-  const uint8_t sync_cfg = (1 << 5) | (1 << 4) | (2 - 1);
-  this->spi_write(0x27, {sync_cfg, 0x54, 0x3D});
+  const uint8_t sync_len = (this->listen_mode_ == LISTEN_MODE_S1) ? 3 : 2;
+  const uint8_t sync_cfg = (1 << 5) | (1 << 4) | (sync_len - 1);
+  if (this->listen_mode_ == LISTEN_MODE_S1)
+    this->spi_write(0x27, {sync_cfg, 0x54, 0x76, 0x96});
+  else
+    this->spi_write(0x27, {sync_cfg, 0x54, 0x3D});
 
   this->spi_write(0x30, (uint8_t) 0);  // no hardware CRC
   this->spi_write(0x32, (uint8_t) 0);  // unlimited packet mode
@@ -184,6 +189,20 @@ optional<uint8_t> SX1276::read() {
 }
 
 void SX1276::restart_rx() {
+  if (this->listen_mode_ == LISTEN_MODE_S1) {
+    this->spi_write(REG_OP_MODE, (uint8_t) 0b001);  // standby
+    this->spi_write(0x28, {0x54, 0x76, 0x96});
+    this->spi_write(REG_IRQ_FLAGS2, (uint8_t) FLAG2_FIFO_OVERRUN);
+    this->chunk_len_ = 0;
+    this->chunk_idx_ = 0;
+    this->frame_active_ = false;
+    this->rssi_captured_ = false;
+    this->last_rssi_dbm_ = -127;
+    this->abort_requested_ = false;
+    this->spi_write(REG_OP_MODE, (uint8_t) 0b101);  // RX
+    return;
+  }
+
   uint8_t sync2;
   if (this->listen_mode_ == LISTEN_MODE_T1) {
     sync2 = 0x3D;

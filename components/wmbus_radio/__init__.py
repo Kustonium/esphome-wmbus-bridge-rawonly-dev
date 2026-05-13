@@ -145,7 +145,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_CC1101_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
             cv.Optional(CONF_FREQUENCY, default=868.950): cv.float_range(min=300.0, max=928.0),
             cv.Optional(CONF_LISTEN_MODE, default="both"): cv.one_of(
-                "t1", "c1", "both", lower=True
+                "t1", "c1", "s1", "both", lower=True
             ),
             # Advanced/experimental. Default false keeps the legacy behavior:
             # filter listen_mode by preliminary raw packet mode before parsing.
@@ -334,6 +334,7 @@ async def to_code(config):
         "t1": ListenMode.LISTEN_MODE_T1,
         "c1": ListenMode.LISTEN_MODE_C1,
         "both": ListenMode.LISTEN_MODE_BOTH,
+        "s1": ListenMode.LISTEN_MODE_S1,
     }
     cg.add(radio_var.set_listen_mode(listen_mode_map[config[CONF_LISTEN_MODE]]))
 
