@@ -11,7 +11,7 @@
 
 namespace esphome {
 namespace wmbus_radio {
-enum ListenMode : uint8_t { LISTEN_MODE_BOTH = 0, LISTEN_MODE_T1 = 1, LISTEN_MODE_C1 = 2 };
+enum ListenMode : uint8_t { LISTEN_MODE_BOTH = 0, LISTEN_MODE_T1 = 1, LISTEN_MODE_C1 = 2, LISTEN_MODE_S1 = 3 };
 class RadioTransceiver
     : public Component,
       public spi::SPIDevice<spi::BIT_ORDER_MSB_FIRST, spi::CLOCK_POLARITY_LOW,
