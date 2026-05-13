@@ -560,7 +560,7 @@ void SX1262::setup() {
   const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
                    {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_16,
-                    (this->listen_mode_ == LISTEN_MODE_S1) ? 0x18 : 0x10,  // 24 bits sync for S1, 16 bits for T1/C1
+                    static_cast<uint8_t>((this->listen_mode_ == LISTEN_MODE_S1) ? 0x18 : 0x10),  // 24 bits sync for S1, 16 bits for T1/C1
                     GFSK_ADDRESS_FILT_OFF, pkt_len_mode,
                     0xFF,  // max payload
                     GFSK_CRC_OFF, GFSK_WHITENING_OFF});
