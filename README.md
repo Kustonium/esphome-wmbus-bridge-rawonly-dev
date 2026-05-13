@@ -10,6 +10,10 @@ The ESP receives and validates wM-Bus telegrams, then publishes validated RAW HE
 meter -> SX1262/SX1276 -> ESPHome wmbus_radio -> MQTT HEX -> wmbusmeters / Home Assistant
 ```
 
+## Start here
+
+New user? Start with [`START_HERE.md`](START_HERE.md). It gives the recommended reading order and explains which file to open first.
+
 ## Design rule
 
 The ESP is a radio bridge, not a meter decoder.
@@ -21,7 +25,7 @@ It does not:
 - replace `wmbusmeters`.
 
 It does:
-- receive T1/C1 frames,
+- receive T1/C1 frames and experimental S1 frames,
 - validate/normalize telegrams,
 - publish valid telegram HEX to MQTT,
 - publish RF diagnostics.
@@ -107,6 +111,30 @@ wmbus_radio:
 
   # ... SPI/radio pins go here ...
 ```
+
+## Listen modes and frequency
+
+`listen_mode` selects one RF profile for the receiver:
+
+| `listen_mode` | Meaning | Default frequency |
+|---|---|---:|
+| `t1` | T1 only | `868.950 MHz` |
+| `c1` | C1 only | `868.950 MHz` |
+| `both` | T1/C1 only | `868.950 MHz` |
+| `s1` | experimental S1 only | `868.300 MHz` |
+
+`both` means **T1/C1 only**. S1 is a separate receive mode and cannot be combined with T1/C1 in one receiver configuration.
+
+For normal T1/C1 use, `frequency:` can usually be omitted. For S1, the default is `868.300 MHz`, but it can be overridden for compatibility tests, for example:
+
+```yaml
+wmbus_radio:
+  radio_type: SX1262
+  listen_mode: s1
+  frequency: 868.36
+```
+
+If an S1 telegram is received and passes validation, the component publishes it to MQTT the same way as T1/C1 telegrams. Meter-value decoding still happens outside the ESP, for example in `wmbusmeters`, and may require the correct driver and key. Proprietary or polling-based systems may not produce standard passive S1 telegrams.
 
 ## Diagnostic modes
 
@@ -203,10 +231,11 @@ Compare this option using `meter_snapshot` for the meters that matter, not only 
 
 ## CC1101
 
-CC1101 support exists in the component but is still experimental and intentionally not shown in the public examples. It requires explicit opt-in in YAML and validated GDO0/GDO2 wiring.
+CC1101 support is available in the component, but it is still experimental. It requires explicit YAML opt-in and proper GDO0/GDO2 wiring.
 
 ## Documentation
 
+- [`START_HERE.md`](START_HERE.md)
 - [`DIAGNOSTIC.md`](DIAGNOSTIC.md)
 - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md)
 - [`CHIP_SELECTION.md`](CHIP_SELECTION.md)

@@ -10,6 +10,10 @@ ESP odbiera i waliduje telegramy wM-Bus, a następnie publikuje zweryfikowany RA
 licznik -> SX1262/SX1276 -> ESPHome wmbus_radio -> MQTT HEX -> wmbusmeters / Home Assistant
 ```
 
+## Zacznij tutaj
+
+Nowy użytkownik? Zacznij od [`START_HERE_PL.md`](START_HERE_PL.md). Ten plik prowadzi po repozytorium i pokazuje, co czytać po kolei.
+
 ## Zasada projektu
 
 ESP jest mostem radiowym, nie dekoderem liczników.
@@ -21,7 +25,7 @@ Nie robi:
 - zastępowania `wmbusmeters`.
 
 Robi:
-- odbiór ramek T1/C1,
+- odbiór ramek T1/C1 oraz eksperymentalny odbiór S1,
 - walidację i normalizację telegramów,
 - publikację poprawnego HEX telegramu do MQTT,
 - diagnostykę RF.
@@ -107,6 +111,30 @@ wmbus_radio:
 
   # ... tutaj piny SPI/radia ...
 ```
+
+## Tryby nasłuchu i częstotliwość
+
+`listen_mode` wybiera jeden profil RF odbiornika:
+
+| `listen_mode` | Znaczenie | Domyślna częstotliwość |
+|---|---|---:|
+| `t1` | tylko T1 | `868.950 MHz` |
+| `c1` | tylko C1 | `868.950 MHz` |
+| `both` | tylko T1/C1 | `868.950 MHz` |
+| `s1` | eksperymentalnie tylko S1 | `868.300 MHz` |
+
+`both` oznacza **tylko T1/C1**. S1 jest osobnym trybem odbioru i nie może być łączony z T1/C1 w jednej konfiguracji odbiornika.
+
+Dla typowego T1/C1 opcję `frequency:` zwykle można pominąć. Dla S1 domyślna częstotliwość to `868.300 MHz`, ale można ją nadpisać do testów kompatybilności, na przykład:
+
+```yaml
+wmbus_radio:
+  radio_type: SX1262
+  listen_mode: s1
+  frequency: 868.36
+```
+
+Jeżeli telegram S1 zostanie odebrany poprawnie i przejdzie walidację, komponent opublikuje go do MQTT tak samo jak telegramy T1/C1. Dekodowanie wartości licznika nadal odbywa się poza ESP, na przykład w `wmbusmeters`, i może wymagać właściwego drivera oraz klucza. Systemy zamknięte albo odpytywane mogą nie nadawać standardowych pasywnych telegramów S1.
 
 ## Tryby diagnostyki
 
@@ -203,10 +231,11 @@ Porównuj tę opcję po `meter_snapshot` dla ważnych liczników, a nie po samym
 
 ## CC1101
 
-Obsługa CC1101 jest w komponencie, ale nadal jest eksperymentalna i celowo nie ma jej w publicznych przykładach. Wymaga jawnego włączenia w YAML i poprawnego podłączenia GDO0/GDO2.
+Obsługa CC1101 jest dostępna w komponencie, ale nadal ma status eksperymentalny. Wymaga jawnego włączenia w YAML oraz poprawnego podłączenia linii GDO0/GDO2.
 
 ## Dokumentacja
 
+- [`START_HERE_PL.md`](START_HERE_PL.md)
 - [`DIAGNOSTIC_PL.md`](DIAGNOSTIC_PL.md)
 - [`TROUBLESHOOTING_PL.md`](TROUBLESHOOTING_PL.md)
 - [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md)

@@ -2,9 +2,9 @@
 
 [Polska wersja](README_PL.md)
 
-Public examples are provided only for SX1262 and SX1276 boards.
+Public examples are provided only for SX1262,SX1276,CC1101 boards.
 
-CC1101 support exists in the component, but it is still experimental and intentionally not documented here as a normal user path.
+CC1101 support is available, but still experimental. It requires explicit YAML opt-in and proper GDO0/GDO2 wiring. This example is provided for advanced/testing use, not as the recommended user path.
 
 ## Topic model
 
@@ -24,6 +24,36 @@ wmbus/+/telegram
 ```
 
 Do not copy old `telegram_topic` / `diagnostic_topic` snippets unless you intentionally need a legacy/manual override.
+
+
+## Listen modes and frequency
+
+The examples start with:
+
+```yaml
+listen_mode: t1
+```
+
+Available receive modes:
+
+```text
+t1    -> T1 only, default 868.950 MHz
+c1    -> C1 only, default 868.950 MHz
+both  -> T1/C1 only, default 868.950 MHz
+s1    -> S1 only, default 868.300 MHz
+```
+
+`both` means T1/C1 only. S1 is a separate receive mode and must be selected explicitly with `listen_mode: s1`.
+
+`frequency:` is optional. Use it only when you intentionally need to override the mode default, for example for compatibility testing:
+
+```yaml
+wmbus_radio:
+  listen_mode: s1
+  frequency: 868.36
+```
+
+If a valid S1 telegram is received, the component publishes the raw telegram to MQTT the same way as T1/C1. Decoding meter values still depends on the backend, driver and encryption key.
 
 ## Diagnostic model
 
