@@ -27,6 +27,7 @@ public:
   virtual void restart_rx() = 0;
   virtual int8_t get_rssi() = 0;
   virtual const char *get_name() = 0;
+  virtual bool transmit_test_frame(ListenMode mode, uint16_t frame_length, uint8_t tx_data_gpio) { return false; }
 
   // Radio-specific recovery hints for the upper RX pipeline.
   // Default: keep the generic strict path.
