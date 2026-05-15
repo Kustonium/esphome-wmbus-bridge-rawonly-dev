@@ -2106,36 +2106,43 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
     } else if (strcmp(radio_name, "SX1262") == 0 && this->sx1262_yaml_sanity_configured_) {
       const bool t1_like = this->radio->get_listen_mode() == LISTEN_MODE_T1 || this->radio->get_listen_mode() == LISTEN_MODE_BOTH;
-      const char *long_t1 = (!t1_like) ? "n/a" : (this->sx1262_yaml_long_gfsk_packets_ ? "ok" : "RISK(!)");
 
       ESP_LOGI(TAG,
-               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s | SX1262 YAML: tcxo=%s%s dio2_rf_switch=%s long_gfsk=%s long_T1=%s rx_gain=%s",
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s",
                radio_name,
                listen_mode_to_string_(this->radio->get_listen_mode()),
                (unsigned) this->receiver_task_stack_size_,
-               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str(),
-               this->sx1262_yaml_has_tcxo_ ? "on" : "OFF",
-               this->sx1262_yaml_has_tcxo_ ? "" : "(!)",
-               this->sx1262_yaml_dio2_rf_switch_ ? "on" : "off",
-               this->sx1262_yaml_long_gfsk_packets_ ? "on" : "off",
-               long_t1,
-               this->sx1262_yaml_rx_gain_.c_str());
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
 
-      if (!this->sx1262_yaml_warning_logged_) {
-        if (!this->sx1262_yaml_has_tcxo_) {
-          ESP_LOGW(TAG,
-                   "SX1262 YAML sanity / sprawdzenie YAML: has_tcxo=false. Radio may initialize but receive no frames on TCXO boards, including Heltec V4 / radio moze sie zainicjalizowac, ale nie odbierac ramek na plytkach z TCXO, w tym Heltec V4.");
-        }
-        if (t1_like && !this->sx1262_yaml_long_gfsk_packets_) {
-          ESP_LOGW(TAG,
-                   "SX1262 YAML sanity / sprawdzenie YAML: long_gfsk_packets=false in T1/both. Long T1 frames may be truncated or dropped / dlugie ramki T1 moga byc ucinane albo dropowane.");
-        }
-        if (!this->sx1262_yaml_dio2_rf_switch_) {
-          ESP_LOGW(TAG,
-                   "SX1262 YAML sanity / sprawdzenie YAML: dio2_rf_switch=false. This is OK only for boards without DIO2 RF switch / to jest OK tylko dla plytek bez przelacznika RF na DIO2.");
-        }
-        this->sx1262_yaml_warning_logged_ = true;
+      ESP_LOGI(TAG, "SX1262 YAML sanity / sprawdzenie YAML SX1262:");
+
+      if (this->sx1262_yaml_has_tcxo_) {
+        ESP_LOGI(TAG, "  has_tcxo: true -> TCXO enabled / TCXO wlaczone");
+      } else {
+        ESP_LOGW(TAG,
+                 "  has_tcxo: false -> RISK(!): radio may initialize but receive no frames on TCXO boards, including Heltec V4 / radio moze sie zainicjalizowac, ale nie odbierac ramek na plytkach z TCXO, w tym Heltec V4");
       }
+
+      if (this->sx1262_yaml_dio2_rf_switch_) {
+        ESP_LOGI(TAG, "  dio2_rf_switch: true -> DIO2 RF switch enabled / przelacznik RF na DIO2 wlaczony");
+      } else {
+        ESP_LOGW(TAG,
+                 "  dio2_rf_switch: false -> check board wiring; OK only for boards without DIO2 RF switch / sprawdz plytke; OK tylko bez przelacznika RF na DIO2");
+      }
+
+      if (t1_like) {
+        if (this->sx1262_yaml_long_gfsk_packets_) {
+          ESP_LOGI(TAG, "  long_gfsk_packets: true -> long T1 frames supported / dlugie ramki T1 obslugiwane");
+        } else {
+          ESP_LOGW(TAG,
+                   "  long_gfsk_packets: false -> RISK(!): long T1 frames may be truncated or dropped / dlugie ramki T1 moga byc ucinane albo dropowane");
+        }
+      } else {
+        ESP_LOGI(TAG, "  long_gfsk_packets: %s -> long T1 check not applicable for this listen_mode / kontrola dlugich T1 nie dotyczy tego trybu",
+                 this->sx1262_yaml_long_gfsk_packets_ ? "true" : "false");
+      }
+
+      ESP_LOGI(TAG, "  rx_gain: %s", this->sx1262_yaml_rx_gain_.c_str());
     } else {
       ESP_LOGI(TAG,
                "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s",
