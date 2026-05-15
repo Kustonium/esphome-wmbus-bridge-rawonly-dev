@@ -407,6 +407,14 @@ async def to_code(config):
     if CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config and CONF_DIAG_EVENTS_HIGHLIGHT_ONLY not in config:
         warnings.append("diagnostic_publish_highlight_only is deprecated / jest przestarzale. Use diagnostic_events_highlight_only / uzyj diagnostic_events_highlight_only.")
 
+    if config[CONF_RADIO_TYPE] == "SX1262":
+        if not config.get(CONF_HAS_TCXO, False):
+            warnings.append("SX1262 selected without has_tcxo: true / wybrano SX1262 bez has_tcxo: true. Many SX1262 boards, including Heltec V4, may initialize but receive no frames without TCXO / wiele plytek SX1262, w tym Heltec V4, moze sie zainicjalizowac, ale nie odbierac ramek bez TCXO.")
+        if not config.get(CONF_LONG_GFSK_PACKETS, False):
+            warnings.append("SX1262 T1/both without long_gfsk_packets: true / SX1262 T1/both bez long_gfsk_packets: true. Long T1 frames may be truncated / dlugie ramki T1 moga byc ucinane.")
+        dio2_rf_switch = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))
+        if not dio2_rf_switch:
+            warnings.append("SX1262 DIO2 RF switch is disabled / SX1262 DIO2 RF switch jest wylaczony. This is OK only for boards without DIO2 RF switching / to jest OK tylko dla plytek bez przelacznika RF na DIO2.")
 
     explicit_diag_enabled = any([
         config.get(CONF_DIAG_PUBLISH_SUMMARY, False),
