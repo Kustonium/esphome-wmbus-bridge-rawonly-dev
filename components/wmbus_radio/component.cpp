@@ -2073,7 +2073,7 @@ void Radio::loop() {
   const uint32_t loop_now_ms = (uint32_t) esphome::millis();
 
 if (!this->boot_log_done_ && this->radio != nullptr) {
-  if (loop_now_ms - this->boot_log_last_ms_ >= 5000) {
+  if (loop_now_ms - this->boot_log_last_ms_ >= 10000) {
     const char *radio_name = this->radio->get_name();
 
     if (strcmp(radio_name, "SX1276") == 0) {
@@ -2154,9 +2154,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
 
     this->boot_log_last_ms_ = loop_now_ms;
     this->boot_log_count_++;
-    if (this->boot_log_count_ >= 3) {
-      this->boot_log_done_ = true;
-    }
+    this->boot_log_done_ = true;
   }
 }
 
