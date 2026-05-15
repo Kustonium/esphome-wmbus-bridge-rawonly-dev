@@ -343,6 +343,7 @@ protected:
   bool should_abort_t1_probe_start_(int rssi_dbm) const;
   bool should_attempt_raw_drain_(int rssi_dbm, size_t bytes_read, bool is_c_mode) const;
   std::string derived_target_topic_() const;
+  bool safe_mqtt_publish_(const std::string &topic, const std::string &payload, uint8_t qos, bool retain, const char *kind);
   void maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag);
   void maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms);
   bool should_publish_packet_event_(const Packet *packet) const;
@@ -396,6 +397,7 @@ protected:
   bool diag_publish_summary_15min_{false};
   bool diag_publish_summary_60min_{false};
   bool diag_publish_summary_highlight_meters_{false};
+  uint32_t last_mqtt_unavailable_log_ms_{0};
   std::string diag_topic_{};
 };
 } // namespace wmbus_radio

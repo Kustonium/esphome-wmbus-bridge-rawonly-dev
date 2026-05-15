@@ -265,7 +265,7 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
                    "\"state\":\"adaptive_active\","
                    "\"fsl\":%u,\"drop_pct\":%u}",
                    chip, fsl, drop_pct);
-          mqtt->publish(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false);
+          this->safe_mqtt_publish_(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false, "busy_ether_changed");
         }
       }
       this->busy_ether_was_active_ = true;
@@ -285,7 +285,7 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
                  "\"state\":\"adaptive_passive\","
                  "\"fsl\":%u,\"drop_pct\":%u}",
                  chip, fsl, drop_pct);
-        mqtt->publish(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false);
+        this->safe_mqtt_publish_(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false, "busy_ether_changed");
       }
     }
     this->busy_ether_was_active_ = false;
@@ -380,12 +380,27 @@ std::string Radio::derived_target_topic_() const {
   return {};
 }
 
+bool Radio::safe_mqtt_publish_(const std::string &topic, const std::string &payload, uint8_t qos, bool retain, const char *kind) {
+  if (topic.empty()) return false;
+
+  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected()) {
+    const uint32_t now_ms = (uint32_t) esphome::millis();
+    if (this->last_mqtt_unavailable_log_ms_ == 0 || now_ms - this->last_mqtt_unavailable_log_ms_ >= 60000U) {
+      ESP_LOGW(TAG, "MQTT unavailable / MQTT niedostepny: skip %s publish to %s; radio reception continues / pomijam publikacje, odbior radiowy dziala dalej",
+               kind != nullptr ? kind : "message", topic.c_str());
+      this->last_mqtt_unavailable_log_ms_ = now_ms;
+    }
+    return false;
+  }
+
+  mqtt->publish(topic, payload, qos, retain);
+  return true;
+}
+
 
 void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
   if (!this->publish_radio_raw_ || packet == nullptr) return;
-
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
-  if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   const std::string raw = packet->packet_hex();
   const char *chip = (this->radio != nullptr) ? this->radio->get_name() : "unknown";
@@ -403,13 +418,10 @@ void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
       (unsigned) raw.size(),
       raw.c_str());
 
-  mqtt->publish("wmbus_bridge/raw", payload, static_cast<uint8_t>(0), false);
+  this->safe_mqtt_publish_("wmbus_bridge/raw", payload, static_cast<uint8_t>(0), false, "radio_raw");
 }
 
 void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag) {
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
-  if (mqtt == nullptr || !mqtt->is_connected()) return;
-
   std::string hex;
   const bool want_all = !this->telegram_topic_.empty();
   const bool want_target = this->target_meter_enabled_ && meter_id == this->target_meter_id_;
@@ -417,7 +429,7 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id
 
   hex = frame.as_hex();
   if (want_all) {
-    mqtt->publish(this->telegram_topic_, hex);
+    this->safe_mqtt_publish_(this->telegram_topic_, hex, static_cast<uint8_t>(0), false, "telegram");
   }
 
   if (want_target) {
@@ -429,7 +441,7 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id
     }
     const std::string topic = this->derived_target_topic_();
     if (!topic.empty()) {
-      mqtt->publish(topic, hex);
+      this->safe_mqtt_publish_(topic, hex, static_cast<uint8_t>(0), false, "target");
     }
   }
 }
@@ -450,8 +462,7 @@ bool Radio::should_publish_packet_event_(const Packet *packet) const {
 
 void Radio::publish_rx_path_event_(const char *event, const char *stage, const char *detail, int rssi) {
   if (!this->diag_publish_rx_path_events_) return;
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
-  if (mqtt == nullptr || !mqtt->is_connected() || this->diag_topic_.empty()) return;
+  if (this->diag_topic_.empty()) return;
 
   const uint32_t now_ms = (uint32_t) esphome::millis();
   const char *listen_mode = (this->radio != nullptr)
@@ -468,7 +479,7 @@ void Radio::publish_rx_path_event_(const char *event, const char *stage, const c
              "{\"event\":\"%s\",\"uptime_ms\":%lu,\"listen_mode\":\"%s\",\"stage\":\"%s\",\"rssi\":%d}",
              event, (unsigned long) now_ms, listen_mode, stage, rssi);
   }
-  mqtt->publish(this->diag_topic_, payload);
+  this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "rx_path");
 }
 
 std::string Radio::diag_summary_topic_() const {
@@ -943,7 +954,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
                    : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE ? "aggressive" : "normal"));
 
   const std::string summary_topic = this->diag_summary_topic_();
-  mqtt->publish(summary_topic, payload);
+  this->safe_mqtt_publish_(summary_topic, payload, static_cast<uint8_t>(0), false, "summary");
   ESP_LOGI(TAG, "DIAG summary / podsumowanie diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
            (unsigned) total, (unsigned) this->diag_ok_,
@@ -1063,7 +1074,7 @@ void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s,
   batch += "]}";
 
   const std::string snapshot_topic = this->diag_topic_ + "/meter_snapshot";
-  mqtt->publish(snapshot_topic, batch, static_cast<uint8_t>(0), false);
+  this->safe_mqtt_publish_(snapshot_topic, batch, static_cast<uint8_t>(0), false, "meter_snapshot");
   ESP_LOGI(TAG, "METER SNAPSHOT / snapshot licznikow: trigger=%s meters=%zu", trigger, this->highlight_meter_stats_.size());
 }
 
@@ -1376,7 +1387,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            hint_pl);
 
   const std::string summary_topic = this->diag_summary_15min_topic_();
-  mqtt->publish(summary_topic, payload);
+  this->safe_mqtt_publish_(summary_topic, payload, static_cast<uint8_t>(0), false, "summary");
   ESP_LOGI(TAG, "DIAG 15min summary / podsumowanie 15min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
            (unsigned) total, (unsigned) this->diag_15m_ok_,
@@ -1741,7 +1752,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            hint_pl);
 
   const std::string summary_topic = this->diag_summary_60min_topic_();
-  mqtt->publish(summary_topic, payload);
+  this->safe_mqtt_publish_(summary_topic, payload, static_cast<uint8_t>(0), false, "summary");
   ESP_LOGI(TAG, "DIAG 60min summary / podsumowanie 60min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
            (unsigned) total, (unsigned) this->diag_60min_ok_,
@@ -1873,7 +1884,7 @@ void Radio::publish_meter_window_for_(const char *trigger, uint32_t elapsed_s,
 
   const std::string meter_window_topic = this->meter_window_topic_for_(id_str, trigger, mode_str);
   if (!meter_window_topic.empty()) {
-    mqtt->publish(meter_window_topic, payload);
+    this->safe_mqtt_publish_(meter_window_topic, payload, static_cast<uint8_t>(0), false, "meter_window");
   }
   ESP_LOGI(TAG, "METER / LICZNIK [%s] uptime_ms=%lu listen_mode=%s id=%s mode=%s win=%us count_window=%u total=%u avg_interval=%us win_avg_interval=%us win_avg_rssi=%ddBm",
            trigger, (unsigned long) now_ms, listen_mode, id_str, mode_str,
@@ -2131,11 +2142,11 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
 
     if (this->boot_info_mqtt_pending_) {
       std::string boot_topic = this->diag_topic_ + "/boot";
-      mqtt->publish(boot_topic, boot_payload, static_cast<uint8_t>(0), true);
+      this->safe_mqtt_publish_(boot_topic, boot_payload, static_cast<uint8_t>(0), true, "boot");
       this->boot_info_mqtt_pending_ = false;
     }
     if (this->boot_info_event_pending_) {
-      mqtt->publish(this->diag_topic_, std::string(boot_payload), static_cast<uint8_t>(0), false);
+      this->safe_mqtt_publish_(this->diag_topic_, std::string(boot_payload), static_cast<uint8_t>(0), false, "boot");
       this->boot_info_event_pending_ = false;
     }
   }
@@ -2150,7 +2161,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              (unsigned long) loop_now_ms, listen_mode,
              (unsigned) this->dev_err_before_, (unsigned) this->dev_err_before_,
              (unsigned) this->dev_err_after_, (unsigned) this->dev_err_after_);
-    mqtt->publish(this->diag_topic_, payload);
+    this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "dev_err");
     this->dev_err_cleared_pending_ = false;
   }
 
@@ -2272,7 +2283,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                    (unsigned) p->decoded_len(), (unsigned) p->final_len(),
                    (unsigned) p->dll_crc_removed(), (unsigned) p->suffix_ignored());
         }
-        mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
+        this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "drop_event");
       }
 
       if (this->diag_verbose_) {
@@ -2347,7 +2358,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                    (unsigned) p->decoded_len(), (unsigned) p->final_len(),
                    (unsigned) p->dll_crc_removed(), (unsigned) p->suffix_ignored());
         }
-        mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
+        this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "drop_event");
       }
 
       if (this->diag_verbose_) {
