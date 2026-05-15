@@ -57,6 +57,15 @@ public:
   void set_diag_publish_highlight_only(bool enabled) { this->diag_publish_highlight_only_ = enabled; }
   void set_diag_meter_stats_all(bool enabled) { this->diag_meter_stats_all_ = enabled; }
   void add_config_warning(const std::string &warning) { this->config_warnings_.push_back(warning); }
+  void set_sx1262_yaml_sanity(bool enabled, bool has_tcxo, bool dio2_rf_switch, bool long_gfsk_packets,
+                              bool rx_gain_boosted, bool t1_like) {
+    this->sx1262_yaml_sanity_enabled_ = enabled;
+    this->sx1262_yaml_has_tcxo_ = has_tcxo;
+    this->sx1262_yaml_dio2_rf_switch_ = dio2_rf_switch;
+    this->sx1262_yaml_long_gfsk_packets_ = long_gfsk_packets;
+    this->sx1262_yaml_rx_gain_boosted_ = rx_gain_boosted;
+    this->sx1262_yaml_t1_like_ = t1_like;
+  }
   void set_diag_publish_suggestion(bool enabled) { this->diag_publish_suggestion_ = enabled; }
   void set_diag_summary_interval_ms(uint32_t interval_ms) {
     // Keep it sane: minimum 5s
@@ -195,6 +204,17 @@ protected:
   bool diag_publish_highlight_only_{false};
   bool diag_meter_stats_all_{false};
   std::vector<std::string> config_warnings_{};
+
+  // YAML-derived SX1262 sanity status. This is intentionally based on user
+  // configuration, not runtime autodetection: the radio chip cannot reliably
+  // identify board-level wiring such as TCXO, DIO2 RF switch or FEM.
+  bool sx1262_yaml_sanity_enabled_{false};
+  bool sx1262_yaml_has_tcxo_{false};
+  bool sx1262_yaml_dio2_rf_switch_{true};
+  bool sx1262_yaml_long_gfsk_packets_{false};
+  bool sx1262_yaml_rx_gain_boosted_{true};
+  bool sx1262_yaml_t1_like_{false};
+
   bool diag_publish_suggestion_{false};
 
   enum DropBucket : uint8_t {

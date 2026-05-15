@@ -2087,6 +2087,33 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
   if (loop_now_ms - this->boot_log_last_ms_ >= 5000) {
     const char *radio_name = this->radio->get_name();
 
+    std::string sx1262_yaml_status;
+    if (this->sx1262_yaml_sanity_enabled_) {
+      const bool long_t1_ok = !this->sx1262_yaml_t1_like_ || this->sx1262_yaml_long_gfsk_packets_;
+      sx1262_yaml_status = str_sprintf(
+          " | SX1262 YAML: tcxo=%s dio2_rf_switch=%s long_gfsk=%s long_T1=%s rx_gain=%s",
+          this->sx1262_yaml_has_tcxo_ ? "on" : "OFF(!)",
+          this->sx1262_yaml_dio2_rf_switch_ ? "on" : "off(!)",
+          this->sx1262_yaml_long_gfsk_packets_ ? "on" : "off(!)",
+          long_t1_ok ? "ok" : "limited(!)",
+          this->sx1262_yaml_rx_gain_boosted_ ? "boosted" : "power_saving");
+
+      if (this->boot_log_count_ == 0) {
+        if (!this->sx1262_yaml_has_tcxo_) {
+          ESP_LOGW(TAG,
+                   "SX1262 YAML sanity / sprawdzenie YAML: has_tcxo=false. Radio may initialize but receive no frames on TCXO boards, including Heltec V4 / radio moze sie zainicjalizowac, ale nie odbierac ramek na plytkach z TCXO, w tym Heltec V4.");
+        }
+        if (this->sx1262_yaml_t1_like_ && !this->sx1262_yaml_long_gfsk_packets_) {
+          ESP_LOGW(TAG,
+                   "SX1262 YAML sanity / sprawdzenie YAML: long_gfsk_packets=false in T1/both. Long T1 frames may be truncated or dropped / dlugie ramki T1 moga byc ucinane albo dropowane.");
+        }
+        if (!this->sx1262_yaml_dio2_rf_switch_) {
+          ESP_LOGW(TAG,
+                   "SX1262 YAML sanity / sprawdzenie YAML: dio2_rf_switch=false. This is OK only for boards without DIO2 RF switch / to jest OK tylko dla plytek bez przelacznika RF na DIO2.");
+        }
+      }
+    }
+
     if (strcmp(radio_name, "SX1276") == 0) {
       const char *busy_mode = "unknown";
       const char *busy_state = "n/a";
@@ -2108,20 +2135,22 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
       }
 
       ESP_LOGI(TAG,
-               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | busy_ether=%s | state=%s | RF: %s",
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | busy_ether=%s | state=%s | RF: %s%s",
                radio_name,
                listen_mode_to_string_(this->radio->get_listen_mode()),
                (unsigned) this->receiver_task_stack_size_,
                busy_mode,
                busy_state,
-               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str(),
+               sx1262_yaml_status.c_str());
     } else {
       ESP_LOGI(TAG,
-               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s",
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s%s",
                radio_name,
                listen_mode_to_string_(this->radio->get_listen_mode()),
                (unsigned) this->receiver_task_stack_size_,
-               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str(),
+               sx1262_yaml_status.c_str());
     }
 
     this->boot_log_last_ms_ = loop_now_ms;

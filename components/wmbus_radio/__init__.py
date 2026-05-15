@@ -472,6 +472,21 @@ async def to_code(config):
     for warning in warnings:
         cg.add(var.add_config_warning(warning))
 
+    if config[CONF_RADIO_TYPE] == "SX1262":
+        sx1262_dio2_rf = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))
+        sx1262_gain = config.get(CONF_RX_GAIN, "boosted")
+        sx1262_t1_like = effective_listen_mode in ("t1", "both")
+        cg.add(var.set_sx1262_yaml_sanity(
+            True,
+            config.get(CONF_HAS_TCXO, False),
+            sx1262_dio2_rf,
+            config.get(CONF_LONG_GFSK_PACKETS, False),
+            sx1262_gain == "boosted",
+            sx1262_t1_like,
+        ))
+    else:
+        cg.add(var.set_sx1262_yaml_sanity(False, False, True, False, True, False))
+
     SX1276BusyEtherMode = radio_ns.enum("SX1276BusyEtherMode", is_class=True)
     busy_ether_mode_map = {
         "normal": SX1276BusyEtherMode.NORMAL,
