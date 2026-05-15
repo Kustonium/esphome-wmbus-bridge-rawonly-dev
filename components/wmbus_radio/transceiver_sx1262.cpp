@@ -511,6 +511,17 @@ void SX1262::setup() {
 
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
 
+  if (!this->has_tcxo_) {
+    ESP_LOGW(TAG, "SX1262 selected without has_tcxo: true / wybrano SX1262 bez has_tcxo: true. Many SX1262 boards, including Heltec V4, may initialize but receive no frames without TCXO / wiele plytek SX1262, w tym Heltec V4, moze sie zainicjalizowac, ale nie odbierac ramek bez TCXO.");
+  }
+  if (!this->long_gfsk_packets_ &&
+      (this->listen_mode_ == LISTEN_MODE_T1 || this->listen_mode_ == LISTEN_MODE_BOTH)) {
+    ESP_LOGW(TAG, "SX1262 T1/both without long_gfsk_packets: true / SX1262 T1/both bez long_gfsk_packets: true. Long T1 frames may be truncated / dlugie ramki T1 moga byc ucinane.");
+  }
+  if (!this->dio2_rf_switch_) {
+    ESP_LOGW(TAG, "SX1262 DIO2 RF switch is disabled / SX1262 DIO2 RF switch jest wylaczony. This is OK only for boards without DIO2 RF switching / to jest OK tylko dla plytek bez przelacznika RF na DIO2.");
+  }
+
   // DIO2 RF switch
   this->cmd_write_(CMD_SET_DIO2_AS_RF_SWITCH_CTRL, {uint8_t(this->dio2_rf_switch_ ? 0x01 : 0x00)});
 
