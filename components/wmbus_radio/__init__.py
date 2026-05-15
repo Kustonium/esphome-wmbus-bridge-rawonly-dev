@@ -407,15 +407,6 @@ async def to_code(config):
     if CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config and CONF_DIAG_EVENTS_HIGHLIGHT_ONLY not in config:
         warnings.append("diagnostic_publish_highlight_only is deprecated / jest przestarzale. Use diagnostic_events_highlight_only / uzyj diagnostic_events_highlight_only.")
 
-    if config[CONF_RADIO_TYPE] == "SX1262":
-        if not config.get(CONF_HAS_TCXO, False):
-            warnings.append("SX1262 selected without has_tcxo: true / wybrano SX1262 bez has_tcxo: true. Many SX1262 boards, including Heltec V4, may initialize but receive no frames without TCXO / wiele plytek SX1262, w tym Heltec V4, moze sie zainicjalizowac, ale nie odbierac ramek bez TCXO.")
-        if not config.get(CONF_LONG_GFSK_PACKETS, False):
-            warnings.append("SX1262 T1/both without long_gfsk_packets: true / SX1262 T1/both bez long_gfsk_packets: true. Long T1 frames may be truncated / dlugie ramki T1 moga byc ucinane.")
-        dio2_rf_switch = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))
-        if not dio2_rf_switch:
-            warnings.append("SX1262 DIO2 RF switch is disabled / SX1262 DIO2 RF switch jest wylaczony. This is OK only for boards without DIO2 RF switching / to jest OK tylko dla plytek bez przelacznika RF na DIO2.")
-
     explicit_diag_enabled = any([
         config.get(CONF_DIAG_PUBLISH_SUMMARY, False),
         config.get(CONF_DIAG_PUBLISH_DROP_EVENTS, False),
@@ -472,21 +463,6 @@ async def to_code(config):
     for warning in warnings:
         cg.add(var.add_config_warning(warning))
 
-    if config[CONF_RADIO_TYPE] == "SX1262":
-        sx1262_dio2_rf = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))
-        sx1262_gain = config.get(CONF_RX_GAIN, "boosted")
-        sx1262_t1_like = effective_listen_mode in ("t1", "both")
-        cg.add(var.set_sx1262_yaml_sanity(
-            True,
-            config.get(CONF_HAS_TCXO, False),
-            sx1262_dio2_rf,
-            config.get(CONF_LONG_GFSK_PACKETS, False),
-            sx1262_gain == "boosted",
-            sx1262_t1_like,
-        ))
-    else:
-        cg.add(var.set_sx1262_yaml_sanity(False, False, True, False, True, False))
-
     SX1276BusyEtherMode = radio_ns.enum("SX1276BusyEtherMode", is_class=True)
     busy_ether_mode_map = {
         "normal": SX1276BusyEtherMode.NORMAL,
@@ -494,6 +470,15 @@ async def to_code(config):
         "adaptive": SX1276BusyEtherMode.ADAPTIVE,
     }
     cg.add(var.set_sx1276_busy_ether_mode(busy_ether_mode_map[config.get(CONF_SX1276_BUSY_ETHER_MODE, "adaptive")]))
+
+    if config[CONF_RADIO_TYPE] == "SX1262":
+        sx1262_dio2_rf = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))
+        cg.add(var.set_sx1262_yaml_sanity(
+            config.get(CONF_HAS_TCXO, False),
+            sx1262_dio2_rf,
+            config.get(CONF_LONG_GFSK_PACKETS, False),
+            config.get(CONF_RX_GAIN, "boosted"),
+        ))
 
     # Log highlight config
     meters = config.get(CONF_HIGHLIGHT_METERS, [])

@@ -57,15 +57,6 @@ public:
   void set_diag_publish_highlight_only(bool enabled) { this->diag_publish_highlight_only_ = enabled; }
   void set_diag_meter_stats_all(bool enabled) { this->diag_meter_stats_all_ = enabled; }
   void add_config_warning(const std::string &warning) { this->config_warnings_.push_back(warning); }
-  void set_sx1262_yaml_sanity(bool enabled, bool has_tcxo, bool dio2_rf_switch, bool long_gfsk_packets,
-                              bool rx_gain_boosted, bool t1_like) {
-    this->sx1262_yaml_sanity_enabled_ = enabled;
-    this->sx1262_yaml_has_tcxo_ = has_tcxo;
-    this->sx1262_yaml_dio2_rf_switch_ = dio2_rf_switch;
-    this->sx1262_yaml_long_gfsk_packets_ = long_gfsk_packets;
-    this->sx1262_yaml_rx_gain_boosted_ = rx_gain_boosted;
-    this->sx1262_yaml_t1_like_ = t1_like;
-  }
   void set_diag_publish_suggestion(bool enabled) { this->diag_publish_suggestion_ = enabled; }
   void set_diag_summary_interval_ms(uint32_t interval_ms) {
     // Keep it sane: minimum 5s
@@ -75,6 +66,13 @@ public:
   void set_diag_publish_summary_60min(bool enabled) { this->diag_publish_summary_60min_ = enabled; }
   void set_diag_publish_summary_highlight_meters(bool enabled) { this->diag_publish_summary_highlight_meters_ = enabled; }
   void set_sx1276_busy_ether_mode(SX1276BusyEtherMode mode) { this->sx1276_busy_ether_mode_ = mode; }
+  void set_sx1262_yaml_sanity(bool has_tcxo, bool dio2_rf_switch, bool long_gfsk_packets, const std::string &rx_gain) {
+    this->sx1262_yaml_sanity_configured_ = true;
+    this->sx1262_yaml_has_tcxo_ = has_tcxo;
+    this->sx1262_yaml_dio2_rf_switch_ = dio2_rf_switch;
+    this->sx1262_yaml_long_gfsk_packets_ = long_gfsk_packets;
+    this->sx1262_yaml_rx_gain_ = rx_gain;
+  }
   void set_listen_mode_filter_after_parse(bool enabled) { this->listen_mode_filter_after_parse_ = enabled; }
   void set_tx_test_config(bool enabled, ListenMode mode, uint16_t frame_length, uint32_t interval_ms, uint8_t tx_data_gpio) {
     this->tx_test_enabled_ = enabled;
@@ -204,17 +202,6 @@ protected:
   bool diag_publish_highlight_only_{false};
   bool diag_meter_stats_all_{false};
   std::vector<std::string> config_warnings_{};
-
-  // YAML-derived SX1262 sanity status. This is intentionally based on user
-  // configuration, not runtime autodetection: the radio chip cannot reliably
-  // identify board-level wiring such as TCXO, DIO2 RF switch or FEM.
-  bool sx1262_yaml_sanity_enabled_{false};
-  bool sx1262_yaml_has_tcxo_{false};
-  bool sx1262_yaml_dio2_rf_switch_{true};
-  bool sx1262_yaml_long_gfsk_packets_{false};
-  bool sx1262_yaml_rx_gain_boosted_{true};
-  bool sx1262_yaml_t1_like_{false};
-
   bool diag_publish_suggestion_{false};
 
   enum DropBucket : uint8_t {
@@ -363,7 +350,6 @@ protected:
   bool should_abort_t1_probe_start_(int rssi_dbm) const;
   bool should_attempt_raw_drain_(int rssi_dbm, size_t bytes_read, bool is_c_mode) const;
   std::string derived_target_topic_() const;
-  bool safe_mqtt_publish_(const std::string &topic, const std::string &payload, uint8_t qos, bool retain, const char *kind);
   void maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag);
   void maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms);
   bool should_publish_packet_event_(const Packet *packet) const;
@@ -399,6 +385,15 @@ protected:
   bool boot_info_mqtt_pending_{false};
   bool boot_info_event_pending_{false};
 
+  // SX1262 YAML sanity state. These values are copied from YAML as-is.
+  // They do not auto-configure board wiring; they only make risky settings visible in boot logs.
+  bool sx1262_yaml_sanity_configured_{false};
+  bool sx1262_yaml_has_tcxo_{false};
+  bool sx1262_yaml_dio2_rf_switch_{true};
+  bool sx1262_yaml_long_gfsk_packets_{false};
+  std::string sx1262_yaml_rx_gain_{"boosted"};
+  bool sx1262_yaml_warning_logged_{false};
+
   // Adaptive busy-ether hold state: aggressive mode stays active until this timestamp (ms).
   // Updated once per diagnostic summary window by evaluate_busy_ether_adaptive_().
   uint32_t busy_ether_active_until_ms_{0};
@@ -417,7 +412,6 @@ protected:
   bool diag_publish_summary_15min_{false};
   bool diag_publish_summary_60min_{false};
   bool diag_publish_summary_highlight_meters_{false};
-  uint32_t last_mqtt_unavailable_log_ms_{0};
   std::string diag_topic_{};
 };
 } // namespace wmbus_radio

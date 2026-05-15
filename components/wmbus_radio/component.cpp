@@ -265,7 +265,7 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
                    "\"state\":\"adaptive_active\","
                    "\"fsl\":%u,\"drop_pct\":%u}",
                    chip, fsl, drop_pct);
-          this->safe_mqtt_publish_(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false, "busy_ether_changed");
+          mqtt->publish(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false);
         }
       }
       this->busy_ether_was_active_ = true;
@@ -285,7 +285,7 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
                  "\"state\":\"adaptive_passive\","
                  "\"fsl\":%u,\"drop_pct\":%u}",
                  chip, fsl, drop_pct);
-        this->safe_mqtt_publish_(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false, "busy_ether_changed");
+        mqtt->publish(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false);
       }
     }
     this->busy_ether_was_active_ = false;
@@ -380,27 +380,12 @@ std::string Radio::derived_target_topic_() const {
   return {};
 }
 
-bool Radio::safe_mqtt_publish_(const std::string &topic, const std::string &payload, uint8_t qos, bool retain, const char *kind) {
-  if (topic.empty()) return false;
-
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
-  if (mqtt == nullptr || !mqtt->is_connected()) {
-    const uint32_t now_ms = (uint32_t) esphome::millis();
-    if (this->last_mqtt_unavailable_log_ms_ == 0 || now_ms - this->last_mqtt_unavailable_log_ms_ >= 60000U) {
-      ESP_LOGW(TAG, "MQTT unavailable / MQTT niedostepny: skip %s publish to %s; radio reception continues / pomijam publikacje, odbior radiowy dziala dalej",
-               kind != nullptr ? kind : "message", topic.c_str());
-      this->last_mqtt_unavailable_log_ms_ = now_ms;
-    }
-    return false;
-  }
-
-  mqtt->publish(topic, payload, qos, retain);
-  return true;
-}
-
 
 void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
   if (!this->publish_radio_raw_ || packet == nullptr) return;
+
+  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   const std::string raw = packet->packet_hex();
   const char *chip = (this->radio != nullptr) ? this->radio->get_name() : "unknown";
@@ -418,10 +403,13 @@ void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
       (unsigned) raw.size(),
       raw.c_str());
 
-  this->safe_mqtt_publish_("wmbus_bridge/raw", payload, static_cast<uint8_t>(0), false, "radio_raw");
+  mqtt->publish("wmbus_bridge/raw", payload, static_cast<uint8_t>(0), false);
 }
 
 void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag) {
+  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected()) return;
+
   std::string hex;
   const bool want_all = !this->telegram_topic_.empty();
   const bool want_target = this->target_meter_enabled_ && meter_id == this->target_meter_id_;
@@ -429,7 +417,7 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id
 
   hex = frame.as_hex();
   if (want_all) {
-    this->safe_mqtt_publish_(this->telegram_topic_, hex, static_cast<uint8_t>(0), false, "telegram");
+    mqtt->publish(this->telegram_topic_, hex);
   }
 
   if (want_target) {
@@ -441,7 +429,7 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id
     }
     const std::string topic = this->derived_target_topic_();
     if (!topic.empty()) {
-      this->safe_mqtt_publish_(topic, hex, static_cast<uint8_t>(0), false, "target");
+      mqtt->publish(topic, hex);
     }
   }
 }
@@ -462,7 +450,8 @@ bool Radio::should_publish_packet_event_(const Packet *packet) const {
 
 void Radio::publish_rx_path_event_(const char *event, const char *stage, const char *detail, int rssi) {
   if (!this->diag_publish_rx_path_events_) return;
-  if (this->diag_topic_.empty()) return;
+  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected() || this->diag_topic_.empty()) return;
 
   const uint32_t now_ms = (uint32_t) esphome::millis();
   const char *listen_mode = (this->radio != nullptr)
@@ -479,7 +468,7 @@ void Radio::publish_rx_path_event_(const char *event, const char *stage, const c
              "{\"event\":\"%s\",\"uptime_ms\":%lu,\"listen_mode\":\"%s\",\"stage\":\"%s\",\"rssi\":%d}",
              event, (unsigned long) now_ms, listen_mode, stage, rssi);
   }
-  this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "rx_path");
+  mqtt->publish(this->diag_topic_, payload);
 }
 
 std::string Radio::diag_summary_topic_() const {
@@ -954,7 +943,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
                    : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE ? "aggressive" : "normal"));
 
   const std::string summary_topic = this->diag_summary_topic_();
-  this->safe_mqtt_publish_(summary_topic, payload, static_cast<uint8_t>(0), false, "summary");
+  mqtt->publish(summary_topic, payload);
   ESP_LOGI(TAG, "DIAG summary / podsumowanie diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
            (unsigned) total, (unsigned) this->diag_ok_,
@@ -1074,7 +1063,7 @@ void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s,
   batch += "]}";
 
   const std::string snapshot_topic = this->diag_topic_ + "/meter_snapshot";
-  this->safe_mqtt_publish_(snapshot_topic, batch, static_cast<uint8_t>(0), false, "meter_snapshot");
+  mqtt->publish(snapshot_topic, batch, static_cast<uint8_t>(0), false);
   ESP_LOGI(TAG, "METER SNAPSHOT / snapshot licznikow: trigger=%s meters=%zu", trigger, this->highlight_meter_stats_.size());
 }
 
@@ -1387,7 +1376,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            hint_pl);
 
   const std::string summary_topic = this->diag_summary_15min_topic_();
-  this->safe_mqtt_publish_(summary_topic, payload, static_cast<uint8_t>(0), false, "summary");
+  mqtt->publish(summary_topic, payload);
   ESP_LOGI(TAG, "DIAG 15min summary / podsumowanie 15min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
            (unsigned) total, (unsigned) this->diag_15m_ok_,
@@ -1752,7 +1741,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            hint_pl);
 
   const std::string summary_topic = this->diag_summary_60min_topic_();
-  this->safe_mqtt_publish_(summary_topic, payload, static_cast<uint8_t>(0), false, "summary");
+  mqtt->publish(summary_topic, payload);
   ESP_LOGI(TAG, "DIAG 60min summary / podsumowanie 60min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
            (unsigned) total, (unsigned) this->diag_60min_ok_,
@@ -1884,7 +1873,7 @@ void Radio::publish_meter_window_for_(const char *trigger, uint32_t elapsed_s,
 
   const std::string meter_window_topic = this->meter_window_topic_for_(id_str, trigger, mode_str);
   if (!meter_window_topic.empty()) {
-    this->safe_mqtt_publish_(meter_window_topic, payload, static_cast<uint8_t>(0), false, "meter_window");
+    mqtt->publish(meter_window_topic, payload);
   }
   ESP_LOGI(TAG, "METER / LICZNIK [%s] uptime_ms=%lu listen_mode=%s id=%s mode=%s win=%us count_window=%u total=%u avg_interval=%us win_avg_interval=%us win_avg_rssi=%ddBm",
            trigger, (unsigned long) now_ms, listen_mode, id_str, mode_str,
@@ -2087,33 +2076,6 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
   if (loop_now_ms - this->boot_log_last_ms_ >= 5000) {
     const char *radio_name = this->radio->get_name();
 
-    std::string sx1262_yaml_status;
-    if (this->sx1262_yaml_sanity_enabled_) {
-      const bool long_t1_ok = !this->sx1262_yaml_t1_like_ || this->sx1262_yaml_long_gfsk_packets_;
-      sx1262_yaml_status = str_sprintf(
-          " | SX1262 YAML: tcxo=%s dio2_rf_switch=%s long_gfsk=%s long_T1=%s rx_gain=%s",
-          this->sx1262_yaml_has_tcxo_ ? "on" : "OFF(!)",
-          this->sx1262_yaml_dio2_rf_switch_ ? "on" : "off(!)",
-          this->sx1262_yaml_long_gfsk_packets_ ? "on" : "off(!)",
-          long_t1_ok ? "ok" : "limited(!)",
-          this->sx1262_yaml_rx_gain_boosted_ ? "boosted" : "power_saving");
-
-      if (this->boot_log_count_ == 0) {
-        if (!this->sx1262_yaml_has_tcxo_) {
-          ESP_LOGW(TAG,
-                   "SX1262 YAML sanity / sprawdzenie YAML: has_tcxo=false. Radio may initialize but receive no frames on TCXO boards, including Heltec V4 / radio moze sie zainicjalizowac, ale nie odbierac ramek na plytkach z TCXO, w tym Heltec V4.");
-        }
-        if (this->sx1262_yaml_t1_like_ && !this->sx1262_yaml_long_gfsk_packets_) {
-          ESP_LOGW(TAG,
-                   "SX1262 YAML sanity / sprawdzenie YAML: long_gfsk_packets=false in T1/both. Long T1 frames may be truncated or dropped / dlugie ramki T1 moga byc ucinane albo dropowane.");
-        }
-        if (!this->sx1262_yaml_dio2_rf_switch_) {
-          ESP_LOGW(TAG,
-                   "SX1262 YAML sanity / sprawdzenie YAML: dio2_rf_switch=false. This is OK only for boards without DIO2 RF switch / to jest OK tylko dla plytek bez przelacznika RF na DIO2.");
-        }
-      }
-    }
-
     if (strcmp(radio_name, "SX1276") == 0) {
       const char *busy_mode = "unknown";
       const char *busy_state = "n/a";
@@ -2135,22 +2097,52 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
       }
 
       ESP_LOGI(TAG,
-               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | busy_ether=%s | state=%s | RF: %s%s",
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | busy_ether=%s | state=%s | RF: %s",
                radio_name,
                listen_mode_to_string_(this->radio->get_listen_mode()),
                (unsigned) this->receiver_task_stack_size_,
                busy_mode,
                busy_state,
-               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str(),
-               sx1262_yaml_status.c_str());
-    } else {
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
+    } else if (strcmp(radio_name, "SX1262") == 0 && this->sx1262_yaml_sanity_configured_) {
+      const bool t1_like = this->radio->get_listen_mode() == LISTEN_MODE_T1 || this->radio->get_listen_mode() == LISTEN_MODE_BOTH;
+      const char *long_t1 = (!t1_like) ? "n/a" : (this->sx1262_yaml_long_gfsk_packets_ ? "ok" : "RISK(!)");
+
       ESP_LOGI(TAG,
-               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s%s",
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s | SX1262 YAML: tcxo=%s%s dio2_rf_switch=%s long_gfsk=%s long_T1=%s rx_gain=%s",
                radio_name,
                listen_mode_to_string_(this->radio->get_listen_mode()),
                (unsigned) this->receiver_task_stack_size_,
                this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str(),
-               sx1262_yaml_status.c_str());
+               this->sx1262_yaml_has_tcxo_ ? "on" : "OFF",
+               this->sx1262_yaml_has_tcxo_ ? "" : "(!)",
+               this->sx1262_yaml_dio2_rf_switch_ ? "on" : "off",
+               this->sx1262_yaml_long_gfsk_packets_ ? "on" : "off",
+               long_t1,
+               this->sx1262_yaml_rx_gain_.c_str());
+
+      if (!this->sx1262_yaml_warning_logged_) {
+        if (!this->sx1262_yaml_has_tcxo_) {
+          ESP_LOGW(TAG,
+                   "SX1262 YAML sanity / sprawdzenie YAML: has_tcxo=false. Radio may initialize but receive no frames on TCXO boards, including Heltec V4 / radio moze sie zainicjalizowac, ale nie odbierac ramek na plytkach z TCXO, w tym Heltec V4.");
+        }
+        if (t1_like && !this->sx1262_yaml_long_gfsk_packets_) {
+          ESP_LOGW(TAG,
+                   "SX1262 YAML sanity / sprawdzenie YAML: long_gfsk_packets=false in T1/both. Long T1 frames may be truncated or dropped / dlugie ramki T1 moga byc ucinane albo dropowane.");
+        }
+        if (!this->sx1262_yaml_dio2_rf_switch_) {
+          ESP_LOGW(TAG,
+                   "SX1262 YAML sanity / sprawdzenie YAML: dio2_rf_switch=false. This is OK only for boards without DIO2 RF switch / to jest OK tylko dla plytek bez przelacznika RF na DIO2.");
+        }
+        this->sx1262_yaml_warning_logged_ = true;
+      }
+    } else {
+      ESP_LOGI(TAG,
+               "Radio active / radio aktywne: %s | Listen mode / tryb nasluchu: %s | receiver_stack=%u bytes | RF: %s",
+               radio_name,
+               listen_mode_to_string_(this->radio->get_listen_mode()),
+               (unsigned) this->receiver_task_stack_size_,
+               this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
     }
 
     this->boot_log_last_ms_ = loop_now_ms;
@@ -2171,11 +2163,11 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
 
     if (this->boot_info_mqtt_pending_) {
       std::string boot_topic = this->diag_topic_ + "/boot";
-      this->safe_mqtt_publish_(boot_topic, boot_payload, static_cast<uint8_t>(0), true, "boot");
+      mqtt->publish(boot_topic, boot_payload, static_cast<uint8_t>(0), true);
       this->boot_info_mqtt_pending_ = false;
     }
     if (this->boot_info_event_pending_) {
-      this->safe_mqtt_publish_(this->diag_topic_, std::string(boot_payload), static_cast<uint8_t>(0), false, "boot");
+      mqtt->publish(this->diag_topic_, std::string(boot_payload), static_cast<uint8_t>(0), false);
       this->boot_info_event_pending_ = false;
     }
   }
@@ -2190,7 +2182,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              (unsigned long) loop_now_ms, listen_mode,
              (unsigned) this->dev_err_before_, (unsigned) this->dev_err_before_,
              (unsigned) this->dev_err_after_, (unsigned) this->dev_err_after_);
-    this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "dev_err");
+    mqtt->publish(this->diag_topic_, payload);
     this->dev_err_cleared_pending_ = false;
   }
 
@@ -2312,7 +2304,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                    (unsigned) p->decoded_len(), (unsigned) p->final_len(),
                    (unsigned) p->dll_crc_removed(), (unsigned) p->suffix_ignored());
         }
-        this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "drop_event");
+        mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
       }
 
       if (this->diag_verbose_) {
@@ -2387,7 +2379,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                    (unsigned) p->decoded_len(), (unsigned) p->final_len(),
                    (unsigned) p->dll_crc_removed(), (unsigned) p->suffix_ignored());
         }
-        this->safe_mqtt_publish_(this->diag_topic_, payload, static_cast<uint8_t>(0), false, "drop_event");
+        mqtt::global_mqtt_client->publish(this->diag_topic_, payload);
       }
 
       if (this->diag_verbose_) {
