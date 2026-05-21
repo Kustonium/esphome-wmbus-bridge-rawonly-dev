@@ -401,6 +401,7 @@ async def to_code(config):
         "dev": {"verbose": True, "raw": True, "summary": True, "drop": True, "rx_path": True, "highlight_only": False, "suggestion": True, "summary_15min": True, "summary_60min": True, "meter_stats": "all"},
     }
     diag_preset = preset_map[diag_mode]
+    cg.add(var.set_diagnostic_mode_str(diag_mode))
 
     legacy_diag_options = [
         CONF_DIAG_VERBOSE,
@@ -455,6 +456,7 @@ async def to_code(config):
               else diag_preset["highlight_only"])
     )
     meter_stats = config.get(CONF_DIAG_METER_STATS, diag_preset["meter_stats"])
+    cg.add(var.set_diagnostic_meter_stats_str(meter_stats))
     summary_highlight = meter_stats in ("highlighted", "all")
     meter_stats_all = meter_stats == "all"
     if CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS in config:
