@@ -1990,7 +1990,7 @@ void Radio::setup() {
     return;
   }
 
-  ASSERT_SETUP(this->packet_queue_ = xQueueCreate(16, sizeof(Packet *)));
+  ASSERT_SETUP(this->packet_queue_ = xQueueCreate(3, sizeof(Packet *)));
 
   // This component uses its own FreeRTOS receiver task instead of ESPHome's
   // main loop task. Because of that, ESPHome's loop_task_stack_size YAML option
@@ -2659,11 +2659,7 @@ void Radio::receive_frame() {
   auto packet = std::make_unique<Packet>();
 
   auto queue_packet = [this](std::unique_ptr<Packet> &pkt) -> bool {
-    // Preserve RSSI when a radio-specific fast path already captured packet RSSI.
-    // Legacy paths still fill RSSI here.
-    if (pkt->get_rssi() == 0) {
-      pkt->set_rssi(this->radio->get_rssi());
-    }
+    pkt->set_rssi(this->radio->get_rssi());
     auto packet_ptr = pkt.get();
     if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE) {
       ESP_LOGV(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
@@ -2681,33 +2677,6 @@ void Radio::receive_frame() {
     ESP_LOGW(TAG, "Queue send failed / wyslanie do kolejki nie powiodlo sie");
     return false;
   };
-
-  // Radio-specific fast path: copy one complete packet from the radio FIFO/buffer,
-  // immediately re-arm RX, and defer parsing/decoding/MQTT to the normal packet queue.
-  //
-  // This is intentionally different from a blind raw drain:
-  // read_packet_in_task() must return a complete packet captured by the radio driver
-  // (for SX1262: GetRxBufferStatus/ReadBuffer or the long-packet capture path).
-  if (this->radio != nullptr) {
-    std::vector<uint8_t> raw_packet;
-    int8_t packet_rssi = 0;
-    if (this->radio->read_packet_in_task(raw_packet, packet_rssi)) {
-      this->radio->restart_rx();
-
-      if (!raw_packet.empty()) {
-        packet->set_rssi(packet_rssi);
-        auto *dst = packet->append_space(raw_packet.size());
-        memcpy(dst, raw_packet.data(), raw_packet.size());
-
-        char detail[96];
-        snprintf(detail, sizeof(detail), "fast_packet_len=%u", (unsigned) raw_packet.size());
-        this->publish_rx_path_event_("rx_path", "receive_fast_packet", detail, packet_rssi);
-
-        queue_packet(packet);
-        return;
-      }
-    }
-  }
 
   if (this->radio != nullptr && this->radio->get_listen_mode() == LISTEN_MODE_S1) {
     packet->set_forced_link_mode(LinkMode::S1);

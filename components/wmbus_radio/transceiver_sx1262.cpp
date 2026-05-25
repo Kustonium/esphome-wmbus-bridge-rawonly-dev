@@ -31,7 +31,6 @@ static constexpr uint8_t CMD_GET_DEVICE_ERRORS = 0x17;
 static constexpr uint8_t CMD_CLEAR_DEVICE_ERRORS = 0x07;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
-static constexpr uint8_t CMD_CALIBRATE = 0x89;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
 static constexpr uint8_t CMD_WRITE_REGISTER = 0x0D;
 static constexpr uint8_t CMD_READ_REGISTER = 0x1D;
@@ -51,8 +50,7 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 // ---------------------------------------------------------------------------
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
 static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;
-static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth
-static constexpr uint8_t GFSK_PREAMBLE_DETECT_8 = 0x04;
+static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (legacy, unused)
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
@@ -272,6 +270,20 @@ bool SX1262::load_rx_buffer_() {
   const uint8_t payload_len = st[0];
   const uint8_t start_ptr = st[1];
 
+  // Adaptive long-frame guard:
+  // In the normal SX1262 FIFO path, payload_len at/near 255 means the packet is
+  // touching the radio buffer boundary. For typical short frames this path is
+  // fastest. If a long frame appears, enable the Semtech long-stream path for a
+  // short hold window so following long frames are captured from SyncWordValid.
+  if (this->long_gfsk_packets_ && payload_len >= 250) {
+    const uint32_t until = millis() + 300000UL;  // 5 min hold
+    if (until > this->long_stream_hold_until_ms_) {
+      this->long_stream_hold_until_ms_ = until;
+      ESP_LOGW(TAG, "SX1262 long-frame edge detected (payload_len=%u) -> enabling adaptive long-stream hold for 5 min",
+               (unsigned) payload_len);
+    }
+  }
+
   if (payload_len == 0) {
     this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
     return false;
@@ -468,6 +480,45 @@ bool SX1262::capture_rx_stream_() {
 
 
 
+
+// ---------------------------------------------------------------------------
+// long_stream_active_: true only during adaptive long-frame hold.
+// long_gfsk_packets=false keeps the short-frame FIFO path unchanged.
+// ---------------------------------------------------------------------------
+bool SX1262::long_stream_active_() const {
+  if (!this->long_gfsk_packets_) return false;
+  if (this->listen_mode_ == LISTEN_MODE_S1) return true;
+  return this->long_stream_hold_until_ms_ != 0 && millis() < this->long_stream_hold_until_ms_;
+}
+
+// ---------------------------------------------------------------------------
+// configure_irq_params_: route IRQs to DIO1.
+// Normal FIFO path listens for RxDone only. Adaptive long-stream path listens
+// for SyncWordValid as well, because long capture must start before the 255-byte
+// FIFO boundary is reached.
+// ---------------------------------------------------------------------------
+void SX1262::configure_irq_params_() {
+  const bool stream_on_sync = (this->listen_mode_ == LISTEN_MODE_S1) || this->long_stream_active_();
+
+  if (this->irq_long_stream_configured_ == stream_on_sync) {
+    return;
+  }
+
+  const uint16_t mask = stream_on_sync ? (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT)
+                                       : (IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT);
+  const uint8_t mask_msb = (uint8_t) ((mask >> 8) & 0xFF);
+  const uint8_t mask_lsb = (uint8_t) (mask & 0xFF);
+
+  this->cmd_write_(CMD_SET_DIO_IRQ_PARAMS,
+                   {mask_msb, mask_lsb,  // IRQ mask
+                    mask_msb, mask_lsb,  // DIO1 mask
+                    0x00, 0x00,          // DIO2 mask
+                    0x00, 0x00});        // DIO3 mask
+
+  this->irq_long_stream_configured_ = stream_on_sync;
+  ESP_LOGD(TAG, "SX1262 IRQ path: %s", stream_on_sync ? "long_stream_sync" : "normal_fifo_rxdone");
+}
+
 // ---------------------------------------------------------------------------
 // setup: called once by ESPHome at boot.
 // Configures FEM pins (if defined), resets the SX1262, and programs all
@@ -522,9 +573,6 @@ void SX1262::setup() {
     delay(5);
   }
 
-  // Full block calibration first, then image calibration for 868 MHz.
-  // Test profile aligned with the simpler SX1262 init used by Szczepan.
-  this->cmd_write_(CMD_CALIBRATE, {0x3F});  // all blocks except image calibration
   this->cmd_write_(CMD_CALIBRATE_IMAGE, {0xD7, 0xDB});
 
   this->cmd_write_(CMD_SET_PACKET_TYPE, {PACKET_TYPE_GFSK});
@@ -538,7 +586,7 @@ void SX1262::setup() {
 
   const uint32_t freq_dev = (this->listen_mode_ == LISTEN_MODE_C1) ? 45000UL : 50000UL;
   const uint32_t fdev = ((uint64_t) freq_dev << 25) / XTAL_FREQ;
-  const uint8_t rx_bw = GFSK_RX_BW_234_3;  // test: Szczepan-like narrower RX bandwidth for T1/C1
+  const uint8_t rx_bw = (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3 : GFSK_RX_BW_312_0;
 
   {
     char buf[96];
@@ -557,34 +605,44 @@ void SX1262::setup() {
                     (uint8_t) ((fdev >> 8) & 0xFF), (uint8_t) (fdev & 0xFF)});
 
   // Packet params
-  const uint16_t preamble_bits = 16;  // test: Szczepan-like shorter preamble
+  const uint16_t preamble_bits = 64;
   const uint8_t preamble_msb = (uint8_t) ((preamble_bits >> 8) & 0xFF);
   const uint8_t preamble_lsb = (uint8_t) (preamble_bits & 0xFF);
 
   // Always FIX_LEN for WMBus.
   const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
-                   {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_8,
+                   {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_16,
                     static_cast<uint8_t>((this->listen_mode_ == LISTEN_MODE_S1) ? 0x18 : 0x10),  // 24 bits sync for S1, 16 bits for T1/C1
                     GFSK_ADDRESS_FILT_OFF, pkt_len_mode,
                     0xFF,  // max payload
                     GFSK_CRC_OFF, GFSK_WHITENING_OFF});
 
-  // IRQ routing -> DIO1
-  const bool stream_on_sync = this->long_gfsk_packets_ || (this->listen_mode_ == LISTEN_MODE_S1);
-  const uint16_t mask = stream_on_sync ? (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT)
-                                       : (IRQ_RX_DONE | IRQ_CRC_ERROR | IRQ_TIMEOUT);
-  const uint8_t mask_msb = (uint8_t) ((mask >> 8) & 0xFF);
-  const uint8_t mask_lsb = (uint8_t) (mask & 0xFF);
-
-  this->cmd_write_(CMD_SET_DIO_IRQ_PARAMS,
-                   {mask_msb, mask_lsb,  // IRQ mask
-                    mask_msb, mask_lsb,  // DIO1 mask
-                    0x00, 0x00,          // DIO2 mask
-                    0x00, 0x00});        // DIO3 mask
+  // IRQ routing -> DIO1.
+  // With long_gfsk_packets=false this stays on the normal FIFO/RxDone path.
+  // With long_gfsk_packets=true it starts normal and switches to SyncWordValid
+  // long-stream only after a FIFO-edge/long-frame suspicion.
+  this->irq_long_stream_configured_ = false;
+  this->configure_irq_params_();
 
   this->restart_rx();
   ESP_LOGV(TAG, "SX1262 setup done");
+}
+
+void SX1262::log_reg_status() {
+  // SX1262 uses 16-bit register addresses; reading via CMD_READ_REGISTER.
+  const uint8_t reg_rx_gain  = this->read_register8_(REG_RX_GAIN);
+  const uint8_t reg_sync0    = this->read_register8_(REG_SYNC_WORD_0);
+  const uint8_t reg_sync1    = this->read_register8_(REG_SYNC_WORD_0 + 1);
+  const uint8_t reg_sync2    = this->read_register8_(REG_SYNC_WORD_0 + 2);
+
+  ESP_LOGI(TAG, "RegRxGain=0x%02X RegSyncWord[0]=0x%02X [1]=0x%02X [2]=0x%02X",
+           reg_rx_gain, reg_sync0, reg_sync1, reg_sync2);
+
+  if (reg_rx_gain == 0x00 && reg_sync0 == 0x00 && reg_sync1 == 0x00 && reg_sync2 == 0x00) {
+    ESP_LOGE(TAG, "SX1262 not responding over SPI / SX1262 nie odpowiada po SPI. "
+                  "Check VCC/GND/SCK/MOSI/MISO/NSS/RESET.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +666,7 @@ void SX1262::restart_rx() {
     this->set_s1_sync_word_();
     this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
     this->cmd_write_(CMD_SET_STANDBY, {STANDBY_XOSC});
+    this->configure_irq_params_();
     this->cmd_write_(CMD_SET_RX, {0xFF, 0xFF, 0xFF});
     this->rx_loaded_ = false;
     this->rx_idx_ = 0;
@@ -631,6 +690,7 @@ void SX1262::restart_rx() {
 
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_XOSC});
+  this->configure_irq_params_();
 
   // RX continuous
   this->cmd_write_(CMD_SET_RX, {0xFF, 0xFF, 0xFF});
@@ -648,20 +708,24 @@ void SX1262::restart_rx() {
 // ---------------------------------------------------------------------------
 optional<uint8_t> SX1262::read() {
   if (!this->rx_loaded_) {
-    if (this->long_gfsk_packets_ || this->listen_mode_ == LISTEN_MODE_S1) {
-      // Don't start a long capture unless an IRQ is latched (SyncWordValid / RxDone / Timeout / CRCError).
-      // Otherwise we'd stop RX periodically and miss frames.
+    const bool use_long_stream = (this->listen_mode_ == LISTEN_MODE_S1) || this->long_stream_active_();
+
+    if (use_long_stream) {
+      // Long-stream mode is entered only for S1 or during adaptive long-frame hold.
+      // It requires SyncWordValid IRQ so capture starts before the 255-byte FIFO edge.
       const uint16_t irq = this->get_irq_status_();
       if ((irq & (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_CRC_ERROR)) == 0) {
         return {};
       }
-      ESP_LOGD(TAG, "IRQ=%04X, capturing RX stream (long GFSK)", irq);
+      ESP_LOGD(TAG, "IRQ=%04X, capturing RX stream (adaptive long GFSK)", irq);
       if (!this->capture_rx_stream_())
         return {};
     } else {
+      // Fast normal path for short frames. This is intentionally used even when
+      // long_gfsk_packets=true, until a near-255-byte packet activates long hold.
       if (!this->irq_pin_->digital_read())
         return {};
-      ESP_LOGD(TAG, "IRQ detected, loading buffer");
+      ESP_LOGD(TAG, "IRQ detected, loading SX1262 FIFO packet");
       if (!this->load_rx_buffer_())
         return {};
     }
@@ -671,53 +735,6 @@ optional<uint8_t> SX1262::read() {
     return this->rx_buffer_[this->rx_idx_++];
   return {};
 }
-
-
-// ---------------------------------------------------------------------------
-// read_packet_in_task: SX1262 fast FIFO drain path.
-//
-// This copies one complete packet from the SX1262 internal buffer into RAM and
-// returns it to the upper component. The upper component can restart RX
-// immediately and defer parsing/3-of-6/DLL CRC/MQTT handling outside the hot
-// radio path.
-//
-// Important: this is NOT a blind raw read. It uses the same safe capture
-// mechanisms as read():
-//   - normal path: GetRxBufferStatus + ReadBuffer(start_ptr, payload_len)
-//   - long path: AN1200.53 capture_rx_stream_()
-//
-// That avoids the broken "read arbitrary bytes after IRQ" behavior which feeds
-// misaligned fragments into the parser.
-bool SX1262::read_packet_in_task(std::vector<uint8_t> &out, int8_t &rssi) {
-  out.clear();
-
-  bool ok = false;
-  if (this->long_gfsk_packets_ || this->listen_mode_ == LISTEN_MODE_S1) {
-    const uint16_t irq = this->get_irq_status_();
-    if ((irq & (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_CRC_ERROR)) == 0) {
-      return false;
-    }
-    ok = this->capture_rx_stream_();
-  } else {
-    ok = this->load_rx_buffer_();
-  }
-
-  if (!ok || this->rx_buffer_.empty()) {
-    return false;
-  }
-
-  out = this->rx_buffer_;
-  rssi = this->last_rssi_dbm_;
-
-  // Mark the cached buffer as consumed. The caller will re-arm RX immediately.
-  this->rx_loaded_ = false;
-  this->rx_idx_ = 0;
-  this->rx_len_ = 0;
-  this->rx_buffer_.clear();
-
-  return true;
-}
-
 
 // ---------------------------------------------------------------------------
 // get_rssi: return RSSI (dBm) cached at packet capture time.
@@ -729,19 +746,6 @@ int8_t SX1262::get_rssi() {
   // In long-GFSK mode we stop RX after capture, so live GetPacketStatus
   // would often read as 0.
   return this->last_rssi_dbm_;
-}
-
-
-// ---------------------------------------------------------------------------
-// log_reg_status: diagnostic hook used by the component/base transceiver.
-// Keep it lightweight; this is not part of the RX hot path.
-// ---------------------------------------------------------------------------
-void SX1262::log_reg_status() {
-  const uint8_t rx_gain = this->read_register8_(REG_RX_GAIN);
-  const uint8_t rx_ptr = this->read_register8_(REG_RX_ADDR_PTR);
-  const uint8_t payload_len = this->read_register8_(REG_RXTX_PAYLOAD_LEN);
-  ESP_LOGI(TAG, "SX1262 regs: RX_GAIN=0x%02X RX_ADDR_PTR=0x%02X RXTX_PAYLOAD_LEN=0x%02X",
-           rx_gain, rx_ptr, payload_len);
 }
 
 const char *SX1262::get_name() { return TAG; }

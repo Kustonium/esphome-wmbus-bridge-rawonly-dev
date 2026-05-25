@@ -55,8 +55,6 @@ class SX1262 : public RadioTransceiver {
   optional<uint8_t> read() override;
   int8_t get_rssi() override;
   const char *get_name() override;
-  bool supports_unknown_size_raw_drain() const override { return true; }
-  bool read_packet_in_task(std::vector<uint8_t> &out, int8_t &rssi) override;
   void log_reg_status() override;
 
  protected:
@@ -83,6 +81,13 @@ class SX1262 : public RadioTransceiver {
   // Long GFSK reception (Semtech AN1200.53)
   bool capture_rx_stream_();
 
+  // SX1262 adaptive RX path:
+  // - long_gfsk_packets=false: keep the normal FIFO path for short frames.
+  // - long_gfsk_packets=true: use normal FIFO by default, but temporarily switch
+  //   to the Semtech long-stream path after a packet hits the 255-byte FIFO edge.
+  bool long_stream_active_() const;
+  void configure_irq_params_();
+
   // Bias towards Block B (0x3D). Every 4th hop switches to Block A (0xCD).
   uint8_t sync_cycle_{0};
 
@@ -108,6 +113,12 @@ class SX1262 : public RadioTransceiver {
   size_t rx_idx_{0};
   size_t rx_len_{0};
   bool rx_loaded_{false};
+
+  // Adaptive long-stream hold. 0 means inactive.
+  // When active, restart_rx() enables SyncWordValid IRQ and read() uses
+  // capture_rx_stream_(). Otherwise SX1262 uses the faster normal FIFO path.
+  uint32_t long_stream_hold_until_ms_{0};
+  bool irq_long_stream_configured_{false};
 
   // Packet RSSI captured at the time the RX buffer was filled.
   // In long-GFSK mode we stop RX (standby) after capture, so GetPacketStatus
