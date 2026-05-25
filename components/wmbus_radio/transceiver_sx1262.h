@@ -81,10 +81,11 @@ class SX1262 : public RadioTransceiver {
   // Long GFSK reception (Semtech AN1200.53)
   bool capture_rx_stream_();
 
-  // SX1262 adaptive RX path:
-  // - long_gfsk_packets=false: keep the normal FIFO path for short frames.
-  // - long_gfsk_packets=true: use normal FIFO by default, but temporarily switch
-  //   to the Semtech long-stream path after a packet hits the 255-byte FIFO edge.
+  // Adaptive long-packet mode:
+  // long_gfsk_packets=false -> always use fast normal FIFO/RX_DONE path.
+  // long_gfsk_packets=true  -> still use fast normal path by default; if a packet
+  // reaches the SX126x FIFO edge (>=250 B), enable long-stream reception for a
+  // short hold window so subsequent long frames can exceed the 255-byte FIFO limit.
   bool long_stream_active_() const;
   void configure_irq_params_();
 
@@ -98,6 +99,9 @@ class SX1262 : public RadioTransceiver {
   SX1262RxGain rx_gain_{BOOSTED};
   bool long_gfsk_packets_{false};
   bool clear_device_errors_on_boot_{false};
+
+  // Adaptive long-stream hold. Only meaningful when long_gfsk_packets_ is true.
+  uint32_t long_stream_hold_until_ms_{0};
 
   // Captured SX126x device errors (best-effort)
   bool boot_dev_err_valid_{false};
@@ -113,12 +117,6 @@ class SX1262 : public RadioTransceiver {
   size_t rx_idx_{0};
   size_t rx_len_{0};
   bool rx_loaded_{false};
-
-  // Adaptive long-stream hold. 0 means inactive.
-  // When active, restart_rx() enables SyncWordValid IRQ and read() uses
-  // capture_rx_stream_(). Otherwise SX1262 uses the faster normal FIFO path.
-  uint32_t long_stream_hold_until_ms_{0};
-  bool irq_long_stream_configured_{false};
 
   // Packet RSSI captured at the time the RX buffer was filled.
   // In long-GFSK mode we stop RX (standby) after capture, so GetPacketStatus
