@@ -684,6 +684,19 @@ int8_t SX1262::get_rssi() {
   return this->last_rssi_dbm_;
 }
 
+
+// ---------------------------------------------------------------------------
+// log_reg_status: diagnostic hook used by the component/base transceiver.
+// Keep it lightweight; this is not part of the RX hot path.
+// ---------------------------------------------------------------------------
+void SX1262::log_reg_status() {
+  const uint8_t rx_gain = this->read_register8_(REG_RX_GAIN);
+  const uint8_t rx_ptr = this->read_register8_(REG_RX_ADDR_PTR);
+  const uint8_t payload_len = this->read_register8_(REG_RXTX_PAYLOAD_LEN);
+  ESP_LOGI(TAG, "SX1262 regs: RX_GAIN=0x%02X RX_ADDR_PTR=0x%02X RXTX_PAYLOAD_LEN=0x%02X",
+           rx_gain, rx_ptr, payload_len);
+}
+
 const char *SX1262::get_name() { return TAG; }
 
 }  // namespace wmbus_radio
