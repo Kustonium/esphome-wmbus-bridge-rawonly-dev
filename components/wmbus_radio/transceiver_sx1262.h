@@ -57,6 +57,12 @@ class SX1262 : public RadioTransceiver {
   const char *get_name() override;
   void log_reg_status() override;
 
+  // Test: allow upper RX pipeline to drain the remaining raw bytes when
+  // early expected_size probing cannot determine a valid packet length.
+  // This mirrors the SX1276-style recovery path and prevents early drops before
+  // Packet::convert_to_frame() gets a chance to try the fallback parser.
+  bool supports_unknown_size_raw_drain() const override { return true; }
+
  protected:
   void wait_while_busy_();
   void cmd_write_(uint8_t cmd, std::initializer_list<uint8_t> args);
