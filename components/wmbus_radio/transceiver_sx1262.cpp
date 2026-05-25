@@ -31,6 +31,7 @@ static constexpr uint8_t CMD_GET_DEVICE_ERRORS = 0x17;
 static constexpr uint8_t CMD_CLEAR_DEVICE_ERRORS = 0x07;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
+static constexpr uint8_t CMD_CALIBRATE = 0x89;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
 static constexpr uint8_t CMD_WRITE_REGISTER = 0x0D;
 static constexpr uint8_t CMD_READ_REGISTER = 0x1D;
@@ -50,7 +51,8 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 // ---------------------------------------------------------------------------
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
 static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;
-static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (legacy, unused)
+static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth
+static constexpr uint8_t GFSK_PREAMBLE_DETECT_8 = 0x04;
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
@@ -520,6 +522,9 @@ void SX1262::setup() {
     delay(5);
   }
 
+  // Full block calibration first, then image calibration for 868 MHz.
+  // Test profile aligned with the simpler SX1262 init used by Szczepan.
+  this->cmd_write_(CMD_CALIBRATE, {0x3F});  // all blocks except image calibration
   this->cmd_write_(CMD_CALIBRATE_IMAGE, {0xD7, 0xDB});
 
   this->cmd_write_(CMD_SET_PACKET_TYPE, {PACKET_TYPE_GFSK});
@@ -533,7 +538,7 @@ void SX1262::setup() {
 
   const uint32_t freq_dev = (this->listen_mode_ == LISTEN_MODE_C1) ? 45000UL : 50000UL;
   const uint32_t fdev = ((uint64_t) freq_dev << 25) / XTAL_FREQ;
-  const uint8_t rx_bw = (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3 : GFSK_RX_BW_312_0;
+  const uint8_t rx_bw = GFSK_RX_BW_234_3;  // test: Szczepan-like narrower RX bandwidth for T1/C1
 
   {
     char buf[96];
@@ -552,14 +557,14 @@ void SX1262::setup() {
                     (uint8_t) ((fdev >> 8) & 0xFF), (uint8_t) (fdev & 0xFF)});
 
   // Packet params
-  const uint16_t preamble_bits = 64;
+  const uint16_t preamble_bits = 16;  // test: Szczepan-like shorter preamble
   const uint8_t preamble_msb = (uint8_t) ((preamble_bits >> 8) & 0xFF);
   const uint8_t preamble_lsb = (uint8_t) (preamble_bits & 0xFF);
 
   // Always FIX_LEN for WMBus.
   const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
-                   {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_16,
+                   {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_8,
                     static_cast<uint8_t>((this->listen_mode_ == LISTEN_MODE_S1) ? 0x18 : 0x10),  // 24 bits sync for S1, 16 bits for T1/C1
                     GFSK_ADDRESS_FILT_OFF, pkt_len_mode,
                     0xFF,  // max payload
