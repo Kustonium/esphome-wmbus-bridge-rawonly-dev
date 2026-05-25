@@ -1990,7 +1990,7 @@ void Radio::setup() {
     return;
   }
 
-  ASSERT_SETUP(this->packet_queue_ = xQueueCreate(3, sizeof(Packet *)));
+  ASSERT_SETUP(this->packet_queue_ = xQueueCreate(16, sizeof(Packet *)));
 
   // This component uses its own FreeRTOS receiver task instead of ESPHome's
   // main loop task. Because of that, ESPHome's loop_task_stack_size YAML option
