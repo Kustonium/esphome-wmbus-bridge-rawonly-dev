@@ -55,9 +55,9 @@ class SX1262 : public RadioTransceiver {
   optional<uint8_t> read() override;
   int8_t get_rssi() override;
   const char *get_name() override;
-  void log_reg_status() override;
-  // Allow component.cpp to use the SX1262 fast raw-drain frontend path.
   bool supports_unknown_size_raw_drain() const override { return true; }
+  bool read_packet_in_task(std::vector<uint8_t> &out, int8_t &rssi) override;
+  void log_reg_status() override;
 
  protected:
   void wait_while_busy_();

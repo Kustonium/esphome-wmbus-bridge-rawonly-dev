@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #define BYTE(x, n) ((uint8_t)(x >> (n * 8)))
 
@@ -48,6 +49,11 @@ public:
   // Optional: report SX126x device errors captured during boot clear.
   // Default: not supported.
   virtual bool get_boot_device_errors(uint16_t &before, uint16_t &after) const { return false; }
+
+  // Optional fast path for packet radios.
+  // Implementations may copy one complete packet from the radio FIFO/buffer into RAM.
+  // The caller may then restart RX immediately and defer parsing/decoding to another task.
+  virtual bool read_packet_in_task(std::vector<uint8_t> &out, int8_t &rssi) { return false; }
 
   bool read_in_task(uint8_t *buffer, size_t length);
   bool read_in_task_partial(uint8_t *buffer, size_t max_length, size_t &out_read,

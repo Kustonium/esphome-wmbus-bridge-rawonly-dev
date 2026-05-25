@@ -672,6 +672,53 @@ optional<uint8_t> SX1262::read() {
   return {};
 }
 
+
+// ---------------------------------------------------------------------------
+// read_packet_in_task: SX1262 fast FIFO drain path.
+//
+// This copies one complete packet from the SX1262 internal buffer into RAM and
+// returns it to the upper component. The upper component can restart RX
+// immediately and defer parsing/3-of-6/DLL CRC/MQTT handling outside the hot
+// radio path.
+//
+// Important: this is NOT a blind raw read. It uses the same safe capture
+// mechanisms as read():
+//   - normal path: GetRxBufferStatus + ReadBuffer(start_ptr, payload_len)
+//   - long path: AN1200.53 capture_rx_stream_()
+//
+// That avoids the broken "read arbitrary bytes after IRQ" behavior which feeds
+// misaligned fragments into the parser.
+bool SX1262::read_packet_in_task(std::vector<uint8_t> &out, int8_t &rssi) {
+  out.clear();
+
+  bool ok = false;
+  if (this->long_gfsk_packets_ || this->listen_mode_ == LISTEN_MODE_S1) {
+    const uint16_t irq = this->get_irq_status_();
+    if ((irq & (IRQ_SYNC_WORD_VALID | IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_CRC_ERROR)) == 0) {
+      return false;
+    }
+    ok = this->capture_rx_stream_();
+  } else {
+    ok = this->load_rx_buffer_();
+  }
+
+  if (!ok || this->rx_buffer_.empty()) {
+    return false;
+  }
+
+  out = this->rx_buffer_;
+  rssi = this->last_rssi_dbm_;
+
+  // Mark the cached buffer as consumed. The caller will re-arm RX immediately.
+  this->rx_loaded_ = false;
+  this->rx_idx_ = 0;
+  this->rx_len_ = 0;
+  this->rx_buffer_.clear();
+
+  return true;
+}
+
+
 // ---------------------------------------------------------------------------
 // get_rssi: return RSSI (dBm) cached at packet capture time.
 // In long-GFSK mode the radio enters standby after capture, so

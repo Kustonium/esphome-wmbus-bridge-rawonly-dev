@@ -2659,7 +2659,11 @@ void Radio::receive_frame() {
   auto packet = std::make_unique<Packet>();
 
   auto queue_packet = [this](std::unique_ptr<Packet> &pkt) -> bool {
-    pkt->set_rssi(this->radio->get_rssi());
+    // Preserve RSSI when a radio-specific fast path already captured packet RSSI.
+    // Legacy paths still fill RSSI here.
+    if (pkt->get_rssi() == 0) {
+      pkt->set_rssi(this->radio->get_rssi());
+    }
     auto packet_ptr = pkt.get();
     if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE) {
       ESP_LOGV(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
@@ -2678,59 +2682,31 @@ void Radio::receive_frame() {
     return false;
   };
 
-  // ---------------------------------------------------------------------------
-  // SX1262 fast raw RX path (test / backend-friendly).
+  // Radio-specific fast path: copy one complete packet from the radio FIFO/buffer,
+  // immediately re-arm RX, and defer parsing/decoding/MQTT to the normal packet queue.
   //
-  // Purpose:
-  //   For SX1262 the transceiver already has the complete radio RX buffer available
-  //   after IRQ. Do not walk the packet byte-by-byte through preamble/probe/
-  //   expected_size in the receiver hot path. Copy whatever the radio provides,
-  //   re-arm RX immediately, then let Packet::convert_to_frame() do the real
-  //   T1/C1 parsing, DLL CRC trimming and diagnostics outside the hot RX path.
-  //
-  // Why:
-  //   The staged preamble/probe path is excellent for detailed diagnostics, but in
-  //   dense RF environments it increases dead time before RX is armed again.
-  //   This path is intentionally limited to SX1262 and gated by
-  //   supports_unknown_size_raw_drain() so it is easy to enable/disable per radio.
-  // ---------------------------------------------------------------------------
-  const bool sx1262_fast_raw_path =
-      this->radio != nullptr &&
-      strcmp(this->radio->get_name(), "SX1262") == 0 &&
-      radio_supports_unknown_size_raw_drain_(this->radio) &&
-      this->radio->get_listen_mode() != LISTEN_MODE_S1;
-
-  if (sx1262_fast_raw_path) {
-    auto *raw = packet->append_space(WMBUS_RAW_DRAIN_MAX_BYTES);
-    size_t got_raw = 0;
-
-    // For the normal SX1262 path this drains the already captured RX buffer.
-    // For long_gfsk_packets it drains the captured stream. The idle window is
-    // intentionally short: this is the fast frontend path, not a slow recovery path.
-    this->radio->read_in_task_partial(raw, WMBUS_RAW_DRAIN_MAX_BYTES, got_raw, 1, 1);
-    packet->resize(got_raw);
-
-    if (got_raw == 0) {
-      this->diag_rx_path_.preamble_read_failed++;
-      this->diag_15m_rx_path_.preamble_read_failed++;
-      this->diag_60min_rx_path_.preamble_read_failed++;
-      this->collect_radio_rx_diag_();
-      this->publish_rx_path_event_("rx_path", "sx1262_fast_raw", "no_bytes_after_irq", this->radio->get_rssi());
-      ESP_LOGV(TAG, "SX1262 fast raw path: IRQ but no bytes read");
+  // This is intentionally different from a blind raw drain:
+  // read_packet_in_task() must return a complete packet captured by the radio driver
+  // (for SX1262: GetRxBufferStatus/ReadBuffer or the long-packet capture path).
+  if (this->radio != nullptr) {
+    std::vector<uint8_t> raw_packet;
+    int8_t packet_rssi = 0;
+    if (this->radio->read_packet_in_task(raw_packet, packet_rssi)) {
       this->radio->restart_rx();
-      return;
+
+      if (!raw_packet.empty()) {
+        packet->set_rssi(packet_rssi);
+        auto *dst = packet->append_space(raw_packet.size());
+        memcpy(dst, raw_packet.data(), raw_packet.size());
+
+        char detail[96];
+        snprintf(detail, sizeof(detail), "fast_packet_len=%u", (unsigned) raw_packet.size());
+        this->publish_rx_path_event_("rx_path", "receive_fast_packet", detail, packet_rssi);
+
+        queue_packet(packet);
+        return;
+      }
     }
-
-    // Re-arm RX before queueing/decoding/logging to reduce dead time.
-    const int current_rssi = this->radio->get_rssi();
-    this->radio->restart_rx();
-
-    char detail[96];
-    snprintf(detail, sizeof(detail), "raw_len=%u", (unsigned) got_raw);
-    this->publish_rx_path_event_("rx_path", "sx1262_fast_raw", detail, current_rssi);
-
-    queue_packet(packet);
-    return;
   }
 
   if (this->radio != nullptr && this->radio->get_listen_mode() == LISTEN_MODE_S1) {
