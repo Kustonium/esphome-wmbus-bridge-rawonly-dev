@@ -698,9 +698,11 @@ optional<uint8_t> SX1262::read() {
         return {};
 
       if (this->long_gfsk_packets_ && this->rx_len_ >= 250) {
-        this->long_stream_hold_until_ms_ = millis() + 300000UL;  // 5 minutes
+       // Hold must exceed the meter TX interval so the next transmission lands inside
+       // the streaming window. Typical fast T1 meters transmit every ~30s; 45s gives margin.
+	   this->long_stream_hold_until_ms_ = millis() + 45000UL;  // 45 seconds
         ESP_LOGW(TAG,
-                 "SX1262 long-frame edge detected (payload_len=%u) -> enabling adaptive long-stream hold for 5 min",
+                 "SX1262 long-frame edge detected (payload_len=%u) -> enabling adaptive long-stream hold for 45 s",
                  (unsigned) this->rx_len_);
       }
     }
