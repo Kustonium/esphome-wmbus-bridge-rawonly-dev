@@ -79,16 +79,19 @@ static void append_crc(std::vector<uint8_t> &payload, size_t pos, size_t len) {
 
 static std::vector<uint8_t> base_frame_body() {
   return {
-      0x09,  // L-field: 9 bytes follow, 10 bytes total including L-field.
+      0x0B,  // L-field: 11 bytes follow, 12 bytes total including L-field.
       0x44, 0x12, 0x34, 0x56,
       0x78, 0x90, 0x01, 0x02,
-      0x7A,
+      0x7A, 0xAA, 0x55,
   };
 }
 
 static std::vector<uint8_t> format_a_with_crc() {
-  auto payload = base_frame_body();
+  const auto body = base_frame_body();
+  std::vector<uint8_t> payload(body.begin(), body.begin() + 10);
   append_crc(payload, 0, 10);
+  payload.insert(payload.end(), body.begin() + 10, body.end());
+  append_crc(payload, 12, body.size() - 10);
   return payload;
 }
 
@@ -152,6 +155,7 @@ static void test_packet_t1_frame_conversion() {
 
   auto frame = packet.convert_to_frame();
   check(frame.has_value(), "T1 raw packet converts to frame");
+  if (!frame) return;
   check(frame->link_mode() == LinkMode::T1, "T1 frame mode is retained");
   check(frame->rssi() == -71, "T1 frame RSSI is retained");
   check(frame->as_raw() == base_frame_body(), "T1 frame strips coding and DLL CRC");
@@ -173,6 +177,7 @@ static void test_packet_c1_frame_conversion() {
 
   auto frame = packet.convert_to_frame();
   check(frame.has_value(), "C1 raw packet converts to frame");
+  if (!frame) return;
   check(frame->link_mode() == LinkMode::C1, "C1 frame mode is retained");
   check(frame->rssi() == -65, "C1 frame RSSI is retained");
   check(frame->format() == "A", "C1 frame format A is detected");
