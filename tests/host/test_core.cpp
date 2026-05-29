@@ -77,6 +77,48 @@ static void append_crc(std::vector<uint8_t> &payload, size_t pos, size_t len) {
   payload.push_back((uint8_t) (crc & 0xFF));
 }
 
+static Packet make_packet(const std::vector<uint8_t> &raw, int8_t rssi,
+                          std::optional<LinkMode> forced = std::nullopt) {
+  Packet packet;
+  auto *dst = packet.append_space(raw.size());
+  std::copy(raw.begin(), raw.end(), dst);
+  packet.set_rssi(rssi);
+  if (forced) packet.set_forced_link_mode(*forced);
+  return packet;
+}
+
+static std::vector<uint8_t> encode_s1_manchester(const std::vector<uint8_t> &decoded) {
+  std::vector<uint8_t> out;
+  uint8_t current = 0;
+  uint8_t bits = 0;
+
+  auto push_bit = [&](uint8_t bit) {
+    current = (uint8_t) ((current << 1) | (bit & 0x01));
+    bits++;
+    if (bits == 8) {
+      out.push_back(current);
+      current = 0;
+      bits = 0;
+    }
+  };
+
+  for (uint8_t byte : decoded) {
+    for (int bit = 7; bit >= 0; bit--) {
+      const bool one = ((byte >> bit) & 0x01) != 0;
+      // Parser polarity=false expects 01 -> 0 and 10 -> 1.
+      push_bit(one ? 1 : 0);
+      push_bit(one ? 0 : 1);
+    }
+  }
+
+  if (bits != 0) {
+    current = (uint8_t) (current << (8 - bits));
+    out.push_back(current);
+  }
+
+  return out;
+}
+
 static std::vector<uint8_t> base_frame_body() {
   return {
       0x0B,  // L-field: 11 bytes follow, 12 bytes total including L-field.
@@ -148,10 +190,7 @@ static void test_dll_crc_format_b() {
 
 static void test_packet_t1_frame_conversion() {
   auto raw = encode_3of6(format_a_with_crc());
-  Packet packet;
-  auto *dst = packet.append_space(raw.size());
-  std::copy(raw.begin(), raw.end(), dst);
-  packet.set_rssi(-71);
+  Packet packet = make_packet(raw, -71);
 
   auto frame = packet.convert_to_frame();
   check(frame.has_value(), "T1 raw packet converts to frame");
@@ -170,10 +209,7 @@ static void test_packet_c1_frame_conversion() {
   std::vector<uint8_t> raw = {0x54, 0xCD};
   raw.insert(raw.end(), payload.begin(), payload.end());
 
-  Packet packet;
-  auto *dst = packet.append_space(raw.size());
-  std::copy(raw.begin(), raw.end(), dst);
-  packet.set_rssi(-65);
+  Packet packet = make_packet(raw, -65);
 
   auto frame = packet.convert_to_frame();
   check(frame.has_value(), "C1 raw packet converts to frame");
@@ -184,6 +220,65 @@ static void test_packet_c1_frame_conversion() {
   check(frame->as_raw() == base_frame_body(), "C1 frame strips suffix and DLL CRC");
 }
 
+static void test_packet_s1_frame_conversion() {
+  auto raw = encode_s1_manchester(format_a_with_crc());
+  Packet packet = make_packet(raw, -83, LinkMode::S1);
+
+  auto frame = packet.convert_to_frame();
+  check(frame.has_value(), "S1 Manchester raw packet converts to frame");
+  if (!frame) return;
+  check(frame->link_mode() == LinkMode::S1, "S1 frame mode is retained");
+  check(frame->rssi() == -83, "S1 frame RSSI is retained");
+  check(frame->format() == "A", "S1 frame format A is detected");
+  check(frame->as_raw() == base_frame_body(), "S1 frame strips Manchester coding and DLL CRC");
+}
+
+static void test_packet_t1_bad_crc_is_rejected() {
+  auto payload = format_a_with_crc();
+  payload.back() ^= 0x01;
+  Packet packet = make_packet(encode_3of6(payload), -72);
+
+  auto frame = packet.convert_to_frame();
+  check(!frame.has_value(), "T1 packet with bad DLL CRC is rejected");
+  check(packet.drop_reason() == "dll_crc_failed", "T1 bad CRC reports dll_crc_failed");
+  check(packet.drop_stage() == "dll_crc_final", "T1 bad final CRC reports dll_crc_final");
+}
+
+static void test_packet_t1_truncated_is_rejected() {
+  auto payload = format_a_with_crc();
+  payload.pop_back();
+  Packet packet = make_packet(encode_3of6(payload), -74);
+
+  auto frame = packet.convert_to_frame();
+  check(!frame.has_value(), "T1 truncated packet is rejected");
+  check(packet.is_truncated(), "T1 truncated packet sets truncated flag");
+  check(packet.drop_reason() == "truncated", "T1 truncated packet reports truncated reason");
+  check(packet.drop_stage() == "t1_length_check", "T1 truncated packet reports length-check stage");
+}
+
+static void test_packet_c1_unknown_preamble_is_rejected() {
+  auto payload = format_a_with_crc();
+  std::vector<uint8_t> raw = {0x54, 0x00};
+  raw.insert(raw.end(), payload.begin(), payload.end());
+  Packet packet = make_packet(raw, -67);
+
+  auto frame = packet.convert_to_frame();
+  check(!frame.has_value(), "C1 packet with unknown block preamble is rejected");
+  check(packet.drop_stage() == "c1_preamble", "C1 bad preamble reports c1_preamble stage");
+  check(packet.drop_reason() == "unknown_preamble", "C1 bad preamble reports unknown_preamble");
+}
+
+static void test_packet_s1_invalid_manchester_is_rejected() {
+  std::vector<uint8_t> raw(8, 0x00);
+  Packet packet = make_packet(raw, -90, LinkMode::S1);
+
+  auto frame = packet.convert_to_frame();
+  check(!frame.has_value(), "S1 invalid Manchester packet is rejected");
+  check(packet.drop_stage() == "s1_l_field", "S1 invalid Manchester reports S1 l-field stage");
+  check(packet.drop_reason() == "l_field_invalid", "S1 invalid Manchester reports invalid L-field");
+  check(packet.t1_symbols_invalid() > 0, "S1 invalid Manchester records invalid symbols");
+}
+
 int main() {
   test_decode3of6_round_trip();
   test_decode3of6_invalid_symbol();
@@ -191,6 +286,11 @@ int main() {
   test_dll_crc_format_b();
   test_packet_t1_frame_conversion();
   test_packet_c1_frame_conversion();
+  test_packet_s1_frame_conversion();
+  test_packet_t1_bad_crc_is_rejected();
+  test_packet_t1_truncated_is_rejected();
+  test_packet_c1_unknown_preamble_is_rejected();
+  test_packet_s1_invalid_manchester_is_rejected();
 
   if (failures == 0) {
     std::cout << "All host parser tests passed\n";
