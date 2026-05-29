@@ -28,6 +28,16 @@ static void check(bool condition, const char *message) {
   }
 }
 
+static void check(bool condition, const std::string &message) {
+  check(condition, message.c_str());
+}
+
+struct GoldenFrameFixture {
+  const char *name;
+  const char *hex;
+  uint32_t expected_meter_id;
+};
+
 static std::vector<uint8_t> encode_3of6(const std::vector<uint8_t> &decoded) {
   static const uint8_t lookup[16] = {
       0b010110, 0b001101, 0b001110, 0b001011,
@@ -173,22 +183,27 @@ static std::vector<uint8_t> format_a_with_crc() {
   return format_a_with_crc_from_body(base_frame_body());
 }
 
-static std::vector<uint8_t> golden_long_frame_body() {
-  return hex_to_bytes(
-      "8e44b3380799080003027a09008005d518489e938d7741372ca5f34153b1f81e0e7f71fc2ce87ac30edb358dcd2b"
-      "4731ecd84f7e705bb3f425aaa0a6df7f654a87b9289d49d7ad83cd2776a0627b6d528cb602da1b6455efca61"
-      "f42dbc25387f1f6acdcbf633a5fde8e0b0e4f9153499cb94f3e64229969d9baaac567112988f3ba86728747"
-      "b0dc9590d7a5afde493");
-}
-
-static std::vector<uint8_t> golden_short_frame_body() {
-  return hex_to_bytes(
-      "2f446850791255417462a2069f333904d00b09000000090000000000000000000002121113190b130400000000000100");
-}
-
-static std::vector<uint8_t> golden_mid_frame_body() {
-  return hex_to_bytes(
-      "374468508107839027c3a2129f335c5600289e020000800e0000000030c0050f6cc1c7144b6921c12a0748e000000000000000000000c001");
+static std::vector<GoldenFrameFixture> golden_frame_fixtures() {
+  return {
+      {
+          "long",
+          "8e44b3380799080003027a09008005d518489e938d7741372ca5f34153b1f81e0e7f71fc2ce87ac30edb358dcd2b"
+          "4731ecd84f7e705bb3f425aaa0a6df7f654a87b9289d49d7ad83cd2776a0627b6d528cb602da1b6455efca61"
+          "f42dbc25387f1f6acdcbf633a5fde8e0b0e4f9153499cb94f3e64229969d9baaac567112988f3ba86728747"
+          "b0dc9590d7a5afde493",
+          89907,
+      },
+      {
+          "short",
+          "2f446850791255417462a2069f333904d00b09000000090000000000000000000002121113190b130400000000000100",
+          41551279,
+      },
+      {
+          "mid",
+          "374468508107839027c3a2129f335c5600289e020000800e0000000030c0050f6cc1c7144b6921c12a0748e000000000000000000000c001",
+          90830781,
+      },
+  };
 }
 
 static void test_decode3of6_round_trip() {
@@ -333,59 +348,54 @@ static void test_packet_s1_invalid_manchester_is_rejected() {
   check(packet.t1_symbols_invalid() > 0, "S1 invalid Manchester records invalid symbols");
 }
 
-static void check_golden_body_shape(const std::vector<uint8_t> &body, uint32_t expected_meter_id,
-                                    const char *label) {
-  check(!body.empty(), label);
+static void check_golden_body_shape(const std::vector<uint8_t> &body,
+                                    const GoldenFrameFixture &fixture) {
+  const std::string prefix = std::string(fixture.name) + " golden frame";
+  check(!body.empty(), prefix + " is present");
   if (body.empty()) return;
-  check(body.size() == (size_t) body[0] + 1, "golden frame L-field matches body length");
+  check(body.size() == (size_t) body[0] + 1, prefix + " L-field matches body length");
 
   Packet packet = make_packet(body, -60);
   uint32_t meter_id = 0;
-  check(packet.try_get_meter_id(meter_id), "golden frame meter id is extractable");
-  check(meter_id == expected_meter_id, "golden frame meter id matches expected value");
+  check(packet.try_get_meter_id(meter_id), prefix + " meter id is extractable");
+  check(meter_id == fixture.expected_meter_id, prefix + " meter id matches expected value");
 }
 
-static void check_golden_round_trip_c1(const std::vector<uint8_t> &body, const char *label) {
+static void check_golden_round_trip_c1(const std::vector<uint8_t> &body, const char *name) {
+  const std::string prefix = std::string(name) + " golden C1 frame";
   auto payload = format_a_with_crc_from_body(body);
   std::vector<uint8_t> raw = {0x54, 0xCD};
   raw.insert(raw.end(), payload.begin(), payload.end());
   Packet packet = make_packet(raw, -68);
 
   auto frame = packet.convert_to_frame();
-  check(frame.has_value(), label);
+  check(frame.has_value(), prefix + " converts through parser");
   if (!frame) return;
-  check(frame->link_mode() == LinkMode::C1, "golden C1 frame keeps C1 mode");
-  check(frame->format() == "A", "golden C1 frame uses Format A fixture");
-  check(frame->as_raw() == body, "golden C1 frame round-trips to normalized body");
+  check(frame->link_mode() == LinkMode::C1, prefix + " keeps C1 mode");
+  check(frame->format() == "A", prefix + " uses Format A fixture");
+  check(frame->as_raw() == body, prefix + " round-trips to normalized body");
 }
 
-static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const char *label) {
+static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const char *name) {
+  const std::string prefix = std::string(name) + " golden T1 frame";
   auto raw = encode_3of6(format_a_with_crc_from_body(body));
   Packet packet = make_packet(raw, -73);
 
   auto frame = packet.convert_to_frame();
-  check(frame.has_value(), label);
+  check(frame.has_value(), prefix + " converts through parser");
   if (!frame) return;
-  check(frame->link_mode() == LinkMode::T1, "golden T1 frame keeps T1 mode");
-  check(frame->format() == "A", "golden T1 frame uses Format A fixture");
-  check(frame->as_raw() == body, "golden T1 frame round-trips to normalized body");
+  check(frame->link_mode() == LinkMode::T1, prefix + " keeps T1 mode");
+  check(frame->format() == "A", prefix + " uses Format A fixture");
+  check(frame->as_raw() == body, prefix + " round-trips to normalized body");
 }
 
 static void test_real_golden_frames_round_trip() {
-  const auto long_body = golden_long_frame_body();
-  const auto short_body = golden_short_frame_body();
-  const auto mid_body = golden_mid_frame_body();
-
-  check_golden_body_shape(long_body, 89907, "long golden frame is present");
-  check_golden_body_shape(short_body, 41551279, "short golden frame is present");
-  check_golden_body_shape(mid_body, 90830781, "mid golden frame is present");
-
-  check_golden_round_trip_c1(long_body, "long golden frame converts through C1 parser");
-  check_golden_round_trip_t1(long_body, "long golden frame converts through T1 parser");
-  check_golden_round_trip_c1(short_body, "short golden frame converts through C1 parser");
-  check_golden_round_trip_t1(short_body, "short golden frame converts through T1 parser");
-  check_golden_round_trip_c1(mid_body, "mid golden frame converts through C1 parser");
-  check_golden_round_trip_t1(mid_body, "mid golden frame converts through T1 parser");
+  for (const auto &fixture : golden_frame_fixtures()) {
+    const auto body = hex_to_bytes(fixture.hex);
+    check_golden_body_shape(body, fixture);
+    check_golden_round_trip_c1(body, fixture.name);
+    check_golden_round_trip_t1(body, fixture.name);
+  }
 }
 
 int main() {
