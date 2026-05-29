@@ -378,7 +378,7 @@ static void test_real_golden_frames_round_trip() {
 
   check_golden_body_shape(long_body, 89907, "long golden frame is present");
   check_golden_body_shape(short_body, 41551279, "short golden frame is present");
-  check_golden_body_shape(mid_body, 27390807, "mid golden frame is present");
+  check_golden_body_shape(mid_body, 90830781, "mid golden frame is present");
 
   check_golden_round_trip_c1(long_body, "long golden frame converts through C1 parser");
   check_golden_round_trip_t1(long_body, "long golden frame converts through T1 parser");
