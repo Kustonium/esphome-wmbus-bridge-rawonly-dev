@@ -186,6 +186,11 @@ static std::vector<uint8_t> golden_short_frame_body() {
       "2f446850791255417462a2069f333904d00b09000000090000000000000000000002121113190b130400000000000100");
 }
 
+static std::vector<uint8_t> golden_mid_frame_body() {
+  return hex_to_bytes(
+      "374468508107839027c3a2129f335c5600289e020000800e0000000030c0050f6cc1c7144b6921c12a0748e000000000000000000000c001");
+}
+
 static void test_decode3of6_round_trip() {
   const std::vector<uint8_t> decoded = {0x00, 0x12, 0xAB, 0xFF, 0x5C};
   auto coded = encode_3of6(decoded);
@@ -369,14 +374,18 @@ static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const c
 static void test_real_golden_frames_round_trip() {
   const auto long_body = golden_long_frame_body();
   const auto short_body = golden_short_frame_body();
+  const auto mid_body = golden_mid_frame_body();
 
   check_golden_body_shape(long_body, 89907, "long golden frame is present");
   check_golden_body_shape(short_body, 41551279, "short golden frame is present");
+  check_golden_body_shape(mid_body, 27390807, "mid golden frame is present");
 
   check_golden_round_trip_c1(long_body, "long golden frame converts through C1 parser");
   check_golden_round_trip_t1(long_body, "long golden frame converts through T1 parser");
   check_golden_round_trip_c1(short_body, "short golden frame converts through C1 parser");
   check_golden_round_trip_t1(short_body, "short golden frame converts through T1 parser");
+  check_golden_round_trip_c1(mid_body, "mid golden frame converts through C1 parser");
+  check_golden_round_trip_t1(mid_body, "mid golden frame converts through T1 parser");
 }
 
 int main() {
