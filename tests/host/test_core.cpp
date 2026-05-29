@@ -77,6 +77,24 @@ static void append_crc(std::vector<uint8_t> &payload, size_t pos, size_t len) {
   payload.push_back((uint8_t) (crc & 0xFF));
 }
 
+static uint8_t hex_nibble(char c) {
+  if (c >= '0' && c <= '9') return (uint8_t) (c - '0');
+  if (c >= 'a' && c <= 'f') return (uint8_t) (10 + c - 'a');
+  if (c >= 'A' && c <= 'F') return (uint8_t) (10 + c - 'A');
+  check(false, "hex fixture contains an invalid digit");
+  return 0;
+}
+
+static std::vector<uint8_t> hex_to_bytes(const std::string &hex) {
+  check((hex.size() % 2) == 0, "hex fixture has an even number of digits");
+  std::vector<uint8_t> out;
+  out.reserve(hex.size() / 2);
+  for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+    out.push_back((uint8_t) ((hex_nibble(hex[i]) << 4) | hex_nibble(hex[i + 1])));
+  }
+  return out;
+}
+
 static Packet make_packet(const std::vector<uint8_t> &raw, int8_t rssi,
                           std::optional<LinkMode> forced = std::nullopt) {
   Packet packet;
@@ -128,13 +146,44 @@ static std::vector<uint8_t> base_frame_body() {
   };
 }
 
-static std::vector<uint8_t> format_a_with_crc() {
-  const auto body = base_frame_body();
+static std::vector<uint8_t> format_a_with_crc_from_body(const std::vector<uint8_t> &body) {
+  check(body.size() >= 10, "Format A fixture has a first 10-byte block");
   std::vector<uint8_t> payload(body.begin(), body.begin() + 10);
   append_crc(payload, 0, 10);
-  payload.insert(payload.end(), body.begin() + 10, body.end());
-  append_crc(payload, 12, body.size() - 10);
+
+  size_t offset = 10;
+  while (body.size() - offset > 16) {
+    const size_t crc_pos = payload.size();
+    payload.insert(payload.end(), body.begin() + offset, body.begin() + offset + 16);
+    append_crc(payload, crc_pos, 16);
+    offset += 16;
+  }
+
+  if (offset < body.size()) {
+    const size_t len = body.size() - offset;
+    const size_t crc_pos = payload.size();
+    payload.insert(payload.end(), body.begin() + offset, body.end());
+    append_crc(payload, crc_pos, len);
+  }
+
   return payload;
+}
+
+static std::vector<uint8_t> format_a_with_crc() {
+  return format_a_with_crc_from_body(base_frame_body());
+}
+
+static std::vector<uint8_t> golden_long_frame_body() {
+  return hex_to_bytes(
+      "8e44b3380799080003027a09008005d518489e938d7741372ca5f34153b1f81e0e7f71fc2ce87ac30edb358dcd2b"
+      "4731ecd84f7e705bb3f425aaa0a6df7f654a87b9289d49d7ad83cd2776a0627b6d528cb602da1b6455efca61"
+      "f42dbc25387f1f6acdcbf633a5fde8e0b0e4f9153499cb94f3e64229969d9baaac567112988f3ba86728747"
+      "b0dc9590d7a5afde493");
+}
+
+static std::vector<uint8_t> golden_short_frame_body() {
+  return hex_to_bytes(
+      "2f446850791255417462a2069f333904d00b09000000090000000000000000000002121113190b130400000000000100");
 }
 
 static void test_decode3of6_round_trip() {
@@ -279,6 +328,57 @@ static void test_packet_s1_invalid_manchester_is_rejected() {
   check(packet.t1_symbols_invalid() > 0, "S1 invalid Manchester records invalid symbols");
 }
 
+static void check_golden_body_shape(const std::vector<uint8_t> &body, uint32_t expected_meter_id,
+                                    const char *label) {
+  check(!body.empty(), label);
+  if (body.empty()) return;
+  check(body.size() == (size_t) body[0] + 1, "golden frame L-field matches body length");
+
+  Packet packet = make_packet(body, -60);
+  uint32_t meter_id = 0;
+  check(packet.try_get_meter_id(meter_id), "golden frame meter id is extractable");
+  check(meter_id == expected_meter_id, "golden frame meter id matches expected value");
+}
+
+static void check_golden_round_trip_c1(const std::vector<uint8_t> &body, const char *label) {
+  auto payload = format_a_with_crc_from_body(body);
+  std::vector<uint8_t> raw = {0x54, 0xCD};
+  raw.insert(raw.end(), payload.begin(), payload.end());
+  Packet packet = make_packet(raw, -68);
+
+  auto frame = packet.convert_to_frame();
+  check(frame.has_value(), label);
+  if (!frame) return;
+  check(frame->link_mode() == LinkMode::C1, "golden C1 frame keeps C1 mode");
+  check(frame->format() == "A", "golden C1 frame uses Format A fixture");
+  check(frame->as_raw() == body, "golden C1 frame round-trips to normalized body");
+}
+
+static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const char *label) {
+  auto raw = encode_3of6(format_a_with_crc_from_body(body));
+  Packet packet = make_packet(raw, -73);
+
+  auto frame = packet.convert_to_frame();
+  check(frame.has_value(), label);
+  if (!frame) return;
+  check(frame->link_mode() == LinkMode::T1, "golden T1 frame keeps T1 mode");
+  check(frame->format() == "A", "golden T1 frame uses Format A fixture");
+  check(frame->as_raw() == body, "golden T1 frame round-trips to normalized body");
+}
+
+static void test_real_golden_frames_round_trip() {
+  const auto long_body = golden_long_frame_body();
+  const auto short_body = golden_short_frame_body();
+
+  check_golden_body_shape(long_body, 89907, "long golden frame is present");
+  check_golden_body_shape(short_body, 41551279, "short golden frame is present");
+
+  check_golden_round_trip_c1(long_body, "long golden frame converts through C1 parser");
+  check_golden_round_trip_t1(long_body, "long golden frame converts through T1 parser");
+  check_golden_round_trip_c1(short_body, "short golden frame converts through C1 parser");
+  check_golden_round_trip_t1(short_body, "short golden frame converts through T1 parser");
+}
+
 int main() {
   test_decode3of6_round_trip();
   test_decode3of6_invalid_symbol();
@@ -291,6 +391,7 @@ int main() {
   test_packet_t1_truncated_is_rejected();
   test_packet_c1_unknown_preamble_is_rejected();
   test_packet_s1_invalid_manchester_is_rejected();
+  test_real_golden_frames_round_trip();
 
   if (failures == 0) {
     std::cout << "All host parser tests passed\n";
