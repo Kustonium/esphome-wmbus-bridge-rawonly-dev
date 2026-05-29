@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Python syntax check
+        run: python -m py_compile components/wmbus_radio/__init__.py
+
+      - name: Build host parser tests
+        run: |
+          mkdir -p build
+          g++ -std=c++17 -Wall -Wextra -Wno-unused-variable \
+            -Itests/host \
+            -Icomponents/wmbus_radio \
+            tests/host/test_core.cpp \
+            components/wmbus_radio/decode3of6.cpp \
+            components/wmbus_radio/packet.cpp \
+            -o build/test_core
+
+      - name: Run host parser tests
+        run: ./build/test_core
