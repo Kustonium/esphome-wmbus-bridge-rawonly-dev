@@ -674,7 +674,10 @@ void Radio::maybe_publish_health_(uint32_t now_ms) {
              (long) sec_since_last_rx,
              (long) rssi,
              chip, listen_mode);
-    mqtt->publish(this->health_topic_, payload, static_cast<uint8_t>(0), false);
+    // std::string(...) disambiguates the publish() overload set: a bare char[]
+    // is ambiguous between the (const char*, size_t, ...) and (const std::string&,
+    // ...) signatures; wrapping forces the string overload (as elsewhere here).
+    mqtt->publish(this->health_topic_, std::string(payload), static_cast<uint8_t>(0), false);
   }
 
   if (!this->meters_topic_.empty()) {
