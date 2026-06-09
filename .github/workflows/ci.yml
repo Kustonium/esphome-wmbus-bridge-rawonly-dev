@@ -74,9 +74,14 @@ jobs:
         env:
           CONFIG: ${{ matrix.config }}
         run: |
-          dir=$(dirname "$CONFIG")
+          # Copy the example into a space-free working dir: PlatformIO (the build
+          # backend ESPHome calls for esp-idf) rejects any project path containing
+          # whitespace, and some example dirs are named e.g. "Heltec V3".
+          mkdir -p ci-build
+          flat="ci-build/$(basename "$CONFIG")"
+          cp "$CONFIG" "$flat"
           # Dummy secrets so config validation passes (compile-only, never flashed).
-          cat > "$dir/secrets.yaml" <<'EOF'
+          cat > ci-build/secrets.yaml <<'EOF'
           wifi_ssid: "ci-build"
           wifi_password: "ci-build-password"
           mqtt_broker: "127.0.0.1"
@@ -84,11 +89,12 @@ jobs:
           mqtt_password: "ci"
           EOF
           # Build the component from THIS checkout, not the published github repo.
-          sed -i "s|github://Kustonium/esphome-wmbus-bridge-rawonly@main|{ type: local, path: ${GITHUB_WORKSPACE}/components }|" "$CONFIG"
+          sed -i "s|github://Kustonium/esphome-wmbus-bridge-rawonly@main|{ type: local, path: ${GITHUB_WORKSPACE}/components }|" "$flat"
           # 'refresh' is only valid for a git source; drop it for the local override.
-          sed -i "/refresh: 0s/d" "$CONFIG"
+          sed -i "/refresh: 0s/d" "$flat"
+          echo "FLAT_CONFIG=$flat" >> "$GITHUB_ENV"
           echo "----- effective external_components -----"
-          grep -n -A2 "external_components" "$CONFIG"
+          grep -n -A2 "external_components" "$flat"
 
       - name: Compile firmware
-        run: esphome compile "${{ matrix.config }}"
+        run: esphome compile "$FLAT_CONFIG"
