@@ -28,3 +28,67 @@ jobs:
 
       - name: Run host parser tests
         run: ./build/test_core
+
+  firmware-build:
+    # Compile the real ESPHome firmware against THIS checkout for every
+    # board/chip/core-count variant, so a change that builds on the host but
+    # breaks a target (or a specific core count) is caught here.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: CC1101 / esp32-c3 (single-core)
+            config: examples/CC1101/CC1101_clean.yaml
+          - name: SX1262 / esp32-s3 (dual-core)
+            config: examples/SX1262/Heltec V3/SX1262_Heltec_V3_clean.yaml
+          - name: SX1276 / esp32 (dual-core)
+            config: examples/SX1276/HeltecV2/SX1276_Heltec_V2_clean.yaml
+
+    name: build (${{ matrix.name }})
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO and ESPHome
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            pio-${{ runner.os }}-${{ matrix.config }}-
+            pio-${{ runner.os }}-
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Prepare config (local component + dummy secrets)
+        env:
+          CONFIG: ${{ matrix.config }}
+        run: |
+          dir=$(dirname "$CONFIG")
+          # Dummy secrets so config validation passes (compile-only, never flashed).
+          cat > "$dir/secrets.yaml" <<'EOF'
+          wifi_ssid: "ci-build"
+          wifi_password: "ci-build-password"
+          mqtt_broker: "127.0.0.1"
+          mqtt_user: "ci"
+          mqtt_password: "ci"
+          EOF
+          # Build the component from THIS checkout, not the published github repo.
+          sed -i "s|github://Kustonium/esphome-wmbus-bridge-rawonly@main|{ type: local, path: ${GITHUB_WORKSPACE}/components }|" "$CONFIG"
+          # 'refresh' is only valid for a git source; drop it for the local override.
+          sed -i "/refresh: 0s/d" "$CONFIG"
+          echo "----- effective external_components -----"
+          grep -n -A2 "external_components" "$CONFIG"
+
+      - name: Compile firmware
+        run: esphome compile "${{ matrix.config }}"
