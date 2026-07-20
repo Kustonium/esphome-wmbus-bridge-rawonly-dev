@@ -1,5 +1,7 @@
 # ESPHome wM-Bus Bridge RAW-only
 
+<a href="https://buymeacoffee.com/Kustonium"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41"></a>
+
 🇬🇧 [English](#english) | 🇵🇱 [Polski](#polski)
 
 ```text
@@ -11,6 +13,8 @@ meter -> SX1262 / SX1276 / CC1101 -> ESPHome wmbus_radio -> MQTT RAW HEX -> back
 ## English
 
 RAW-to-MQTT wireless M-Bus / wM-Bus radio bridge for ESPHome, focused on SX1262, SX1276 and experimental CC1101.
+
+> ✅ **Verified on ESPHome 2026.7.0** — clean builds on all three test boards in CI.
 
 ### What this project is
 
@@ -156,6 +160,8 @@ Before opening an issue, read [`SUPPORT.md`](SUPPORT.md).
 ## Polski
 
 Most radiowy Wireless M-Bus / wM-Bus RAW-to-MQTT dla ESPHome, ukierunkowany na SX1262, SX1276 oraz eksperymentalnie CC1101.
+
+> ✅ **Zweryfikowano na ESPHome 2026.7.0** — czyste kompilacje na wszystkich trzech płytkach testowych w CI.
 
 ### Czym jest ten projekt
 
