@@ -3,6 +3,14 @@ name: CI
 on:
   push:
   pull_request:
+  # `pip install esphome` in firmware-build is deliberately unpinned, so this
+  # workflow doubles as an upstream-compatibility check. Without a schedule it
+  # only ever ran on push, meaning a new ESPHome release could break the
+  # component silently until the next commit. Nightly (odd minute, to avoid the
+  # top-of-hour cron backlog on GitHub's side) catches it on release day.
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch: {}
 
 jobs:
   host-tests:
