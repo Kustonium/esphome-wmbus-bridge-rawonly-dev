@@ -75,6 +75,52 @@ diagnostic_topic: "..."
 
 ale są traktowane jako legacy/manual override i generują dwujęzyczny warning.
 
+## Whitelista przekazywania
+
+Domyślnie każda ramka, która się zdekodowała i przeszła DLL CRC, trafia na
+`wmbus/<device>/telegram`. W gęstej zabudowie to w większości liczniki sąsiadów.
+`forward_meters` pozwala publikować tylko własne:
+
+```yaml
+wmbus_radio:
+  forward_meters:
+    - 41551279
+    - 90830781
+```
+
+Jeżeli te same liczniki są już w `highlight_meters`, nie przepisuj ich drugi raz -
+`true` bierze listę stamtąd:
+
+```yaml
+wmbus_radio:
+  highlight_meters:
+    - 41551279
+    - 90830781
+  forward_meters: true
+```
+
+Pusta lista (domyślnie) albo `false` przepuszcza wszystko, więc istniejące konfiguracje
+działają bez zmian.
+
+Uwagi:
+
+- `forward_meters: true` przy pustym `highlight_meters` **nie** wycisza strumienia.
+  Filtr się nie włącza, a przy starcie leci ostrzeżenie - filtr dopasowujący do pustej
+  listy odrzuciłby każdą ramkę.
+- Log startowy pokazuje sparsowane ID i to, czy przyszły z `highlight_meters`;
+  `dump_config()` raportuje stan jako `Forward whitelist:`.
+
+- Filtr działa po dekodowaniu i sprawdzeniu DLL CRC, więc dopasowuje ID, które parser
+  już zweryfikował. Filtrowanie po surowym nagłówku byłoby teoretycznie tańsze, ale
+  zawodne: ID odczytane z ramki, która nie przeszła CRC, bywa przekłamane.
+- Wpisuj ID dokładnie tak, jak pokazuje log (`id:41551279`). Dopasowanie idzie po
+  ID zdekodowanym z BCD; licznik, którego log pokazuje ID szesnastkowo
+  (`id:417F0666`), ma A-field poza BCD i nie da się go dziś wpisać na whitelistę -
+  przy aktywnym filtrze zostanie odrzucony.
+- Diagnostyka jest nietknięta: liczniki i statystyki RSSI powstają przed publikacją,
+  więc summary dalej obejmuje cały eter razem z sąsiadami. Obcinany jest sam strumień RAW.
+- `target_meter_id` ma własny topic i celowo nie podlega whiteliście.
+
 ## Szybki start
 
 Minimalny przykład:

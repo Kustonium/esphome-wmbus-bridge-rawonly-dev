@@ -49,7 +49,10 @@ static const char *TAG = "wmbus";
 // - DEBUG/VERBOSE stays English to keep issue reports and grep output usable,
 // - YAML/MQTT identifiers remain English-only because they form the stable technical API.
 
-static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &out) {
+// `option` only names the YAML key in the warning below, so a bad token is
+// reported against the option the user actually wrote.
+static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &out,
+                                const char *option) {
   out.clear();
   if (csv.empty()) return;
   size_t i = 0;
@@ -89,7 +92,7 @@ static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &o
         out.push_back((uint32_t) v);
       } else {
         // Token did not parse cleanly — warn the user
-        ESP_LOGW("wmbus", "highlight_meters: could not parse meter ID '%s' — use decimal (e.g. 12345678) or hex with prefix (e.g. 0x417f0666)", tok.c_str());
+        ESP_LOGW("wmbus", "%s: could not parse meter ID '%s' — use decimal (e.g. 12345678) or hex with prefix (e.g. 0x417f0666)", option, tok.c_str());
       }
     }
     i = j;
@@ -120,10 +123,11 @@ void Radio::setup() {
     ESP_LOGW(TAG, "Config warning / ostrzezenie konfiguracji: %s", warning.c_str());
   }
   // Parse optional highlight meter list (CSV provided by python/YAML).
-  parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_);
+  parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_, "highlight_meters");
+  parse_meter_id_csv_(this->forward_meters_csv_, this->forward_meter_ids_, "forward_meters");
   if (!this->target_meter_id_str_.empty()) {
     std::vector<uint32_t> tmp;
-    parse_meter_id_csv_(this->target_meter_id_str_, tmp);
+    parse_meter_id_csv_(this->target_meter_id_str_, tmp, "target_meter_id");
     if (!tmp.empty()) {
       this->target_meter_id_ = tmp.front();
       this->target_meter_enabled_ = true;
@@ -139,6 +143,26 @@ void Radio::setup() {
 
   if (!this->telegram_topic_.empty()) {
     ESP_LOGI(TAG, "Frame RAW forwarding topic / topic publikacji RAW: %s", this->telegram_topic_.c_str());
+  }
+
+  if (!this->forward_meter_ids_.empty()) {
+    // List the parsed IDs, not just the count: a mistyped entry (for example a
+    // hex token, which parses to a value no BCD meter ID can ever reach) is only
+    // obvious when the resulting numbers are visible.
+    const size_t log_limit = 16;
+    const size_t shown = std::min(log_limit, this->forward_meter_ids_.size());
+    std::string ids;
+    for (size_t i = 0; i < shown; i++) {
+      if (i != 0) ids += ", ";
+      ids += std::to_string(this->forward_meter_ids_[i]);
+    }
+    if (shown < this->forward_meter_ids_.size()) {
+      ids += ", ... (+" + std::to_string(this->forward_meter_ids_.size() - shown) + ")";
+    }
+    ESP_LOGI(TAG, "Forwarding whitelist enabled / wlaczono whiteliste przekazywania (%u ids%s): %s",
+             (unsigned) this->forward_meter_ids_.size(),
+             this->forward_meters_inherited_ ? ", from highlight_meters" : "",
+             ids.c_str());
   }
 
   if (this->publish_radio_raw_) {
@@ -247,6 +271,13 @@ void Radio::dump_config() {
     ESP_LOGCONFIG(TAG, "  SX1276 busy ether mode: %s", busy_mode);
   } else {
     ESP_LOGCONFIG(TAG, "  Busy ether mode: n/a (SX1276 only)");
+  }
+  if (this->forward_meter_ids_.empty()) {
+    ESP_LOGCONFIG(TAG, "  Forward whitelist: disabled (every decoded frame is published)");
+  } else {
+    ESP_LOGCONFIG(TAG, "  Forward whitelist: %u meter ids%s",
+                  (unsigned) this->forward_meter_ids_.size(),
+                  this->forward_meters_inherited_ ? " (from highlight_meters)" : "");
   }
   if (!this->diag_topic_.empty()) {
     ESP_LOGCONFIG(TAG, "  Diagnostics MQTT topic: %s", this->diag_topic_.c_str());

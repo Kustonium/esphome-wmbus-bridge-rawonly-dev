@@ -44,6 +44,15 @@ public:
   void set_target_log(bool enabled) { this->target_log_ = enabled; }
   void set_publish_radio_raw(bool enabled) { this->publish_radio_raw_ = enabled; }
 
+  // Optional whitelist limiting which meters reach telegram_topic. Meters are
+  // provided as a CSV string in YAML (list is joined in python). An empty list
+  // forwards every decoded frame, which is the pre-existing behaviour.
+  void set_forward_meters_csv(const std::string &csv) { this->forward_meters_csv_ = csv; }
+  // True when the list was inherited from highlight_meters (forward_meters: true).
+  // Only affects logging, so a later edit to highlight_meters that silently changes
+  // what gets published is traceable in the boot log.
+  void set_forward_meters_inherited(bool inherited) { this->forward_meters_inherited_ = inherited; }
+
   // Optional log highlighting for selected meter IDs (configured from YAML).
   // Meters are provided as a CSV string in YAML (list is joined in python).
   void set_highlight_meters_csv(const std::string &csv) { this->highlight_meters_csv_ = csv; }
@@ -197,6 +206,12 @@ protected:
   std::string target_topic_{};
   bool target_log_{true};
   bool publish_radio_raw_{false};
+
+  // Forwarding whitelist (sorted + deduplicated by the CSV parser, so lookups
+  // can use binary search). Empty means "forward everything".
+  std::string forward_meters_csv_{};
+  std::vector<uint32_t> forward_meter_ids_{};
+  bool forward_meters_inherited_{false};
 
   // Highlight configuration
   std::string highlight_meters_csv_{};
@@ -376,6 +391,7 @@ protected:
   bool should_abort_t1_probe_start_(int rssi_dbm) const;
   bool should_attempt_raw_drain_(int rssi_dbm, size_t bytes_read, bool is_c_mode) const;
   std::string derived_target_topic_() const;
+  bool forward_meter_allowed_(uint32_t meter_id) const;
   void maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag);
   void maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms);
   bool should_publish_packet_event_(const Packet *packet) const;

@@ -47,6 +47,7 @@ CONF_TARGET_METER_ID = "target_meter_id"
 CONF_TARGET_TOPIC = "target_topic"
 CONF_TARGET_LOG = "target_log"
 CONF_PUBLISH_RADIO_RAW = "publish_radio_raw"
+CONF_FORWARD_METERS = "forward_meters"
 
 # SX1262 board helpers
 CONF_DIO2_RF_SWITCH = "dio2_rf_switch"
@@ -128,6 +129,11 @@ def _validate_topic_name(value):
     return value
 
 
+def _meters_csv(values):
+    """Join a YAML meter-ID list into the CSV string the C++ side parses."""
+    return ",".join([str(m).strip() for m in values if str(m).strip()])
+
+
 def _normalize_diagnostic_mode(mode):
     mode = str(mode).lower().strip()
     if mode == "medium":
@@ -204,6 +210,13 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_TARGET_LOG, default=True): cv.boolean,
             # Internal/dev-only raw packet tap. Fixed MQTT topic: wmbus_bridge/raw.
             cv.Optional(CONF_PUBLISH_RADIO_RAW, default=False): cv.boolean,
+            # Whitelist of meter IDs allowed on the RAW telegram topic. Accepts
+            # either an explicit list, or `true` to reuse highlight_meters so the
+            # same IDs are not written twice. Empty (default) forwards every
+            # decoded frame, as before this option existed.
+            cv.Optional(CONF_FORWARD_METERS, default=[]): cv.Any(
+                cv.boolean, cv.ensure_list(cv.string)
+            ),
 
             # Diagnostics are opt-in by default. `diagnostic_mode` applies a preset
             # for MQTT publishing only; explicit detailed flags still override it.
@@ -498,6 +511,29 @@ async def to_code(config):
     cg.add(var.set_target_log(config.get(CONF_TARGET_LOG, True)))
     cg.add(var.set_publish_radio_raw(config.get(CONF_PUBLISH_RADIO_RAW, False)))
 
+    # forward_meters accepts an explicit list, or `true` meaning "reuse
+    # highlight_meters" so the same IDs do not have to be written twice.
+    forward_meters = config.get(CONF_FORWARD_METERS, [])
+    forward_meters_inherited = False
+    if forward_meters is True:
+        forward_meters_csv = _meters_csv(config.get(CONF_HIGHLIGHT_METERS, []))
+        forward_meters_inherited = True
+        if not forward_meters_csv:
+            # Filtering on an empty list would silence the whole RAW stream, so
+            # fall back to forwarding everything and say so loudly.
+            warnings.append(
+                "forward_meters: true but highlight_meters is empty - no filtering applied, "
+                "every frame is forwarded / forward_meters: true, ale highlight_meters jest puste - "
+                "filtr nie dziala, przekazywane sa wszystkie ramki."
+            )
+            forward_meters_inherited = False
+    elif forward_meters is False:
+        forward_meters_csv = ""
+    else:
+        forward_meters_csv = _meters_csv(forward_meters)
+    cg.add(var.set_forward_meters_csv(forward_meters_csv))
+    cg.add(var.set_forward_meters_inherited(forward_meters_inherited))
+
     diag_events_highlight_only = (
         config[CONF_DIAG_EVENTS_HIGHLIGHT_ONLY]
         if CONF_DIAG_EVENTS_HIGHLIGHT_ONLY in config
@@ -551,7 +587,7 @@ async def to_code(config):
 
     # Log highlight config
     meters = config.get(CONF_HIGHLIGHT_METERS, [])
-    meters_csv = ",".join([str(m).strip() for m in meters if str(m).strip()])
+    meters_csv = _meters_csv(meters)
     cg.add(var.set_highlight_meters_csv(meters_csv))
     cg.add(var.set_highlight_ansi(config.get(CONF_HIGHLIGHT_ANSI, False)))
     cg.add(var.set_highlight_tag(config.get(CONF_HIGHLIGHT_TAG, "wmbus_user")))

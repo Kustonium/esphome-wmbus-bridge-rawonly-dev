@@ -75,6 +75,53 @@ diagnostic_topic: "..."
 
 but they are intended only for compatibility and produce a bilingual warning.
 
+## Forwarding whitelist
+
+By default every frame that decodes and passes the DLL CRC is published to
+`wmbus/<device>/telegram`. In a dense block that is mostly neighbours' meters. Use
+`forward_meters` to publish only your own:
+
+```yaml
+wmbus_radio:
+  forward_meters:
+    - 41551279
+    - 90830781
+```
+
+If the same meters are already listed in `highlight_meters`, do not repeat them —
+`true` reuses that list:
+
+```yaml
+wmbus_radio:
+  highlight_meters:
+    - 41551279
+    - 90830781
+  forward_meters: true
+```
+
+An empty list (the default) or `false` forwards everything, so existing configurations
+are unaffected.
+
+Notes:
+
+- `forward_meters: true` with an empty `highlight_meters` does **not** silence the
+  stream. Filtering stays off and a warning is printed at boot, because a filter
+  matching an empty list would drop every frame.
+- The boot log prints the parsed IDs and whether they came from `highlight_meters`;
+  `dump_config()` reports the state as `Forward whitelist:`.
+
+- The filter runs after decoding and DLL CRC, so it matches an ID the parser has
+  already validated. Filtering on the raw header would be cheaper in theory but
+  unreliable: an ID read from a frame that failed CRC can be corrupted.
+- Use the ID exactly as the log prints it (`id:41551279`). Matching uses the
+  BCD-decoded 8-digit ID; a meter whose log line shows a hex ID (`id:417F0666`) has a
+  non-BCD A-field and cannot be whitelisted — it will be dropped while the filter is
+  active.
+- Diagnostics are unaffected: counters and RSSI statistics are updated before
+  publishing, so summaries still cover the whole ether including neighbours. Only the
+  RAW stream is reduced.
+- `target_meter_id` has its own topic and is deliberately not subject to the whitelist.
+
 ## Quick start
 
 Clean minimal example:

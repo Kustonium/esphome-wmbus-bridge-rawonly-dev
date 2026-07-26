@@ -7,6 +7,7 @@
 
 #include "decode3of6.h"
 #include "dll_crc.h"
+#include "meter_filter.h"
 #include "packet.h"
 
 using esphome::wmbus_common::crc16_en13757;
@@ -18,6 +19,7 @@ using esphome::wmbus_radio::LinkMode;
 using esphome::wmbus_radio::Packet;
 using esphome::wmbus_radio::decode3of6;
 using esphome::wmbus_radio::encoded_size;
+using esphome::wmbus_radio::meter_id_allowed;
 
 static int failures = 0;
 
@@ -389,6 +391,21 @@ static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const c
   check(frame->as_raw() == body, prefix + " round-trips to normalized body");
 }
 
+static void test_forward_meter_whitelist() {
+  // No forward_meters configured: nothing is filtered, including frames whose
+  // meter ID could not be decoded. This is the pre-existing behaviour.
+  const std::vector<uint32_t> unconfigured;
+  check(meter_id_allowed(unconfigured, 41551279), "empty whitelist forwards a decoded meter");
+  check(meter_id_allowed(unconfigured, 0), "empty whitelist forwards an undecodable meter id");
+
+  // Sorted + deduplicated, as parse_meter_id_csv_ produces.
+  const std::vector<uint32_t> allowed = {41551279, 90830781};
+  check(meter_id_allowed(allowed, 41551279), "listed meter is forwarded");
+  check(meter_id_allowed(allowed, 90830781), "second listed meter is forwarded");
+  check(!meter_id_allowed(allowed, 89907), "unlisted meter is dropped");
+  check(!meter_id_allowed(allowed, 0), "undecodable meter id is dropped while filtering");
+}
+
 static void test_real_golden_frames_round_trip() {
   for (const auto &fixture : golden_frame_fixtures()) {
     const auto body = hex_to_bytes(fixture.hex);
@@ -410,6 +427,7 @@ int main() {
   test_packet_t1_truncated_is_rejected();
   test_packet_c1_unknown_preamble_is_rejected();
   test_packet_s1_invalid_manchester_is_rejected();
+  test_forward_meter_whitelist();
   test_real_golden_frames_round_trip();
 
   if (failures == 0) {

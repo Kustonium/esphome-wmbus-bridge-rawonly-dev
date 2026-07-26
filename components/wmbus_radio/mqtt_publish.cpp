@@ -6,6 +6,7 @@
 // topic names, payloads and the MQTT contract are identical.
 
 #include "component.h"
+#include "meter_filter.h"
 #include "wmbus_radio_internal.h"
 
 #include "esphome/core/log.h"
@@ -43,6 +44,13 @@ std::string Radio::derived_target_topic_() const {
 }
 
 
+// Whitelist gate for the RAW telegram topic. Applied after decoding and DLL CRC,
+// so the meter ID it matches on is one the parser already validated. The decision
+// itself lives in meter_filter.h so tests/host can exercise it.
+bool Radio::forward_meter_allowed_(uint32_t meter_id) const {
+  return meter_id_allowed(this->forward_meter_ids_, meter_id);
+}
+
 void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
   if (!this->publish_radio_raw_ || packet == nullptr) return;
 
@@ -73,7 +81,9 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   std::string hex;
-  const bool want_all = !this->telegram_topic_.empty();
+  const bool want_all = !this->telegram_topic_.empty() && this->forward_meter_allowed_(meter_id);
+  // target_meter_id keeps its own topic and is deliberately not filtered by the
+  // whitelist: it is an explicit per-meter selection the user already made.
   const bool want_target = this->target_meter_enabled_ && meter_id == this->target_meter_id_;
   if (!want_all && !want_target) return;
 
