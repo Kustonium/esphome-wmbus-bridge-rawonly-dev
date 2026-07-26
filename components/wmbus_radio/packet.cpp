@@ -682,7 +682,14 @@ std::string Frame::as_rtlwmbus() {
   const size_t time_repr_size = sizeof("YYYY-MM-DD HH:MM:SS.00Z");
   char time_buffer[time_repr_size];
   auto t = std::time(NULL);
-  std::strftime(time_buffer, time_repr_size, "%F %T.00Z", std::gmtime(&t));
+  auto *tm_info = std::gmtime(&t);
+  // gmtime() returns nullptr for a time_t it cannot represent, and strftime()
+  // returns 0 (leaving the buffer indeterminate) when the result does not fit.
+  // Guard both so a broken/out-of-range clock can never null-deref or emit an
+  // unterminated timestamp into the rtlwmbus line.
+  if (tm_info == nullptr || std::strftime(time_buffer, time_repr_size, "%F %T.00Z", tm_info) == 0) {
+    snprintf(time_buffer, time_repr_size, "1970-01-01 00:00:00.00Z");
+  }
 
   auto output = std::string{};
   output.reserve(2 + 5 + 24 + 1 + 4 + 5 + 2 * this->data_.size() + 1);
