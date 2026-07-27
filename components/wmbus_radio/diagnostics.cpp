@@ -1011,12 +1011,12 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
   // Publish snapshot of all highlight meters alongside this summary (read-only, no window reset).
   if (this->diag_publish_summary_highlight_meters_ && !this->highlight_meter_stats_.empty()) {
     for (auto &kv : this->highlight_meter_stats_) {
-      const uint64_t key = kv.first; // uint64_t — meter_id can exceed uint32_t range when shifted
+      const uint64_t key = kv.first; // (raw A-field value << 8) | link mode
       MeterStats &st = kv.second;
-      const uint32_t meter_id = key >> 8;
       const uint8_t mode_byte = key & 0xFF;
-      char id_str[12];
-      snprintf(id_str, sizeof(id_str), "%08" PRIu32, meter_id);
+      // Only the mode is recoverable from the key. Rendering the upper bits as
+      // a decimal ID yields a number belonging to no meter.
+      const char *id_str = (st.id_str[0] != '\0') ? st.id_str : "????????";
       const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : ((mode_byte == (uint8_t) LinkMode::S1) ? "S1" : "T1");
       const uint32_t st_elapsed_s = elapsed / 1000U;
       this->publish_meter_window_for_("summary_15min", st_elapsed_s, id_str, mode_str, st,
@@ -1376,12 +1376,12 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
   // Publish snapshot of all highlight meters alongside this summary (read-only, no window reset).
   if (this->diag_publish_summary_highlight_meters_ && !this->highlight_meter_stats_.empty()) {
     for (auto &kv : this->highlight_meter_stats_) {
-      const uint64_t key = kv.first; // uint64_t — meter_id can exceed uint32_t range when shifted
+      const uint64_t key = kv.first; // (raw A-field value << 8) | link mode
       MeterStats &st = kv.second;
-      const uint32_t meter_id = key >> 8;
       const uint8_t mode_byte = key & 0xFF;
-      char id_str[12];
-      snprintf(id_str, sizeof(id_str), "%08" PRIu32, meter_id);
+      // Only the mode is recoverable from the key. Rendering the upper bits as
+      // a decimal ID yields a number belonging to no meter.
+      const char *id_str = (st.id_str[0] != '\0') ? st.id_str : "????????";
       const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : ((mode_byte == (uint8_t) LinkMode::S1) ? "S1" : "T1");
       const uint32_t st_elapsed_s = elapsed / 1000U;
       this->publish_meter_window_for_("summary_60min", st_elapsed_s, id_str, mode_str, st,
