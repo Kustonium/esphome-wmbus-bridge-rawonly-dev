@@ -11,7 +11,7 @@ included in ESPHome firmware and are only run by CI or a local host compiler.
 - DLL CRC stripping for Format A and Format B,
 - positive T1, C1, and S1 parser paths,
 - rejection paths for bad CRC, truncated T1, bad C1 preamble, and invalid S1 Manchester,
-- the `forward_meters` whitelist decision (`meter_filter.h`),
+- the `forward_meters` whitelist decision (`meter_filter.h`) and matching of non-BCD (hex) meter IDs,
 - real RAW telegram golden samples from field captures.
 
 The GitHub workflow at `.github/workflows/ci.yml` compiles and runs these tests

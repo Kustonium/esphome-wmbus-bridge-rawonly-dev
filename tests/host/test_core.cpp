@@ -409,6 +409,51 @@ static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const c
   check(frame->as_raw() == body, prefix + " round-trips to normalized body");
 }
 
+// Same shape as base_frame_body(), but the A-field carries 0x7F, whose low
+// nibble is above 9 and therefore cannot be BCD. This is the Diehl/IZAR case:
+// the meter has no decimal ID at all and is only addressable by its raw value.
+// The bytes are chosen so the printed form is exactly 417F0666.
+static std::vector<uint8_t> non_bcd_frame_body() {
+  return {
+      0x0B,  // L-field: 11 bytes follow.
+      0x44, 0x12, 0x34,
+      0x66, 0x06, 0x7F, 0x41,  // A-field -> id:417F0666
+      0x02, 0x7A, 0xAA, 0x55,
+  };
+}
+
+static void test_non_bcd_meter_id() {
+  const auto body = non_bcd_frame_body();
+  Packet packet = make_packet(body, -70);
+
+  uint32_t bcd_id = 0;
+  check(!packet.try_get_meter_id(bcd_id), "non-BCD A-field yields no decimal meter id");
+  check(bcd_id == 0, "failed BCD extraction leaves the id at zero");
+
+  uint32_t raw_id = 0;
+  check(packet.try_get_meter_id_raw(raw_id), "non-BCD A-field still yields a raw meter id");
+  check(raw_id == 0x417F0666u, "raw meter id matches the printed id:417F0666");
+
+  // The same meter arriving over the air as a T1 frame must survive the parser
+  // and still be identifiable, which is the whole point of the raw form.
+  auto raw_wire = encode_3of6(format_a_with_crc_from_body(body));
+  Packet t1 = make_packet(raw_wire, -70);
+  auto frame = t1.convert_to_frame();
+  check(frame.has_value(), "non-BCD T1 frame converts through the parser");
+  if (!frame) return;
+  check(frame->as_raw() == body, "non-BCD T1 frame round-trips to the same body");
+
+  uint32_t decoded_raw = 0;
+  check(t1.try_get_meter_id_raw(decoded_raw), "raw id is extractable after T1 decoding");
+  check(decoded_raw == 0x417F0666u, "raw id survives T1 decoding unchanged");
+
+  // And it is matchable by a whitelist entry written as 0x417F0666.
+  const std::vector<uint32_t> none;
+  const std::vector<uint32_t> raw_list = {0x417F0666};
+  check(meter_id_allowed(none, raw_list, 0, decoded_raw), "non-BCD meter passes a raw whitelist");
+  check(!meter_id_allowed(raw_list, none, 0, decoded_raw), "non-BCD meter is not matched by a decimal list");
+}
+
 static void test_forward_meter_whitelist() {
   const std::vector<uint32_t> none;
 
@@ -467,6 +512,7 @@ int main() {
   test_packet_t1_truncated_is_rejected();
   test_packet_c1_unknown_preamble_is_rejected();
   test_packet_s1_invalid_manchester_is_rejected();
+  test_non_bcd_meter_id();
   test_forward_meter_whitelist();
   test_real_golden_frames_round_trip();
 
