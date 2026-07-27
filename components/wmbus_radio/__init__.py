@@ -129,6 +129,56 @@ def _validate_topic_name(value):
     return value
 
 
+_METER_ID_MAX_BCD = 99999999
+
+
+def _validate_meter_id(value):
+    """One meter ID: decimal for a BCD meter, hex for a meter whose A-field is not BCD.
+
+    The trap this guards against: YAML resolves an unquoted 0x417F0666 to the
+    integer 1098843750, which would silently be stored as a decimal ID and could
+    never match anything. Any all-digit value above the largest possible BCD ID
+    is therefore rejected, with the quoted hex form spelled out.
+    """
+    text = str(value).strip()
+    if not text:
+        raise cv.Invalid("meter ID cannot be empty / ID licznika nie moze byc puste")
+
+    body = text[2:] if text[:2].lower() == "0x" else text
+    if not body:
+        raise cv.Invalid(f"'{text}' is missing its hex digits / brakuje cyfr szesnastkowych")
+
+    is_hex = text[:2].lower() == "0x" or any(c in "abcdefABCDEF" for c in body)
+
+    if is_hex:
+        try:
+            raw = int(body, 16)
+        except ValueError:
+            raise cv.Invalid(
+                f"'{text}' is not a valid meter ID - use the value the log prints as id:, "
+                f"decimal (e.g. 12345678) or hex (e.g. \"0x417F0666\") / "
+                f"uzyj wartosci, ktora log wypisuje jako id:"
+            )
+        if raw > 0xFFFFFFFF:
+            raise cv.Invalid(f"'{text}' does not fit in a 4-byte meter ID / nie miesci sie w 4 bajtach")
+        return text
+
+    if not body.isdigit():
+        raise cv.Invalid(
+            f"'{text}' is not a valid meter ID - use decimal (e.g. 12345678) or hex "
+            f'(e.g. "0x417F0666") / uzyj zapisu dziesietnego albo szesnastkowego'
+        )
+
+    if int(body) > _METER_ID_MAX_BCD:
+        raise cv.Invalid(
+            f"meter ID {body} exceeds the largest possible BCD meter ID ({_METER_ID_MAX_BCD}). "
+            f'If this is the hex ID from the log, quote it so YAML keeps it as text: "0x{int(body):08X}" / '
+            f'Jesli to szesnastkowe ID z logu, ujmij je w cudzyslow: "0x{int(body):08X}"'
+        )
+
+    return text
+
+
 def _meters_csv(values):
     """Join a YAML meter-ID list into the CSV string the C++ side parses."""
     return ",".join([str(m).strip() for m in values if str(m).strip()])
@@ -215,7 +265,7 @@ BASE_CONFIG_SCHEMA = (
             # same IDs are not written twice. Empty (default) forwards every
             # decoded frame, as before this option existed.
             cv.Optional(CONF_FORWARD_METERS, default=[]): cv.Any(
-                cv.boolean, cv.ensure_list(cv.string)
+                cv.boolean, cv.ensure_list(_validate_meter_id)
             ),
 
             # Diagnostics are opt-in by default. `diagnostic_mode` applies a preset
@@ -248,7 +298,7 @@ BASE_CONFIG_SCHEMA = (
             ),
 
             # Optional log highlighting for selected meter IDs
-            cv.Optional(CONF_HIGHLIGHT_METERS, default=[]): cv.ensure_list(cv.string),
+            cv.Optional(CONF_HIGHLIGHT_METERS, default=[]): cv.ensure_list(_validate_meter_id),
             cv.Optional(CONF_HIGHLIGHT_ANSI, default=False): cv.boolean,
             cv.Optional(CONF_HIGHLIGHT_TAG, default="wmbus_user"): cv.string,
             cv.Optional(CONF_HIGHLIGHT_PREFIX, default="★ "): cv.string,
