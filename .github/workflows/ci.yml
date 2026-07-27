@@ -54,6 +54,11 @@ jobs:
             config: examples/SX1262/Heltec V4-R8/SX1262_Heltec_V4R8_clean.yaml
           - name: SX1276 / esp32 (dual-core)
             config: examples/SX1276/HeltecV2/SX1276_Heltec_V2_clean.yaml
+          # Not a board variant: this one exists to put forward_meters through
+          # real ESPHome validation. The examples never set it, so without this
+          # entry only the default (empty) path is ever compiled.
+          - name: forward_meters schema (SX1276 / esp32)
+            config: tests/ci/forward_meters_ci.yaml
 
     name: build (${{ matrix.name }})
 

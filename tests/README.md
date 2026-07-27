@@ -17,6 +17,18 @@ included in ESPHome firmware and are only run by CI or a local host compiler.
 The GitHub workflow at `.github/workflows/ci.yml` compiles and runs these tests
 on Ubuntu.
 
+## CI-only Configs
+
+`tests/ci/` holds configurations that exist purely to widen CI coverage. They
+are not examples and must not be flashed.
+
+- `forward_meters_ci.yaml` — puts `forward_meters` through real ESPHome
+  validation. The example configs never set the option, so without this entry
+  the firmware matrix only ever compiled the default (empty) path. It declares
+  two radios via `MULTI_CONF` so a single compile covers both the inherited
+  (`forward_meters: true`) and the explicit-list form, each mixing a decimal
+  and a quoted hex meter ID.
+
 ## Adding Golden Samples
 
 Golden samples are normalized RAW HEX telegrams as published by
