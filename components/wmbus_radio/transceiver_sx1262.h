@@ -68,8 +68,15 @@ class SX1262 : public RadioTransceiver {
   uint16_t get_irq_status_();
   void read_buffer_(uint8_t offset, uint8_t *out, size_t out_len);
 
-  // Instantaneous RSSI (works even when packet status context is lost)
+  // Instantaneous RSSI. Only valid while the frame is still being transmitted;
+  // after the frame it reads the noise floor.
   int8_t read_rssi_inst_dbm_();
+
+  // Raw RssiSync / RssiAvg from GetPacketStatus (0 = never latched).
+  void read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg);
+
+  // Diagnostic: which source the frame's RSSI came from. INFO once, then DEBUG.
+  void log_rssi_source_(const char *path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight);
 
   void set_rf_frequency_(uint32_t freq_hz);
   void set_sync_word_(uint8_t sync2);
@@ -118,10 +125,14 @@ class SX1262 : public RadioTransceiver {
   size_t rx_len_{0};
   bool rx_loaded_{false};
 
-  // Packet RSSI captured at the time the RX buffer was filled.
-  // In long-GFSK mode we stop RX (standby) after capture, so GetPacketStatus
-  // may return zeros later. Cache it here.
-  int8_t last_rssi_dbm_{0};
+  // Packet RSSI captured while the frame was on air (or latched at sync-word
+  // detection). In long-GFSK mode we stop RX (standby) after capture, so
+  // GetPacketStatus may return zeros later. Cache it here.
+  // -127 = not measured for this frame; rf_runtime.cpp ignores anything <= -126.
+  int8_t last_rssi_dbm_{-127};
+
+  // The RSSI source is reported at INFO for the first frame after boot only.
+  bool rssi_source_logged_{false};
 };
 
 }  // namespace wmbus_radio
