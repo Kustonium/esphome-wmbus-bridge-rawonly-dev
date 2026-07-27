@@ -133,8 +133,15 @@ std::string Radio::forward_whitelist_summary_() const {
   std::string ids;
 
   for (size_t i = 0; i < bcd_n && budget > 0; i++, budget--) {
+    // Zero-padded to eight digits so an entry reads exactly like the id: field
+    // of the reception log and the two can be compared at a glance. The buffer
+    // is deliberately wider than eight digits: %08u pads but never truncates,
+    // so a value too large to be a BCD ID still prints in full and stays
+    // visible as the mistake it is.
+    char buf[12];
+    snprintf(buf, sizeof(buf), "%08u", (unsigned) this->forward_meter_ids_[i]);
     if (!ids.empty()) ids += ", ";
-    ids += std::to_string(this->forward_meter_ids_[i]);
+    ids += buf;
   }
   for (size_t i = 0; i < raw_n && budget > 0; i++, budget--) {
     char buf[13];
