@@ -160,6 +160,13 @@ static bool radio_supports_preamble_retry_(const RadioTransceiver *radio) {
   return radio != nullptr && radio->supports_preamble_retry();
 }
 
+// True when an RSSI reading is an actual measurement. The transceivers publish
+// -127 dBm as "not measured for this frame" (restart_rx() / drain_fifo_once_()
+// in transceiver_sx1276.cpp, restart_rx() in transceiver_sx1262.cpp). Such a
+// sample is not a signal level, so it must never enter an average or an EMA;
+// rf_runtime.cpp applies the same <= -126 test before acting on an RSSI.
+static inline bool rssi_is_measured_(int rssi_dbm) { return rssi_dbm > -126; }
+
 // Returns the RSSI bucket index for abort RSSI distributions.
 // [0] > -70   [1] -70..-79   [2] -80..-89   [3] -90..-99   [4] <= -100
 static inline uint8_t rssi_abort_bucket_(int rssi_dbm) {
@@ -589,26 +596,38 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
       this->diag_dropped_++;
       this->diag_15m_dropped_++;
       this->diag_60min_dropped_++;
-      this->diag_rssi_drop_sum_ += (int32_t) p->get_rssi();
-      this->diag_rssi_drop_n_++;
-      this->diag_15m_rssi_drop_sum_ += (int32_t) p->get_rssi();
-      this->diag_15m_rssi_drop_n_++;
-      this->diag_60min_rssi_drop_sum_ += (int32_t) p->get_rssi();
-      this->diag_60min_rssi_drop_n_++;
+      // Packet counters always advance; the RSSI sums only take real readings,
+      // so an unmeasured frame does not drag the drop-side averages towards -127.
+      const int32_t drop_rssi = (int32_t) p->get_rssi();
+      const bool drop_rssi_ok = rssi_is_measured_((int) drop_rssi);
+      if (drop_rssi_ok) {
+        this->diag_rssi_drop_sum_ += drop_rssi;
+        this->diag_rssi_drop_n_++;
+        this->diag_15m_rssi_drop_sum_ += drop_rssi;
+        this->diag_15m_rssi_drop_n_++;
+        this->diag_60min_rssi_drop_sum_ += drop_rssi;
+        this->diag_60min_rssi_drop_n_++;
+      }
       if (mode_idx < this->diag_mode_dropped_.size()) {
         this->diag_mode_dropped_[mode_idx]++;
-        this->diag_mode_rssi_drop_sum_[mode_idx] += (int32_t) p->get_rssi();
-        this->diag_mode_rssi_drop_n_[mode_idx]++;
+        if (drop_rssi_ok) {
+          this->diag_mode_rssi_drop_sum_[mode_idx] += drop_rssi;
+          this->diag_mode_rssi_drop_n_[mode_idx]++;
+        }
       }
       if (mode_idx < this->diag_15m_mode_dropped_.size()) {
         this->diag_15m_mode_dropped_[mode_idx]++;
-        this->diag_15m_mode_rssi_drop_sum_[mode_idx] += (int32_t) p->get_rssi();
-        this->diag_15m_mode_rssi_drop_n_[mode_idx]++;
+        if (drop_rssi_ok) {
+          this->diag_15m_mode_rssi_drop_sum_[mode_idx] += drop_rssi;
+          this->diag_15m_mode_rssi_drop_n_[mode_idx]++;
+        }
       }
       if (mode_idx < this->diag_60min_mode_dropped_.size()) {
         this->diag_60min_mode_dropped_[mode_idx]++;
-        this->diag_60min_mode_rssi_drop_sum_[mode_idx] += (int32_t) p->get_rssi();
-        this->diag_60min_mode_rssi_drop_n_[mode_idx]++;
+        if (drop_rssi_ok) {
+          this->diag_60min_mode_rssi_drop_sum_[mode_idx] += drop_rssi;
+          this->diag_60min_mode_rssi_drop_n_[mode_idx]++;
+        }
       }
       auto bucket = bucket_for_reason_(p->drop_reason());
       this->diag_dropped_by_bucket_[bucket]++;
@@ -670,32 +689,46 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
   this->diag_ok_++;
   this->diag_15m_ok_++;
   this->diag_60min_ok_++;
-  this->diag_rssi_ok_sum_ += (int32_t) frame->rssi();
-  this->diag_rssi_ok_n_++;
-  this->diag_15m_rssi_ok_sum_ += (int32_t) frame->rssi();
-  this->diag_15m_rssi_ok_n_++;
-  this->diag_60min_rssi_ok_sum_ += (int32_t) frame->rssi();
-  this->diag_60min_rssi_ok_n_++;
-  if (!this->recent_ok_rssi_valid_) {
-    this->recent_ok_rssi_avg_ = (int32_t) frame->rssi();
-    this->recent_ok_rssi_valid_ = true;
-  } else {
-    this->recent_ok_rssi_avg_ = ((this->recent_ok_rssi_avg_ * 7) + (int32_t) frame->rssi()) / 8;
+  // Frame counters always advance; the RSSI sums only take real readings. This
+  // matters most for recent_ok_rssi_avg_ below, which feeds the weak-signal
+  // thresholds in rf_runtime.cpp - a single -127 sentinel folded into that EMA
+  // would push the abort thresholds down for the next several frames.
+  const int32_t ok_rssi = (int32_t) frame->rssi();
+  const bool ok_rssi_measured = rssi_is_measured_((int) ok_rssi);
+  if (ok_rssi_measured) {
+    this->diag_rssi_ok_sum_ += ok_rssi;
+    this->diag_rssi_ok_n_++;
+    this->diag_15m_rssi_ok_sum_ += ok_rssi;
+    this->diag_15m_rssi_ok_n_++;
+    this->diag_60min_rssi_ok_sum_ += ok_rssi;
+    this->diag_60min_rssi_ok_n_++;
+    if (!this->recent_ok_rssi_valid_) {
+      this->recent_ok_rssi_avg_ = ok_rssi;
+      this->recent_ok_rssi_valid_ = true;
+    } else {
+      this->recent_ok_rssi_avg_ = ((this->recent_ok_rssi_avg_ * 7) + ok_rssi) / 8;
+    }
   }
   if (mode_idx < this->diag_mode_ok_.size()) {
     this->diag_mode_ok_[mode_idx]++;
-    this->diag_mode_rssi_ok_sum_[mode_idx] += (int32_t) frame->rssi();
-    this->diag_mode_rssi_ok_n_[mode_idx]++;
+    if (ok_rssi_measured) {
+      this->diag_mode_rssi_ok_sum_[mode_idx] += ok_rssi;
+      this->diag_mode_rssi_ok_n_[mode_idx]++;
+    }
   }
   if (mode_idx < this->diag_15m_mode_ok_.size()) {
     this->diag_15m_mode_ok_[mode_idx]++;
-    this->diag_15m_mode_rssi_ok_sum_[mode_idx] += (int32_t) frame->rssi();
-    this->diag_15m_mode_rssi_ok_n_[mode_idx]++;
+    if (ok_rssi_measured) {
+      this->diag_15m_mode_rssi_ok_sum_[mode_idx] += ok_rssi;
+      this->diag_15m_mode_rssi_ok_n_[mode_idx]++;
+    }
   }
   if (mode_idx < this->diag_60min_mode_ok_.size()) {
     this->diag_60min_mode_ok_[mode_idx]++;
-    this->diag_60min_mode_rssi_ok_sum_[mode_idx] += (int32_t) frame->rssi();
-    this->diag_60min_mode_rssi_ok_n_[mode_idx]++;
+    if (ok_rssi_measured) {
+      this->diag_60min_mode_rssi_ok_sum_[mode_idx] += ok_rssi;
+      this->diag_60min_mode_rssi_ok_n_[mode_idx]++;
+    }
   }
 
   this->collect_radio_rx_diag_();
@@ -780,25 +813,38 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     // Remember how this meter is printed; the key alone cannot reproduce it.
     std::strncpy(stats.id_str, id_str, sizeof(stats.id_str) - 1);
     stats.count++;
-    stats.rssi_last = frame->rssi();
-    stats.rssi_sum += (int32_t) frame->rssi();
-    stats.rssi_n++;
+    // Packet counters always advance. rssi_last keeps the previous measured
+    // value when this frame carries no measurement, so last_rssi stays a real
+    // reading instead of flipping to the -127 sentinel; if the meter has never
+    // been measured it stays at its 0 initialiser, the same "no data" value
+    // win_avg_rssi already publishes for an empty window.
+    if (ok_rssi_measured) {
+      stats.rssi_last = ok_rssi;
+      stats.rssi_sum += ok_rssi;
+      stats.rssi_n++;
+    }
     // Independent windowed counters for time-trigger and count-trigger.
     stats.count_window_time++;
-    stats.rssi_sum_window_time += (int32_t) frame->rssi();
-    stats.rssi_n_window_time++;
+    if (ok_rssi_measured) {
+      stats.rssi_sum_window_time += ok_rssi;
+      stats.rssi_n_window_time++;
+    }
 
     // 60min window — reset only at summary_60min, never at summary_15min.
     stats.count_window_60min++;
-    stats.rssi_sum_window_60min += (int32_t) frame->rssi();
-    stats.rssi_n_window_60min++;
+    if (ok_rssi_measured) {
+      stats.rssi_sum_window_60min += ok_rssi;
+      stats.rssi_n_window_60min++;
+    }
 
     if (stats.count_window_count == 0) {
       stats.count_window_started_ms = now_ms;
     }
     stats.count_window_count++;
-    stats.rssi_sum_window_count += (int32_t) frame->rssi();
-    stats.rssi_n_window_count++;
+    if (ok_rssi_measured) {
+      stats.rssi_sum_window_count += ok_rssi;
+      stats.rssi_n_window_count++;
+    }
 
     if (stats.last_seen_ms != 0) {
       stats.last_interval_ms = now_ms - stats.last_seen_ms;

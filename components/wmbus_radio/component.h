@@ -144,8 +144,12 @@ protected:
     uint32_t interval_sum_ms{0};   // cumulative sum for average interval
     uint32_t interval_n{0};        // number of intervals recorded
     uint32_t count{0};             // total packets received (lifetime)
-    int32_t  rssi_last{0};         // RSSI of the last packet
-    int32_t  rssi_sum{0};          // cumulative RSSI sum (lifetime)
+    // RSSI of the last packet that carried a measurement. Frames the
+    // transceiver could not measure (-127 sentinel) leave this untouched, so it
+    // always holds a real reading; 0 means "never measured", the same value
+    // win_avg_rssi already publishes for a window with no samples.
+    int32_t  rssi_last{0};
+    int32_t  rssi_sum{0};          // cumulative RSSI sum (measured samples only)
     uint32_t rssi_n{0};            // number of RSSI samples (lifetime)
     // Independent windowed counters for time-based and count-based triggers.
     // They must not share state, otherwise one trigger resets the other.

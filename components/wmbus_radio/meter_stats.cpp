@@ -73,6 +73,9 @@ void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s,
     const uint32_t interval_sum_ms = is_60min ? st.interval_sum_window_60min_ms : st.interval_sum_window_time_ms;
     const uint32_t interval_n      = is_60min ? st.interval_n_window_60min      : st.interval_n_window_time;
 
+    // rssi_n counts measured samples only (frames the transceiver reported as
+    // unmeasured are not accumulated), so a window can hold packets and still
+    // have rssi_n == 0. Both last_rssi and win_avg_rssi then publish 0.
     const int32_t win_avg_rssi = (rssi_n > 0) ? (rssi_sum / (int32_t) rssi_n) : 0;
     const uint32_t avg_interval_s = (st.interval_n > 0) ? (st.interval_sum_ms / st.interval_n) / 1000 : 0;
     const uint32_t win_avg_interval_s = (interval_n > 0) ? (interval_sum_ms / interval_n) / 1000 : 0;
@@ -123,6 +126,8 @@ void Radio::publish_meter_window_for_(const char *trigger, uint32_t elapsed_s,
   auto *mqtt = esphome::mqtt::global_mqtt_client;
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
+  // rssi_n_window counts measured samples only, so count_window > 0 does not
+  // imply rssi_n_window > 0; the guard below covers that case.
   const int32_t win_avg_rssi = (rssi_n_window > 0)
       ? (rssi_sum_window / (int32_t) rssi_n_window) : 0;
   const uint32_t avg_interval_s = (st.interval_n > 0)
