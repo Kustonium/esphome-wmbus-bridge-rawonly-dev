@@ -813,6 +813,8 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     // Composite key keeps T1 and C1 streams separate for dual-mode meters.
     const uint64_t stats_key = ((uint64_t) id_raw << 8) | (uint8_t) frame->link_mode();
     auto &stats = this->highlight_meter_stats_[stats_key];
+    // Remember how this meter is printed; the key alone cannot reproduce it.
+    std::strncpy(stats.id_str, id_str, sizeof(stats.id_str) - 1);
     stats.count++;
     stats.rssi_last = frame->rssi();
     stats.rssi_sum += (int32_t) frame->rssi();

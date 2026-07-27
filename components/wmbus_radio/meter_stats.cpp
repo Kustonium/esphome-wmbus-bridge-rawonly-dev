@@ -59,10 +59,9 @@ void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s,
   for (auto &kv : this->highlight_meter_stats_) {
     const uint64_t key = kv.first;
     MeterStats &st = kv.second;
-    const uint32_t meter_id = (uint32_t)(key >> 8);
     const uint8_t mode_byte = (uint8_t)(key & 0xFF);
-    char id_str[12];
-    snprintf(id_str, sizeof(id_str), "%08" PRIu32, meter_id);
+    // The key holds the raw A-field value, which is not the printable ID.
+    const char *id_str = (st.id_str[0] != '\0') ? st.id_str : "????????";
     const char *mode_str = (mode_byte == (uint8_t) LinkMode::C1) ? "C1" : ((mode_byte == (uint8_t) LinkMode::S1) ? "S1" : "T1");
 
     // Use dedicated 60min counters for summary_60min trigger to avoid
@@ -210,15 +209,14 @@ void Radio::maybe_publish_meter_windows_(uint32_t now_ms) {
   this->last_meter_window_ms_ = now_ms;
 
   for (auto &kv : this->highlight_meter_stats_) {
-    // Key = (meter_id << 8) | link_mode_byte. Decode both.
-    const uint32_t key_id   = (uint32_t) (kv.first >> 8);
+    // Key = (raw A-field value << 8) | link_mode_byte. Only the mode can be
+    // recovered from it; the printable ID is carried in the stats entry.
     const uint8_t  key_mode = (uint8_t)  (kv.first & 0xFF);
-    char id_str[9];
-    snprintf(id_str, sizeof(id_str), "%08" PRIu32, key_id);
+    auto &st = kv.second;
+    const char *id_str = (st.id_str[0] != '\0') ? st.id_str : "????????";
     const char *mode_str = (key_mode == (uint8_t) LinkMode::T1) ? "T1"
                          : (key_mode == (uint8_t) LinkMode::C1) ? "C1"
                          : (key_mode == (uint8_t) LinkMode::S1) ? "S1" : "UNK";
-    auto &st = kv.second;
     this->publish_meter_window_for_("time", elapsed_s, id_str, mode_str, st,
                                     st.count_window_time,
                                     st.rssi_sum_window_time,

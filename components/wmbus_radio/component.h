@@ -148,6 +148,12 @@ protected:
 
   // Per-meter reception statistics (only tracked for highlight_meters IDs)
   struct MeterStats {
+    // Meter ID exactly as the reception log prints it: eight decimal digits for
+    // a BCD meter, eight hex digits for one whose A-field is not BCD. Stored
+    // rather than derived from the map key, because the key holds the raw
+    // A-field value and rendering that as decimal produces a number that
+    // belongs to no meter.
+    char id_str[9]{};
     uint32_t last_seen_ms{0};      // millis() when last packet was received
     uint32_t last_interval_ms{0};  // elapsed ms since previous packet (0 = first seen)
     uint32_t interval_sum_ms{0};   // cumulative sum for average interval
