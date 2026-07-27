@@ -55,6 +55,29 @@ public:
   // Default: not supported.
   virtual bool get_boot_device_errors(uint16_t &before, uint16_t &after) const { return false; }
 
+  // Where the RSSI attached to a received frame came from.
+  //
+  // A driver can compute a frame's level from several radio registers, and when
+  // that level looks wrong it matters a great deal which one was used. The
+  // receive path cannot report this itself: it runs in the receiver task, and
+  // log output from that task does not reach the API log stream - only UART.
+  // So the driver records a snapshot and Radio::loop() drains it below, which
+  // puts the message on the main task where it is actually visible.
+  // The two string members are never null, so a half-filled snapshot cannot
+  // turn into a null %s at the log call.
+  struct RssiDiag {
+    const char *path{"?"};    // receive path that produced the frame
+    const char *source{"?"};  // radio register the level was taken from
+    uint8_t raw_sync{0};      // raw RssiSync (0 = not latched)
+    uint8_t raw_avg{0};       // raw RssiAvg (0 = not latched)
+    int8_t inflight{0};       // level sampled while the frame was on air
+    int8_t result{0};         // level finally reported for the frame
+  };
+
+  // Pops one pending snapshot. Returns false when there is nothing to report,
+  // which is the default for drivers that do not record provenance.
+  virtual bool take_rssi_diag(RssiDiag &out) { return false; }
+
   bool read_in_task(uint8_t *buffer, size_t length);
   bool read_in_task_partial(uint8_t *buffer, size_t max_length, size_t &out_read,
                             uint32_t wait_ms = 1, uint8_t idle_rounds = 1);

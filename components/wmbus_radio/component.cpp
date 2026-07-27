@@ -317,6 +317,21 @@ void Radio::dump_config() {
 void Radio::loop() {
   const uint32_t loop_now_ms = (uint32_t) esphome::millis();
 
+  // Report where a frame's RSSI came from. The receive path records this but
+  // cannot log it - it runs in the receiver task, whose output only reaches
+  // UART, never the API log stream - so it is drained and printed here on the
+  // main task. Drivers report the first frame on each receive path and then go
+  // quiet, so this is a handful of lines per boot, not per frame.
+  if (this->radio != nullptr) {
+    RadioTransceiver::RssiDiag rssi_diag{};
+    if (this->radio->take_rssi_diag(rssi_diag)) {
+      ESP_LOGI(TAG,
+               "RSSI source / zrodlo RSSI: %s (path=%s RssiSync=0x%02X RssiAvg=0x%02X inflight=%ddBm) -> %ddBm",
+               rssi_diag.source, rssi_diag.path, (unsigned) rssi_diag.raw_sync,
+               (unsigned) rssi_diag.raw_avg, (int) rssi_diag.inflight, (int) rssi_diag.result);
+    }
+  }
+
 if (!this->boot_log_done_ && this->radio != nullptr) {
   if (loop_now_ms - this->boot_log_last_ms_ >= 10000) {
     const char *radio_name = this->radio->get_name();

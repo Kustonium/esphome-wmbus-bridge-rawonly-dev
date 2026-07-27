@@ -289,30 +289,51 @@ void SX1262::read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg) {
 }
 
 // ---------------------------------------------------------------------------
-// log_rssi_source_: report which source the frame's RSSI came from.
+// record_rssi_diag_: note which source the frame's RSSI came from.
 //
-// A constant, obviously wrong RSSI is hard to diagnose from a normal
-// INFO-level log, so the first captured frame after boot reports the raw radio
-// values at INFO; every later frame logs the same detail at DEBUG.
+// This runs in the receiver task, whose log output never reaches the API log
+// stream, so it must not report anything itself - it only parks a snapshot for
+// Radio::loop() to print from the main task (see take_rssi_diag()). The DEBUG
+// line below is therefore UART-only and exists for serial-console debugging.
+//
+// Each receive path is reported once. The two paths derive the level from
+// different registers, so seeing both is what makes the report worth having;
+// after that the radio goes quiet instead of narrating every frame.
 // ---------------------------------------------------------------------------
-void SX1262::log_rssi_source_(const char *path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight) {
+void SX1262::record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight) {
   const char *source = (this->last_rssi_dbm_ == RSSI_NOT_MEASURED) ? "none"
                      : (inflight != RSSI_NOT_MEASURED && this->last_rssi_dbm_ == inflight) ? "inflight"
                      : (raw_sync != 0 && this->last_rssi_dbm_ == sx126x_rssi_dbm_(raw_sync)) ? "sync"
                      : "avg";
-
-  if (!this->rssi_source_logged_) {
-    this->rssi_source_logged_ = true;
-    ESP_LOGI(TAG,
-             "RSSI source / zrodlo RSSI: %s (path=%s RssiSync=0x%02X RssiAvg=0x%02X inflight=%ddBm) -> %ddBm",
-             source, path, (unsigned) raw_sync, (unsigned) raw_avg, (int) inflight,
-             (int) this->last_rssi_dbm_);
-    return;
-  }
+  const char *path_str = (path == RxPath::STREAM) ? "stream" : "fifo";
 
   ESP_LOGD(TAG, "RSSI %ddBm from %s (path=%s RssiSync=0x%02X RssiAvg=0x%02X inflight=%ddBm)",
-           (int) this->last_rssi_dbm_, source, path, (unsigned) raw_sync, (unsigned) raw_avg,
+           (int) this->last_rssi_dbm_, source, path_str, (unsigned) raw_sync, (unsigned) raw_avg,
            (int) inflight);
+
+  const uint8_t slot = (uint8_t) path;
+  if (this->rssi_diag_reported_[slot])
+    return;
+  // Claim the slot before filling the snapshot, so a frame arriving on the
+  // other path cannot start a second write into the same single-slot mailbox.
+  this->rssi_diag_reported_[slot] = true;
+
+  this->rssi_diag_.path = path_str;
+  this->rssi_diag_.source = source;
+  this->rssi_diag_.raw_sync = raw_sync;
+  this->rssi_diag_.raw_avg = raw_avg;
+  this->rssi_diag_.inflight = inflight;
+  this->rssi_diag_.result = this->last_rssi_dbm_;
+  // Published last: the main task treats this flag as "snapshot is complete".
+  this->rssi_diag_pending_ = true;
+}
+
+bool SX1262::take_rssi_diag(RssiDiag &out) {
+  if (!this->rssi_diag_pending_)
+    return false;
+  out = this->rssi_diag_;
+  this->rssi_diag_pending_ = false;
+  return true;
 }
 
 
@@ -421,7 +442,7 @@ bool SX1262::load_rx_buffer_() {
     } else {
       this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
     }
-    this->log_rssi_source_("fifo", raw_sync, raw_avg, RSSI_NOT_MEASURED);
+    this->record_rssi_diag_(RxPath::FIFO, raw_sync, raw_avg, RSSI_NOT_MEASURED);
   }
 
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
@@ -578,7 +599,7 @@ bool SX1262::capture_rx_stream_() {
   } else {
     this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
   }
-  this->log_rssi_source_("stream", raw_sync, raw_avg, rssi_inflight);
+  this->record_rssi_diag_(RxPath::STREAM, raw_sync, raw_avg, rssi_inflight);
 
   // Stop RX and clear IRQs.
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});

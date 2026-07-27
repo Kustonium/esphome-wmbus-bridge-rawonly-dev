@@ -54,6 +54,7 @@ class SX1262 : public RadioTransceiver {
   void restart_rx() override;
   optional<uint8_t> read() override;
   int8_t get_rssi() override;
+  bool take_rssi_diag(RssiDiag &out) override;
   const char *get_name() override;
   void log_reg_status() override;
 
@@ -75,8 +76,13 @@ class SX1262 : public RadioTransceiver {
   // Raw RssiSync / RssiAvg from GetPacketStatus (0 = never latched).
   void read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg);
 
-  // Diagnostic: which source the frame's RSSI came from. INFO once, then DEBUG.
-  void log_rssi_source_(const char *path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight);
+  // Which of the two receive paths produced a frame. Doubles as the index into
+  // rssi_diag_reported_, so the values must stay 0/1.
+  enum class RxPath : uint8_t { FIFO = 0, STREAM = 1 };
+
+  // Diagnostic: note which source the frame's RSSI came from, for Radio::loop()
+  // to report. Called from the receiver task; must not log at INFO itself.
+  void record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight);
 
   void set_rf_frequency_(uint32_t freq_hz);
   void set_sync_word_(uint8_t sync2);
@@ -131,8 +137,12 @@ class SX1262 : public RadioTransceiver {
   // -127 = not measured for this frame; rf_runtime.cpp ignores anything <= -126.
   int8_t last_rssi_dbm_{-127};
 
-  // The RSSI source is reported at INFO for the first frame after boot only.
-  bool rssi_source_logged_{false};
+  // Single-slot mailbox handing the RSSI provenance of the first frame on each
+  // receive path to the main task, which is the only one that can log it.
+  // Written by the receiver task, drained by take_rssi_diag() from Radio::loop().
+  RssiDiag rssi_diag_{};
+  bool rssi_diag_pending_{false};
+  bool rssi_diag_reported_[2]{};
 };
 
 }  // namespace wmbus_radio
