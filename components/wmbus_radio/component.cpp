@@ -104,6 +104,28 @@ static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &o
 }
 
 
+std::string Radio::forward_whitelist_summary_() const {
+  if (this->forward_meter_ids_.empty())
+    return "disabled - every decoded frame is published / wylaczona - publikowana jest kazda ramka";
+
+  // List the parsed IDs, not just the count: a mistyped entry (for example a hex
+  // token, which parses to a value no BCD meter ID can ever reach) is only
+  // obvious when the resulting numbers are visible. Cap the list so a long one
+  // cannot overrun the log buffer.
+  const size_t log_limit = 16;
+  const size_t shown = std::min(log_limit, this->forward_meter_ids_.size());
+  std::string ids;
+  for (size_t i = 0; i < shown; i++) {
+    if (i != 0) ids += ", ";
+    ids += std::to_string(this->forward_meter_ids_[i]);
+  }
+  if (shown < this->forward_meter_ids_.size())
+    ids += ", ... (+" + std::to_string(this->forward_meter_ids_.size() - shown) + ")";
+
+  return std::to_string(this->forward_meter_ids_.size()) + " ids" +
+         (this->forward_meters_inherited_ ? " (from highlight_meters)" : "") + ": " + ids;
+}
+
 static bool radio_supports_preamble_retry_(const RadioTransceiver *radio) {
   return radio != nullptr && radio->supports_preamble_retry();
 }
@@ -146,23 +168,8 @@ void Radio::setup() {
   }
 
   if (!this->forward_meter_ids_.empty()) {
-    // List the parsed IDs, not just the count: a mistyped entry (for example a
-    // hex token, which parses to a value no BCD meter ID can ever reach) is only
-    // obvious when the resulting numbers are visible.
-    const size_t log_limit = 16;
-    const size_t shown = std::min(log_limit, this->forward_meter_ids_.size());
-    std::string ids;
-    for (size_t i = 0; i < shown; i++) {
-      if (i != 0) ids += ", ";
-      ids += std::to_string(this->forward_meter_ids_[i]);
-    }
-    if (shown < this->forward_meter_ids_.size()) {
-      ids += ", ... (+" + std::to_string(this->forward_meter_ids_.size() - shown) + ")";
-    }
-    ESP_LOGI(TAG, "Forwarding whitelist enabled / wlaczono whiteliste przekazywania (%u ids%s): %s",
-             (unsigned) this->forward_meter_ids_.size(),
-             this->forward_meters_inherited_ ? ", from highlight_meters" : "",
-             ids.c_str());
+    ESP_LOGI(TAG, "Forward whitelist / whitelista przekazywania: %s",
+             this->forward_whitelist_summary_().c_str());
   }
 
   if (this->publish_radio_raw_) {
@@ -272,13 +279,7 @@ void Radio::dump_config() {
   } else {
     ESP_LOGCONFIG(TAG, "  Busy ether mode: n/a (SX1276 only)");
   }
-  if (this->forward_meter_ids_.empty()) {
-    ESP_LOGCONFIG(TAG, "  Forward whitelist: disabled (every decoded frame is published)");
-  } else {
-    ESP_LOGCONFIG(TAG, "  Forward whitelist: %u meter ids%s",
-                  (unsigned) this->forward_meter_ids_.size(),
-                  this->forward_meters_inherited_ ? " (from highlight_meters)" : "");
-  }
+  ESP_LOGCONFIG(TAG, "  Forward whitelist: %s", this->forward_whitelist_summary_().c_str());
   if (!this->diag_topic_.empty()) {
     ESP_LOGCONFIG(TAG, "  Diagnostics MQTT topic: %s", this->diag_topic_.c_str());
     ESP_LOGCONFIG(TAG, "  MQTT boot topic: %s/boot", this->diag_topic_.c_str());
@@ -390,6 +391,14 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                this->radio->get_rf_params_str().empty() ? "n/a" : this->radio->get_rf_params_str().c_str());
       this->radio->log_reg_status();
     }
+
+    // Repeated here on purpose. The same line is logged from setup(), but that
+    // happens before the network logger attaches, so over `esphome logs` it is
+    // never seen - exactly the reason the YAML sanity block lives here too.
+    // Logged in both states, so "no filter configured" is a positive statement
+    // rather than a missing line.
+    ESP_LOGI(TAG, "Forward whitelist / whitelista przekazywania: %s",
+             this->forward_whitelist_summary_().c_str());
 
     this->boot_log_last_ms_ = loop_now_ms;
     this->boot_log_count_++;

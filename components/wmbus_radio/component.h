@@ -392,6 +392,9 @@ protected:
   bool should_attempt_raw_drain_(int rssi_dbm, size_t bytes_read, bool is_c_mode) const;
   std::string derived_target_topic_() const;
   bool forward_meter_allowed_(uint32_t meter_id) const;
+  // One formatting place for the whitelist state, logged from setup(), from the
+  // delayed boot block and from dump_config().
+  std::string forward_whitelist_summary_() const;
   void maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag);
   void maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms);
   bool should_publish_packet_event_(const Packet *packet) const;
