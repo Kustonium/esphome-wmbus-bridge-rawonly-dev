@@ -457,6 +457,11 @@ protected:
   std::string diag_suggestion_topic_() const;
   static constexpr uint32_t SUGGESTION_THROTTLE_MS_ = 60U * 60U * 1000U; // 1 hour
 
+  // Silence required before NO_METERS_DETECTED may claim a wiring/config fault.
+  // wM-Bus meters transmit tens of seconds to several minutes apart, so the
+  // first summary window after boot is routinely empty on a healthy receiver.
+  static constexpr uint32_t NO_METERS_MIN_UPTIME_MS_ = 5U * 60U * 1000U; // 5 minutes
+
   static constexpr uint32_t DIAG_15MIN_INTERVAL_MS_ = 15U * 60U * 1000U;
   static constexpr uint32_t DIAG_60MIN_INTERVAL_MS_ = 60U * 60U * 1000U;
   bool diag_publish_summary_15min_{false};

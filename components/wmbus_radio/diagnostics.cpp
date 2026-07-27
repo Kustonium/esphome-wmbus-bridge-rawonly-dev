@@ -144,15 +144,29 @@ void Radio::maybe_publish_suggestion_(uint32_t now_ms) {
       ? ((this->diag_t1_symbols_invalid_ * 100U) / this->diag_t1_symbols_total_) : 0U;
 
   // ── STAGE 1: orientation ────────────────────────────────────────────────────
-  // No packets at all — user may have a wiring/config problem.
+  // An empty window says nothing on its own: `total` is diag_total_, which is a
+  // per-summary-window counter reset immediately after this call. A receiver
+  // that worked all day still reports total == 0 for any quiet window, and
+  // meters go quiet at night - telling that user to check their SPI wiring is
+  // simply wrong.
+  //
+  // Only a receiver that has never seen a single frame can plausibly have a
+  // wiring or radio-config fault, so gate on any_rx_, which is lifetime and
+  // never reset. The uptime floor additionally suppresses the first windows
+  // after boot, where silence carries no information at all.
+  //
+  // A receiver that used to work and went silent is a different diagnosis and
+  // belongs to the health pulse (sec_since_last_rx), not to this suggestion.
   if (total == 0) {
-    publish_suggestion_(mqtt, topic, this->last_suggestion_ms_, now_ms, SUGGESTION_THROTTLE_MS_,
-        chip, "NO_METERS_DETECTED",
-        "listen_mode", "t1",
-        "listen_mode: t1",
-        "No wM-Bus frames received. Check antenna, SPI pins, listen_mode (t1/c1/s1/both) and radio_type.",
-        "Brak odebranych ramek wM-Bus. Sprawdź antenę, piny SPI, listen_mode (t1/c1/s1/both) i radio_type.");
-    return; // nothing more to suggest until we have data
+    if (!this->any_rx_ && now_ms >= NO_METERS_MIN_UPTIME_MS_) {
+      publish_suggestion_(mqtt, topic, this->last_suggestion_ms_, now_ms, SUGGESTION_THROTTLE_MS_,
+          chip, "NO_METERS_DETECTED",
+          "listen_mode", "t1",
+          "listen_mode: t1",
+          "No wM-Bus frames received since boot. Check antenna, SPI pins, listen_mode (t1/c1/s1/both) and radio_type.",
+          "Brak odebranych ramek wM-Bus od startu. Sprawdź antenę, piny SPI, listen_mode (t1/c1/s1/both) i radio_type.");
+    }
+    return; // window counters are all zero - nothing further to analyse
   }
 
   // Packets arriving but highlight_meters not configured — user doesn't know
@@ -385,8 +399,8 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   const char *hint_pl = "wygląda dobrze";
   if (total == 0) {
     hint_code = "NO_DATA";
-    hint_en = "no packets received yet";
-    hint_pl = "brak odebranych ramek";
+    hint_en = "no packets in this window";
+    hint_pl = "brak ramek w tym oknie";
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
       if (c1_avg_drop_rssi <= -95) {
@@ -745,8 +759,8 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
   const char *hint_pl = "wygląda dobrze";
   if (total == 0) {
     hint_code = "NO_DATA";
-    hint_en = "no packets received yet";
-    hint_pl = "brak odebranych ramek";
+    hint_en = "no packets in this window";
+    hint_pl = "brak ramek w tym oknie";
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
       if (c1_avg_drop_rssi <= -95) {
@@ -1110,8 +1124,8 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
   const char *hint_pl = "wygląda dobrze";
   if (total == 0) {
     hint_code = "NO_DATA";
-    hint_en = "no packets received yet";
-    hint_pl = "brak odebranych ramek";
+    hint_en = "no packets in this window";
+    hint_pl = "brak ramek w tym oknie";
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
       if (c1_avg_drop_rssi <= -95) {
