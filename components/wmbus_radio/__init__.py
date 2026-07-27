@@ -94,6 +94,12 @@ CONF_FEM_CTRL_PIN = "fem_ctrl_pin"
 CONF_FEM_EN_PIN = "fem_en_pin"
 CONF_FEM_PA_PIN = "fem_pa_pin"
 
+# External gate of the module's internal RF switch (SX1262).
+# Needed by modules that do not connect the antenna unconditionally, such as the
+# Seeed Wio-SX1262 (module pin 1 RF_SW; GPIO38 on the XIAO ESP32S3 kit). Not the
+# same thing as dio2_rf_switch, which only selects the TX/RX direction.
+CONF_RF_SW_PIN = "rf_sw_pin"
+
 # CC1101 pins / safety gate (experimental, advanced users only)
 CONF_GDO0_PIN = "gdo0_pin"
 CONF_GDO2_PIN = "gdo2_pin"
@@ -242,6 +248,8 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_FEM_CTRL_PIN): pins.internal_gpio_output_pin_schema,
             cv.Optional(CONF_FEM_EN_PIN): pins.internal_gpio_output_pin_schema,
             cv.Optional(CONF_FEM_PA_PIN): pins.internal_gpio_output_pin_schema,
+            # External RF switch gate (optional, only makes sense for SX1262)
+            cv.Optional(CONF_RF_SW_PIN): pins.internal_gpio_output_pin_schema,
 
             cv.Optional(CONF_ON_FRAME): automation.validate_automation(
                 {
@@ -412,6 +420,11 @@ async def to_code(config):
         if CONF_FEM_PA_PIN in config:
             p = await cg.gpio_pin_expression(config[CONF_FEM_PA_PIN])
             cg.add(radio_var.set_fem_pa_pin(p))
+
+        # External RF switch gate (Wio-SX1262 pin 1 / RF_SW)
+        if CONF_RF_SW_PIN in config:
+            p = await cg.gpio_pin_expression(config[CONF_RF_SW_PIN])
+            cg.add(radio_var.set_rf_sw_pin(p))
 
 
     if config[CONF_RADIO_TYPE] == "SX1276" and CONF_TCXO_PIN in config:

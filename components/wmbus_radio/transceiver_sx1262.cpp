@@ -706,6 +706,29 @@ void SX1262::setup() {
     this->fem_pa_pin_->digital_write(false);
   }
 
+  // External gate of the module's internal RF switch.
+  //
+  // Some SX1262 modules do not connect the antenna unconditionally. The
+  // Seeed Wio-SX1262 brings the gate out on module pin 1 (RF_SW, "External IO
+  // control internal gate RF switch") and expects the host to hold it high;
+  // on the XIAO ESP32S3 kit that lands on GPIO38. This is separate from
+  // dio2_rf_switch: per the module datasheet the TX/RX *direction* is chosen
+  // by the SX1262's own DIO2 (high = TX, low = RX), while RF_SW decides
+  // whether the switch conducts at all.
+  //
+  // Leaving it unconfigured is not a soft degradation. The pin idles as a
+  // high-impedance input after reset, the antenna path never closes, and the
+  // receiver hears only leakage - measured at roughly 50 dB below an
+  // equivalent board, which looks exactly like a broken antenna.
+  if (this->rf_sw_pin_ != nullptr) {
+    this->rf_sw_pin_->setup();
+    this->rf_sw_pin_->digital_write(true);
+    delay(1);  // let the switch settle before the radio is brought up
+  }
+  ESP_LOGI(TAG, "RF switch gate / bramka przelacznika RF: %s",
+           (this->rf_sw_pin_ != nullptr) ? "driven high (rf_sw_pin) / sterowana"
+                                         : "not configured / nieskonfigurowana");
+
   this->reset();
   delay(10);
 

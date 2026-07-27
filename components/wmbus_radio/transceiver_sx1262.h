@@ -50,6 +50,12 @@ class SX1262 : public RadioTransceiver {
   void set_fem_en_pin(InternalGPIOPin *pin) { this->fem_en_pin_ = pin; }
   void set_fem_pa_pin(InternalGPIOPin *pin) { this->fem_pa_pin_ = pin; }
 
+  // Optional external gate of the module's internal RF switch, held high for as
+  // long as the radio is in use. Distinct from dio2_rf_switch: DIO2 selects the
+  // TX/RX direction, this enables the switch at all. See setup() for why a board
+  // that needs it is unusable without it.
+  void set_rf_sw_pin(InternalGPIOPin *pin) { this->rf_sw_pin_ = pin; }
+
   void setup() override;
   void restart_rx() override;
   optional<uint8_t> read() override;
@@ -125,6 +131,9 @@ class SX1262 : public RadioTransceiver {
   InternalGPIOPin *fem_ctrl_pin_{nullptr};
   InternalGPIOPin *fem_en_pin_{nullptr};
   InternalGPIOPin *fem_pa_pin_{nullptr};
+
+  // Optional external RF switch gate (Wio-SX1262 pin 1, RF_SW).
+  InternalGPIOPin *rf_sw_pin_{nullptr};
 
   std::vector<uint8_t> rx_buffer_{};
   size_t rx_idx_{0};

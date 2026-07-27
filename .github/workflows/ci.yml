@@ -54,6 +54,10 @@ jobs:
             config: examples/SX1262/Heltec V4-R8/SX1262_Heltec_V4R8_clean.yaml
           - name: SX1276 / esp32 (dual-core)
             config: examples/SX1276/HeltecV2/SX1276_Heltec_V2_clean.yaml
+          # Wio-SX1262 on XIAO: the only board that needs rf_sw_pin, so this is
+          # also the only entry that compiles that option.
+          - name: SX1262 / XIAO esp32-s3 (Wio-SX1262, rf_sw_pin)
+            config: examples/SX1262/XIAO ESP32 S3/xiao_esp32_s3_clean.yaml
           # Not a board variant: this one exists to put forward_meters through
           # real ESPHome validation. The examples never set it, so without this
           # entry only the default (empty) path is ever compiled.
