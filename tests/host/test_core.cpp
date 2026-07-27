@@ -415,10 +415,14 @@ static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const c
 // The bytes are chosen so the printed form is exactly 417F0666.
 static std::vector<uint8_t> non_bcd_frame_body() {
   return {
-      0x0B,  // L-field: 11 bytes follow.
-      0x44, 0x12, 0x34,
+      0x0B,        // L-field: 11 bytes follow.
+      0x44,        // C-field.
+      0xA5, 0x11,  // M-field, little endian -> "DME" (Diehl Metering).
       0x66, 0x06, 0x7F, 0x41,  // A-field -> id:417F0666
-      0x02, 0x7A, 0xAA, 0x55,
+      0x70,        // version.
+      0x07,        // device type: water.
+      0x7A,        // CI: short header.
+      0x55,        // payload byte, enough to keep the L-field honest.
   };
 }
 
