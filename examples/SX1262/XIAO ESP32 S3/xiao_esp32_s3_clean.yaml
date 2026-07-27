@@ -6,10 +6,6 @@ esphome:
   name: ${devicename}
   friendly_name: ${friendly_name}
   min_version: 2026.1.3
-  on_boot:
-    priority: 900
-    then:
-      - output.turn_on: lora_rf_sw
 
 esp32:
   variant: esp32s3
@@ -50,11 +46,6 @@ ota:
   - platform: esphome
 time:
   - platform: homeassistant
-
-output:
-  - platform: gpio
-    id: lora_rf_sw
-    pin: GPIO38
 
 spi:
   clk_pin: GPIO7

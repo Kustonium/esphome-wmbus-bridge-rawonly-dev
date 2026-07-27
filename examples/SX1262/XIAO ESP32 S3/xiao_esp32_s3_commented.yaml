@@ -14,12 +14,18 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.1.3
 
-  # EN: This particular XIAO SX1262 build uses GPIO38 to enable RF switch power.
-  # PL: Ten wariant XIAO + SX1262 używa GPIO38 do włączenia zasilania toru RF.
-  on_boot:
-    priority: 900
-    then:
-      - output.turn_on: lora_rf_sw
+  # EN: GPIO38 gates this module's RF switch. It used to be driven from here with
+  #     an on_boot action on a gpio output; that is gone because it did not work.
+  #     on_boot priority 900 lands in the same setup bucket as the gpio output
+  #     component itself, so the order between them is decided by registration,
+  #     not by the config - and the write went out before the pin was an output.
+  #     wmbus_radio drives it directly now, see rf_sw_pin below.
+  # PL: GPIO38 otwiera bramkę przełącznika RF tego modułu. Wcześniej sterowano
+  #     nim stąd, akcją on_boot na wyjściu gpio; zostało to usunięte, bo nie
+  #     działało. on_boot z priorytetem 900 trafia do tego samego koszyka co sam
+  #     komponent gpio output, więc o kolejności decyduje rejestracja, a nie
+  #     konfiguracja - i zapis szedł, zanim pin stał się wyjściem. Teraz steruje
+  #     nim bezpośrednio wmbus_radio, patrz rf_sw_pin poniżej.
 
 esp32:
   variant: esp32s3
@@ -80,11 +86,6 @@ text_sensor:
       name: "IP Address"
     ssid:
       name: "WiFi SSID"
-
-output:
-  - platform: gpio
-    id: lora_rf_sw
-    pin: GPIO38
 
 spi:
   clk_pin: GPIO7
