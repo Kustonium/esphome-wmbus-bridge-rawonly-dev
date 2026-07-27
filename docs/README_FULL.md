@@ -115,11 +115,14 @@ Notes:
   unreliable: an ID read from a frame that failed CRC can be corrupted.
 - Use the ID exactly as the log prints it. A decimal `id:41551279` is written
   `- 41551279`; a meter whose A-field is not BCD prints as hex (`id:417F0666`, typical
-  of Diehl/IZAR) and is written `- 0x417F0666`. Both forms are matched.
+  of Diehl/IZAR) and is written `- "0x417F0666"`. Both forms are matched.
+- **Quote hex entries.** Unquoted, YAML resolves `0x417F0666` to the number
+  `1098843750`, which would be stored as a decimal ID and never match. That case is
+  caught at compile time with the quoted form spelled out, rather than failing silently.
 - You do not have to know which kind a meter is. A non-BCD A-field always contains a
   nibble above 9, so its printed form always carries a hex letter, while a BCD ID never
   does — an all-digits entry means decimal, anything with letters means raw. The `0x`
-  form also works for BCD meters (`0x00089907` is meter `89907`).
+  form also works for BCD meters (`"0x00089907"` is meter `89907`).
 - Diagnostics are unaffected: counters and RSSI statistics are updated before
   publishing, so summaries still cover the whole ether including neighbours. Only the
   RAW stream is reduced.

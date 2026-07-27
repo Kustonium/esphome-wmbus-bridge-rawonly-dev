@@ -104,11 +104,15 @@ wmbus_radio:
 - Wpisuj ID dokładnie tak, jak pokazuje log — to ten sam zapis, którego używa
   `highlight_meters`:
   - `id:41551279` → `- 41551279` (licznik BCD, zapis dziesiętny),
-  - `id:417F0666` → `- 0x417F0666` (licznik nie-BCD, np. Diehl/IZAR).
+  - `id:417F0666` → `- "0x417F0666"` (licznik nie-BCD, np. Diehl/IZAR).
+- **Wpisy szesnastkowe ujmuj w cudzysłów.** Bez niego YAML sam zamieni `0x417F0666` na
+  liczbę `1098843750` i wpis trafiłby na listę dziesiętną, gdzie nigdy z niczym nie
+  zrówna. Taki przypadek jest wykrywany przy kompilacji i kończy się błędem
+  z podpowiedzią, nie cichym pominięciem.
 - Rozróżnienie jest jednoznaczne i nie wymaga wiedzy, który licznik jest który: A-field
   spoza BCD zawsze zawiera cyfrę A–F, a ID w BCD nigdy. Wpis czysto cyfrowy znaczy więc
   „dziesiętne", wpis z literami — „surowe".
-- Formy `0x` można użyć również dla licznika BCD (`0x00089907` = `89907`), bo surowa
+- Formy `0x` można użyć również dla licznika BCD (`"0x00089907"` = `89907`), bo surowa
   postać istnieje dla każdego licznika.
 - Po starcie log pokazuje sparsowane ID i to, czy przyszły z `highlight_meters`; stan
   filtra jest też w `dump_config()` jako `Forward whitelist:`.

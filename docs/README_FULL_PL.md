@@ -115,11 +115,14 @@ Uwagi:
   zawodne: ID odczytane z ramki, która nie przeszła CRC, bywa przekłamane.
 - Wpisuj ID dokładnie tak, jak pokazuje log. Dziesiętne `id:41551279` zapisujesz jako
   `- 41551279`; licznik z A-field poza BCD log pokazuje szesnastkowo (`id:417F0666`,
-  typowe dla Diehl/IZAR) i zapisujesz go jako `- 0x417F0666`. Obie formy są dopasowywane.
+  typowe dla Diehl/IZAR) i zapisujesz go jako `- "0x417F0666"`. Obie formy są dopasowywane.
+- **Wpisy szesnastkowe ujmuj w cudzysłów.** Bez niego YAML zamieni `0x417F0666` na liczbę
+  `1098843750`, która trafiłaby na listę dziesiętną i nigdy z niczym nie zrównała. Taki
+  przypadek jest wykrywany przy kompilacji, a nie pomijany po cichu.
 - Nie musisz wiedzieć, który licznik jest którego rodzaju. A-field poza BCD zawsze
   zawiera półbajtówkę powyżej 9, więc jego zapis zawsze ma literę A-F, a ID w BCD nigdy
   - wpis czysto cyfrowy znaczy „dziesiętny", wpis z literami „surowy". Forma `0x`
-  działa też dla liczników BCD (`0x00089907` to licznik `89907`).
+  działa też dla liczników BCD (`"0x00089907"` to licznik `89907`).
 - Diagnostyka jest nietknięta: liczniki i statystyki RSSI powstają przed publikacją,
   więc summary dalej obejmuje cały eter razem z sąsiadami. Obcinany jest sam strumień RAW.
 - `target_meter_id` ma własny topic i celowo nie podlega whiteliście.
