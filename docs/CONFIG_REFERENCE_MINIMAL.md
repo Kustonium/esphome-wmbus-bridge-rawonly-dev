@@ -42,12 +42,15 @@ Poprawny telegram S1 jest publikowany na `wmbus/<topic_name>/telegram` tak samo 
 | `rx_gain` | `SX1262` | `boosted` | public | `boosted` albo `power_saving` |
 | `long_gfsk_packets` | `SX1262` | `false` | public | zalecane dla długich ramek T1; brak może powodować ucinanie/dropy |
 | `fem_ctrl_pin`, `fem_en_pin`, `fem_pa_pin` | `SX1262` | brak | board-specific | piny zewnętrznego front-endu RF, np. Heltec V4 |
+| `rf_sw_pin` | `SX1262` | brak | board-specific | bramka wewnętrznego przełącznika RF modułu; wymagane na XIAO ESP32-S3 + Wio-SX1262 (`GPIO38`), inaczej czułość niższa o ~30 dB |
 | `sx1276_busy_ether_mode` | `SX1276` | `adaptive` | public | `normal`, `aggressive`, `adaptive` |
 | `tcxo_pin` | `SX1276` | brak | board-specific | opcjonalny pin TCXO enable; ustawiany HIGH przed inicjalizacją SX1276 |
 | `cc1101_allow_experimental` | `CC1101` | `false` | safety gate | wymagane do uruchomienia CC1101 |
 | `gdo0_pin`, `gdo2_pin` | `CC1101` | wymagane | public | dual IRQ; single-IRQ CC1101 nie jest wspierany |
 
 `tcxo_pin` dotyczy tylko SX1276. Dla SX1262 używaj `has_tcxo`.
+
+`rf_sw_pin` to nie to samo co `dio2_rf_switch`. DIO2 wybiera kierunek TX/RX wewnątrz układu; `rf_sw_pin` otwiera bramkę przełącznika RF w module i decyduje, czy tor antenowy w ogóle przewodzi. Na płytkach, które tego wymagają, potrzebne są obie opcje.
 
 `wmbus_radio` nie zgaduje okablowania płytki. Opcje takie jak TCXO, RF switch i FEM muszą wynikać ze schematu płytki albo dokumentacji producenta.
 
