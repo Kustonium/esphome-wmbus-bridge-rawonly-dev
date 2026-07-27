@@ -208,14 +208,17 @@ protected:
   bool publish_radio_raw_{false};
 
   // Forwarding whitelist (sorted + deduplicated by the CSV parser, so lookups
-  // can use binary search). Empty means "forward everything".
+  // can use binary search). Both empty means "forward everything".
+  // _raw_ holds A-field values for meters whose ID is not BCD.
   std::string forward_meters_csv_{};
   std::vector<uint32_t> forward_meter_ids_{};
+  std::vector<uint32_t> forward_meter_raw_ids_{};
   bool forward_meters_inherited_{false};
 
   // Highlight configuration
   std::string highlight_meters_csv_{};
   std::vector<uint32_t> highlight_meter_ids_{};
+  std::vector<uint32_t> highlight_meter_raw_ids_{};
   bool highlight_ansi_{false};
   std::string highlight_tag_{"wmbus_user"};
   std::string highlight_prefix_{"★ "};
@@ -382,7 +385,7 @@ protected:
 
   static DropBucket bucket_for_reason_(const std::string &reason);
   static StageBucket bucket_for_stage_(const std::string &stage);
-  bool meter_is_highlighted_(uint32_t meter_id) const;
+  bool meter_is_highlighted_(uint32_t meter_id, uint32_t meter_id_raw) const;
   void collect_radio_rx_diag_();
   uint32_t current_false_start_like_() const;
   bool sx1276_busy_ether_aggressive_now_() const;
@@ -391,11 +394,12 @@ protected:
   bool should_abort_t1_probe_start_(int rssi_dbm) const;
   bool should_attempt_raw_drain_(int rssi_dbm, size_t bytes_read, bool is_c_mode) const;
   std::string derived_target_topic_() const;
-  bool forward_meter_allowed_(uint32_t meter_id) const;
+  bool forward_meter_allowed_(uint32_t meter_id, uint32_t meter_id_raw) const;
   // One formatting place for the whitelist state, logged from setup(), from the
   // delayed boot block and from dump_config().
   std::string forward_whitelist_summary_() const;
-  void maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag);
+  void maybe_forward_frame_(Frame &frame, uint32_t meter_id, uint32_t meter_id_raw, const char *id_str,
+                            const char *log_tag);
   void maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms);
   bool should_publish_packet_event_(const Packet *packet) const;
   void maybe_publish_diag_summary_(uint32_t now_ms);

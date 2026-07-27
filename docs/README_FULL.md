@@ -113,10 +113,13 @@ Notes:
 - The filter runs after decoding and DLL CRC, so it matches an ID the parser has
   already validated. Filtering on the raw header would be cheaper in theory but
   unreliable: an ID read from a frame that failed CRC can be corrupted.
-- Use the ID exactly as the log prints it (`id:41551279`). Matching uses the
-  BCD-decoded 8-digit ID; a meter whose log line shows a hex ID (`id:417F0666`) has a
-  non-BCD A-field and cannot be whitelisted — it will be dropped while the filter is
-  active.
+- Use the ID exactly as the log prints it. A decimal `id:41551279` is written
+  `- 41551279`; a meter whose A-field is not BCD prints as hex (`id:417F0666`, typical
+  of Diehl/IZAR) and is written `- 0x417F0666`. Both forms are matched.
+- You do not have to know which kind a meter is. A non-BCD A-field always contains a
+  nibble above 9, so its printed form always carries a hex letter, while a BCD ID never
+  does — an all-digits entry means decimal, anything with letters means raw. The `0x`
+  form also works for BCD meters (`0x00089907` is meter `89907`).
 - Diagnostics are unaffected: counters and RSSI statistics are updated before
   publishing, so summaries still cover the whole ether including neighbours. Only the
   RAW stream is reduced.

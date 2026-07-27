@@ -47,8 +47,8 @@ std::string Radio::derived_target_topic_() const {
 // Whitelist gate for the RAW telegram topic. Applied after decoding and DLL CRC,
 // so the meter ID it matches on is one the parser already validated. The decision
 // itself lives in meter_filter.h so tests/host can exercise it.
-bool Radio::forward_meter_allowed_(uint32_t meter_id) const {
-  return meter_id_allowed(this->forward_meter_ids_, meter_id);
+bool Radio::forward_meter_allowed_(uint32_t meter_id, uint32_t meter_id_raw) const {
+  return meter_id_allowed(this->forward_meter_ids_, this->forward_meter_raw_ids_, meter_id, meter_id_raw);
 }
 
 void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
@@ -76,12 +76,13 @@ void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
   mqtt->publish("wmbus_bridge/raw", payload, static_cast<uint8_t>(0), false);
 }
 
-void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, const char *id_str, const char *log_tag) {
+void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, uint32_t meter_id_raw, const char *id_str,
+                                 const char *log_tag) {
   auto *mqtt = esphome::mqtt::global_mqtt_client;
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   std::string hex;
-  const bool want_all = !this->telegram_topic_.empty() && this->forward_meter_allowed_(meter_id);
+  const bool want_all = !this->telegram_topic_.empty() && this->forward_meter_allowed_(meter_id, meter_id_raw);
   // target_meter_id keeps its own topic and is deliberately not filtered by the
   // whitelist: it is an explicit per-meter selection the user already made.
   const bool want_target = this->target_meter_enabled_ && meter_id == this->target_meter_id_;

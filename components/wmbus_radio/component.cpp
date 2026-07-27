@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "component.h"
+#include "meter_filter.h"
 
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -49,11 +50,22 @@ static const char *TAG = "wmbus";
 // - DEBUG/VERBOSE stays English to keep issue reports and grep output usable,
 // - YAML/MQTT identifiers remain English-only because they form the stable technical API.
 
+// Splits the YAML meter list into the two forms a meter can be addressed by.
+//
+// A plain decimal token is a BCD-decoded meter ID and lands in `out_bcd`. A
+// token with a 0x prefix, or any token containing a-f/A-F, is the raw A-field
+// value as printed in the log (id:XXXXXXXX) and lands in `out_raw`.
+//
+// The split is unambiguous: a non-BCD A-field must contain a nibble > 9, so its
+// printed form always carries a hex letter, while a BCD ID never does. Writing
+// a BCD meter in its 0x form works too - it simply matches on the raw list.
+//
 // `option` only names the YAML key in the warning below, so a bad token is
 // reported against the option the user actually wrote.
-static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &out,
-                                const char *option) {
-  out.clear();
+static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &out_bcd,
+                                std::vector<uint32_t> &out_raw, const char *option) {
+  out_bcd.clear();
+  out_raw.clear();
   if (csv.empty()) return;
   size_t i = 0;
   while (i < csv.size()) {
@@ -89,40 +101,51 @@ static void parse_meter_id_csv_(const std::string &csv, std::vector<uint32_t> &o
       char *endp = nullptr;
       unsigned long v = std::strtoul(s, &endp, base);
       if (endp != s && *endp == '\0') {
-        out.push_back((uint32_t) v);
+        (base == 16 ? out_raw : out_bcd).push_back((uint32_t) v);
       } else {
         // Token did not parse cleanly — warn the user
-        ESP_LOGW("wmbus", "%s: could not parse meter ID '%s' — use decimal (e.g. 12345678) or hex with prefix (e.g. 0x417f0666)", option, tok.c_str());
+        ESP_LOGW("wmbus", "%s: could not parse meter ID '%s' — use the value the log prints as id:, either decimal (e.g. 12345678) or hex (e.g. 0x417F0666)", option, tok.c_str());
       }
     }
     i = j;
   }
-  if (!out.empty()) {
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+  for (auto *out : {&out_bcd, &out_raw}) {
+    if (!out->empty()) {
+      std::sort(out->begin(), out->end());
+      out->erase(std::unique(out->begin(), out->end()), out->end());
+    }
   }
 }
 
 
 std::string Radio::forward_whitelist_summary_() const {
-  if (this->forward_meter_ids_.empty())
+  const size_t bcd_n = this->forward_meter_ids_.size();
+  const size_t raw_n = this->forward_meter_raw_ids_.size();
+  if (bcd_n == 0 && raw_n == 0)
     return "disabled - every decoded frame is published / wylaczona - publikowana jest kazda ramka";
 
-  // List the parsed IDs, not just the count: a mistyped entry (for example a hex
-  // token, which parses to a value no BCD meter ID can ever reach) is only
-  // obvious when the resulting numbers are visible. Cap the list so a long one
-  // cannot overrun the log buffer.
+  // List the parsed IDs, not just the count: a mistyped entry is only obvious
+  // when the resulting values are visible. Each form is printed the way the log
+  // prints that meter's id:, so a config entry can be compared by eye. Cap the
+  // list so a long one cannot overrun the log buffer.
   const size_t log_limit = 16;
-  const size_t shown = std::min(log_limit, this->forward_meter_ids_.size());
+  size_t budget = log_limit;
   std::string ids;
-  for (size_t i = 0; i < shown; i++) {
-    if (i != 0) ids += ", ";
+
+  for (size_t i = 0; i < bcd_n && budget > 0; i++, budget--) {
+    if (!ids.empty()) ids += ", ";
     ids += std::to_string(this->forward_meter_ids_[i]);
   }
-  if (shown < this->forward_meter_ids_.size())
-    ids += ", ... (+" + std::to_string(this->forward_meter_ids_.size() - shown) + ")";
+  for (size_t i = 0; i < raw_n && budget > 0; i++, budget--) {
+    char buf[13];
+    snprintf(buf, sizeof(buf), "0x%08X", (unsigned) this->forward_meter_raw_ids_[i]);
+    if (!ids.empty()) ids += ", ";
+    ids += buf;
+  }
+  if (bcd_n + raw_n > log_limit)
+    ids += ", ... (+" + std::to_string(bcd_n + raw_n - log_limit) + ")";
 
-  return std::to_string(this->forward_meter_ids_.size()) + " ids" +
+  return std::to_string(bcd_n + raw_n) + " ids" +
          (this->forward_meters_inherited_ ? " (from highlight_meters)" : "") + ": " + ids;
 }
 
@@ -145,11 +168,19 @@ void Radio::setup() {
     ESP_LOGW(TAG, "Config warning / ostrzezenie konfiguracji: %s", warning.c_str());
   }
   // Parse optional highlight meter list (CSV provided by python/YAML).
-  parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_, "highlight_meters");
-  parse_meter_id_csv_(this->forward_meters_csv_, this->forward_meter_ids_, "forward_meters");
+  parse_meter_id_csv_(this->highlight_meters_csv_, this->highlight_meter_ids_,
+                      this->highlight_meter_raw_ids_, "highlight_meters");
+  parse_meter_id_csv_(this->forward_meters_csv_, this->forward_meter_ids_,
+                      this->forward_meter_raw_ids_, "forward_meters");
   if (!this->target_meter_id_str_.empty()) {
-    std::vector<uint32_t> tmp;
-    parse_meter_id_csv_(this->target_meter_id_str_, tmp, "target_meter_id");
+    std::vector<uint32_t> tmp, tmp_raw;
+    parse_meter_id_csv_(this->target_meter_id_str_, tmp, tmp_raw, "target_meter_id");
+    if (tmp.empty() && !tmp_raw.empty()) {
+      // Would otherwise be accepted and then never match anything, because the
+      // target is compared against the BCD-decoded ID only.
+      ESP_LOGW(TAG, "target_meter_id: non-BCD (hex) meter IDs are not supported here - use forward_meters for such meters / "
+                    "szesnastkowe ID nie sa tu obslugiwane - dla takich licznikow uzyj forward_meters");
+    }
     if (!tmp.empty()) {
       this->target_meter_id_ = tmp.front();
       this->target_meter_enabled_ = true;
@@ -167,7 +198,7 @@ void Radio::setup() {
     ESP_LOGI(TAG, "Frame RAW forwarding topic / topic publikacji RAW: %s", this->telegram_topic_.c_str());
   }
 
-  if (!this->forward_meter_ids_.empty()) {
+  if (!this->forward_meter_ids_.empty() || !this->forward_meter_raw_ids_.empty()) {
     ESP_LOGI(TAG, "Forward whitelist / whitelista przekazywania: %s",
              this->forward_whitelist_summary_().c_str());
   }
@@ -176,12 +207,14 @@ void Radio::setup() {
     ESP_LOGI(TAG, "Internal radio RAW tap enabled / wlaczono wewnetrzny RAW tap: wmbus_bridge/raw");
   }
 
-  if (!this->highlight_meter_ids_.empty()) {
+  // Both lists, or a config listing only non-BCD meters would skip the window
+  // clamp below and log nothing.
+  if (!this->highlight_meter_ids_.empty() || !this->highlight_meter_raw_ids_.empty()) {
     // meter_window_interval_ms_ defaults to 15 min; cap it at diag_summary_interval_ms_ minimum
     if (this->meter_window_interval_ms_ < this->diag_summary_interval_ms_)
       this->meter_window_interval_ms_ = this->diag_summary_interval_ms_;
     ESP_LOGI(TAG, "Highlight meters enabled / wlaczono wyroznione liczniki (%u ids) tag=%s ansi=%s window=%us",
-             (unsigned) this->highlight_meter_ids_.size(),
+             (unsigned) (this->highlight_meter_ids_.size() + this->highlight_meter_raw_ids_.size()),
              this->highlight_tag_.empty() ? "wmbus_user" : this->highlight_tag_.c_str(),
              this->highlight_ansi_ ? "true" : "false",
              (unsigned) (this->meter_window_interval_ms_ / 1000));
@@ -704,6 +737,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
   uint8_t dev = 0xFF;
   uint8_t ci = 0xFF;
   uint32_t id_val = 0;
+  uint32_t id_raw = 0;
 
   auto is_bcd = [](uint8_t b) -> bool {
     return ((b & 0x0F) <= 9) && (((b >> 4) & 0x0F) <= 9);
@@ -749,21 +783,28 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                d[base + 6], d[base + 5], d[base + 4], d[base + 3]);
     }
 
+    // Same four bytes in the same order the hex form above prints them, so a
+    // config entry copied straight out of the log matches. Unlike id_val this
+    // is available for every meter, BCD or not.
+    id_raw = ((uint32_t) d[base + 6] << 24) | ((uint32_t) d[base + 5] << 16) |
+             ((uint32_t) d[base + 4] << 8) | (uint32_t) d[base + 3];
+
     ver = d[base + 7];
     dev = d[base + 8];
     ci = d[base + 9];
   }
 
-  bool highlight = false;
-  if (id_val != 0 && !this->highlight_meter_ids_.empty()) {
-    highlight = std::binary_search(this->highlight_meter_ids_.begin(), this->highlight_meter_ids_.end(), id_val);
-  }
+  const bool highlight = meter_id_in_lists(this->highlight_meter_ids_, this->highlight_meter_raw_ids_,
+                                           id_val, id_raw);
 
   // Update per-meter statistics for highlighted meters, or for all meters in diagnostic_meter_stats: all.
-  if (id_val != 0 && (highlight || this->diag_meter_stats_all_)) {
+  // Keyed on id_raw, not id_val: it is unique per meter and, unlike id_val,
+  // non-zero for non-BCD meters too. Keying on id_val collapsed every such
+  // meter into one shared entry at key 0.
+  if (id_raw != 0 && (highlight || this->diag_meter_stats_all_)) {
     uint32_t now_ms = (uint32_t) esphome::millis();
     // Composite key keeps T1 and C1 streams separate for dual-mode meters.
-    const uint64_t stats_key = ((uint64_t) id_val << 8) | (uint8_t) frame->link_mode();
+    const uint64_t stats_key = ((uint64_t) id_raw << 8) | (uint8_t) frame->link_mode();
     auto &stats = this->highlight_meter_stats_[stats_key];
     stats.count++;
     stats.rssi_last = frame->rssi();
@@ -832,7 +873,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              ansi_suf);
 
     // Keep highlight_meters lightweight by default: local emphasis plus packet number only.
-    const uint64_t stats_key_ro = ((uint64_t) id_val << 8) | (uint8_t) frame->link_mode();
+    const uint64_t stats_key_ro = ((uint64_t) id_raw << 8) | (uint8_t) frame->link_mode();
     const auto &stats = this->highlight_meter_stats_[stats_key_ro];
     if (stats.count == 1) {
       ESP_LOGI(log_tag, "%s[id:%s] first packet / pierwszy pakiet (packet #1)",
@@ -851,7 +892,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              mfr, id_str, (unsigned) ver, (unsigned) dev, (unsigned) ci);
   }
 
-  this->maybe_forward_frame_(frame.value(), id_val, id_str, log_tag);
+  this->maybe_forward_frame_(frame.value(), id_val, id_raw, id_str, log_tag);
 
   for (auto &handler : this->handlers_)
     handler(&frame.value());

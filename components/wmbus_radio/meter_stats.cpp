@@ -6,6 +6,7 @@
 // names and the windowing behaviour are identical.
 
 #include "component.h"
+#include "meter_filter.h"
 #include "wmbus_radio_internal.h"
 
 #include "esphome/core/log.h"
@@ -24,9 +25,8 @@ namespace wmbus_radio {
 
 static const char *TAG = "wmbus";
 
-bool Radio::meter_is_highlighted_(uint32_t meter_id) const {
-  return meter_id != 0 && !this->highlight_meter_ids_.empty() &&
-         std::binary_search(this->highlight_meter_ids_.begin(), this->highlight_meter_ids_.end(), meter_id);
+bool Radio::meter_is_highlighted_(uint32_t meter_id, uint32_t meter_id_raw) const {
+  return meter_id_in_lists(this->highlight_meter_ids_, this->highlight_meter_raw_ids_, meter_id, meter_id_raw);
 }
 
 void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s, uint32_t now_ms) {

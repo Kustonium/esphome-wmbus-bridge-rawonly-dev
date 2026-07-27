@@ -59,11 +59,18 @@ Radio::StageBucket Radio::bucket_for_stage_(const std::string &stage) {
 
 bool Radio::should_publish_packet_event_(const Packet *packet) const {
   if (packet == nullptr || !this->diag_publish_drop_events_) return false;
-  if (!this->diag_publish_highlight_only_ || this->highlight_meter_ids_.empty()) return true;
+  if (!this->diag_publish_highlight_only_ ||
+      (this->highlight_meter_ids_.empty() && this->highlight_meter_raw_ids_.empty()))
+    return true;
 
+  // Both forms, so a non-BCD meter listed in highlight_meters still gets its
+  // drop events published: try_get_meter_id() fails outright for those.
   uint32_t meter_id = 0;
-  if (!packet->try_get_meter_id(meter_id)) return false;
-  return this->meter_is_highlighted_(meter_id);
+  uint32_t meter_id_raw = 0;
+  packet->try_get_meter_id(meter_id);
+  packet->try_get_meter_id_raw(meter_id_raw);
+  if (meter_id == 0 && meter_id_raw == 0) return false;
+  return this->meter_is_highlighted_(meter_id, meter_id_raw);
 }
 
 void Radio::publish_rx_path_event_(const char *event, const char *stage, const char *detail, int rssi) {
@@ -173,7 +180,7 @@ void Radio::maybe_publish_suggestion_(uint32_t now_ms) {
   // which meter IDs they have. They need to check wmbusmeters first.
   // NOTE: check highlight_meter_ids_ (user config), not highlight_meter_stats_ (runtime),
   // because stats may be empty simply because the listed meters haven't been seen yet.
-  if (this->highlight_meter_ids_.empty()) {
+  if (this->highlight_meter_ids_.empty() && this->highlight_meter_raw_ids_.empty()) {
     publish_suggestion_(mqtt, topic, this->last_suggestion_ms_, now_ms, SUGGESTION_THROTTLE_MS_,
         chip, "ADD_HIGHLIGHT_METERS",
         "highlight_meters", "<meter_id>",

@@ -101,14 +101,17 @@ wmbus_radio:
 - Puste (domyślnie) albo `false` = zachowanie jak wcześniej, publikowane jest wszystko.
 - `forward_meters: true` przy pustym `highlight_meters` **nie** wycisza strumienia:
   filtr się nie włącza, a w logu startowym pojawia się ostrzeżenie.
-- Wpisuj ID dokładnie tak, jak pokazuje log: `id:41551279` → `- 41551279`. To ten sam
-  numer, którego używa `highlight_meters`.
+- Wpisuj ID dokładnie tak, jak pokazuje log — to ten sam zapis, którego używa
+  `highlight_meters`:
+  - `id:41551279` → `- 41551279` (licznik BCD, zapis dziesiętny),
+  - `id:417F0666` → `- 0x417F0666` (licznik nie-BCD, np. Diehl/IZAR).
+- Rozróżnienie jest jednoznaczne i nie wymaga wiedzy, który licznik jest który: A-field
+  spoza BCD zawsze zawiera cyfrę A–F, a ID w BCD nigdy. Wpis czysto cyfrowy znaczy więc
+  „dziesiętne", wpis z literami — „surowe".
+- Formy `0x` można użyć również dla licznika BCD (`0x00089907` = `89907`), bo surowa
+  postać istnieje dla każdego licznika.
 - Po starcie log pokazuje sparsowane ID i to, czy przyszły z `highlight_meters`; stan
   filtra jest też w `dump_config()` jako `Forward whitelist:`.
-- Dopasowanie idzie po ID zdekodowanym z BCD (8 cyfr, `0..99999999`). Jeśli log pokazuje
-  ID w formie szesnastkowej (np. `id:417F0666`), to znaczy, że A-field tego licznika nie
-  jest w BCD — takiego licznika nie da się dziś wpisać na whitelistę i przy aktywnym
-  filtrze zostanie odrzucony.
 - Filtr działa **po** dekodowaniu i sprawdzeniu DLL CRC, więc dopasowuje ID, które
   parser już zweryfikował.
 - Diagnostyka liczy dalej **cały** eter: summary i statystyki RSSI powstają przed

@@ -20,6 +20,7 @@ using esphome::wmbus_radio::Packet;
 using esphome::wmbus_radio::decode3of6;
 using esphome::wmbus_radio::encoded_size;
 using esphome::wmbus_radio::meter_id_allowed;
+using esphome::wmbus_radio::meter_id_in_lists;
 
 static int failures = 0;
 
@@ -350,6 +351,18 @@ static void test_packet_s1_invalid_manchester_is_rejected() {
   check(packet.t1_symbols_invalid() > 0, "S1 invalid Manchester records invalid symbols");
 }
 
+// For a BCD meter the raw A-field value is simply its decimal digits read as
+// hex: meter 89907 is stored as the bytes that print 00089907. This pins the
+// byte order of the raw extraction, which is where a silent bug would live.
+static uint32_t bcd_digits_as_hex(uint32_t decimal_id) {
+  uint32_t out = 0;
+  for (int shift = 0; shift < 32; shift += 4) {
+    out |= (decimal_id % 10) << shift;
+    decimal_id /= 10;
+  }
+  return out;
+}
+
 static void check_golden_body_shape(const std::vector<uint8_t> &body,
                                     const GoldenFrameFixture &fixture) {
   const std::string prefix = std::string(fixture.name) + " golden frame";
@@ -361,6 +374,11 @@ static void check_golden_body_shape(const std::vector<uint8_t> &body,
   uint32_t meter_id = 0;
   check(packet.try_get_meter_id(meter_id), prefix + " meter id is extractable");
   check(meter_id == fixture.expected_meter_id, prefix + " meter id matches expected value");
+
+  uint32_t meter_id_raw = 0;
+  check(packet.try_get_meter_id_raw(meter_id_raw), prefix + " raw meter id is extractable");
+  check(meter_id_raw == bcd_digits_as_hex(fixture.expected_meter_id),
+        prefix + " raw meter id byte order matches the printed id");
 }
 
 static void check_golden_round_trip_c1(const std::vector<uint8_t> &body, const char *name) {
@@ -392,18 +410,40 @@ static void check_golden_round_trip_t1(const std::vector<uint8_t> &body, const c
 }
 
 static void test_forward_meter_whitelist() {
+  const std::vector<uint32_t> none;
+
   // No forward_meters configured: nothing is filtered, including frames whose
   // meter ID could not be decoded. This is the pre-existing behaviour.
-  const std::vector<uint32_t> unconfigured;
-  check(meter_id_allowed(unconfigured, 41551279), "empty whitelist forwards a decoded meter");
-  check(meter_id_allowed(unconfigured, 0), "empty whitelist forwards an undecodable meter id");
+  check(meter_id_allowed(none, none, 41551279, 0x41551279), "empty whitelist forwards a decoded meter");
+  check(meter_id_allowed(none, none, 0, 0), "empty whitelist forwards a frame with no usable id");
 
   // Sorted + deduplicated, as parse_meter_id_csv_ produces.
-  const std::vector<uint32_t> allowed = {41551279, 90830781};
-  check(meter_id_allowed(allowed, 41551279), "listed meter is forwarded");
-  check(meter_id_allowed(allowed, 90830781), "second listed meter is forwarded");
-  check(!meter_id_allowed(allowed, 89907), "unlisted meter is dropped");
-  check(!meter_id_allowed(allowed, 0), "undecodable meter id is dropped while filtering");
+  const std::vector<uint32_t> bcd = {41551279, 90830781};
+  check(meter_id_allowed(bcd, none, 41551279, 0x41551279), "listed BCD meter is forwarded");
+  check(meter_id_allowed(bcd, none, 90830781, 0x90830781), "second listed BCD meter is forwarded");
+  check(!meter_id_allowed(bcd, none, 89907, 0x00089907), "unlisted meter is dropped");
+  check(!meter_id_allowed(bcd, none, 0, 0), "frame with no usable id is dropped while filtering");
+
+  // Non-BCD meters (Diehl/IZAR and friends) have no decimal ID at all: id is 0
+  // and only the raw A-field value identifies them.
+  const std::vector<uint32_t> raw = {0x417F0666};
+  check(meter_id_allowed(raw, raw, 0, 0x417F0666), "non-BCD meter matches on the raw id");
+  check(!meter_id_allowed(raw, raw, 0, 0x417F0667), "a different raw id is dropped");
+  check(!meter_id_allowed(none, raw, 41551279, 0x41551279), "BCD meter not on the raw list is dropped");
+
+  // A raw entry may also address a BCD meter, since the raw form exists for
+  // every meter - writing 0x00089907 must match meter 89907.
+  const std::vector<uint32_t> raw_of_bcd = {0x00089907};
+  check(meter_id_allowed(none, raw_of_bcd, 89907, 0x00089907), "BCD meter matches via its raw form");
+
+  // Either list may carry the match.
+  check(meter_id_in_lists(bcd, raw, 41551279, 0x41551279), "bcd list hit");
+  check(meter_id_in_lists(bcd, raw, 0, 0x417F0666), "raw list hit");
+  check(!meter_id_in_lists(bcd, raw, 89907, 0x00089907), "no list hit");
+
+  // highlight_meters semantics: an empty configuration highlights nothing,
+  // unlike the whitelist where empty means "allow everything".
+  check(!meter_id_in_lists(none, none, 41551279, 0x41551279), "empty highlight lists match nothing");
 }
 
 static void test_real_golden_frames_round_trip() {
