@@ -127,6 +127,11 @@ public:
   std::string as_rtlwmbus();
   bool try_get_meter_id(uint32_t &out_id) const;
 
+  // Raw A-field value, as printed in the log (id:XXXXXXXX). Unlike
+  // try_get_meter_id() this does not require a BCD ID, so it is the only form
+  // available for meters such as Diehl/IZAR.
+  bool try_get_meter_id_raw(uint32_t &out_id) const;
+
   void mark_as_handled();
   uint8_t handlers_count();
 

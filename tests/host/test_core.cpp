@@ -447,9 +447,13 @@ static void test_non_bcd_meter_id() {
   if (!frame) return;
   check(frame->as_raw() == body, "non-BCD T1 frame round-trips to the same body");
 
+  // Read from the frame, not the packet: Frame's constructor moves the decoded
+  // bytes out of the Packet, leaving it empty.
   uint32_t decoded_raw = 0;
-  check(t1.try_get_meter_id_raw(decoded_raw), "raw id is extractable after T1 decoding");
+  check(frame->try_get_meter_id_raw(decoded_raw), "raw id is extractable after T1 decoding");
   check(decoded_raw == 0x417F0666u, "raw id survives T1 decoding unchanged");
+  uint32_t decoded_bcd = 0;
+  check(!frame->try_get_meter_id(decoded_bcd), "decoded frame still has no decimal id");
 
   // And it is matchable by a whitelist entry written as 0x417F0666.
   const std::vector<uint32_t> none;

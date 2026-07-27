@@ -700,6 +700,8 @@ std::string Frame::as_hex() { return format_hex(this->data_); }
 
 bool Frame::try_get_meter_id(uint32_t &out_id) const { return try_extract_meter_id_(this->data_, out_id); }
 
+bool Frame::try_get_meter_id_raw(uint32_t &out_id) const { return try_extract_meter_id_raw_(this->data_, out_id); }
+
 std::string Frame::as_rtlwmbus() {
   const size_t time_repr_size = sizeof("YYYY-MM-DD HH:MM:SS.00Z");
   char time_buffer[time_repr_size];
