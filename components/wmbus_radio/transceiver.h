@@ -27,7 +27,13 @@ public:
   virtual void restart_rx() = 0;
   virtual int8_t get_rssi() = 0;
   virtual const char *get_name() = 0;
-  virtual bool transmit_test_frame(ListenMode mode, uint16_t frame_length, uint8_t tx_data_gpio) { return false; }
+
+  // No transmit API on purpose. This component is a receiver: it listens,
+  // validates and republishes. A TX test path existed briefly (added 0ba1df5,
+  // removed 6318cd4) and left behind config fields and a virtual that no
+  // driver implemented, which read as a working feature to anyone browsing the
+  // source. If transmitting is ever needed, it belongs in a separate project,
+  // not behind an undocumented switch here.
 
   // Radio-specific recovery hints for the upper RX pipeline.
   // Default: keep the generic strict path.

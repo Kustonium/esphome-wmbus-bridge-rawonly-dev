@@ -95,14 +95,6 @@ public:
   void set_listen_mode_filter_after_parse(bool enabled) { this->listen_mode_filter_after_parse_ = enabled; }
   void set_diagnostic_mode_str(const std::string &mode) { this->diag_mode_str_ = mode; }
   void set_diagnostic_meter_stats_str(const std::string &mode) { this->meter_stats_str_ = mode; }
-  void set_tx_test_config(bool enabled, ListenMode mode, uint16_t frame_length, uint32_t interval_ms, uint8_t tx_data_gpio) {
-    this->tx_test_enabled_ = enabled;
-    this->tx_test_mode_ = mode;
-    this->tx_test_frame_length_ = frame_length;
-    this->tx_test_interval_ms_ = interval_ms < 1000 ? 1000 : interval_ms;
-    this->tx_test_data_gpio_ = tx_data_gpio;
-  }
-
   void set_receiver_task_stack_size(uint32_t stack_size) {
     // This configures the dedicated radio_recv FreeRTOS task created by
     // wmbus_radio. It does NOT change ESPHome's main loop task stack.
@@ -136,13 +128,6 @@ protected:
   // raw packet mode before running the full parser. True = experimental behavior:
   // parse first, then filter by parser/CRC-selected final mode.
   bool listen_mode_filter_after_parse_{false};
-
-  bool tx_test_enabled_{false};
-  ListenMode tx_test_mode_{LISTEN_MODE_T1};
-  uint16_t tx_test_frame_length_{40};
-  uint32_t tx_test_interval_ms_{30000};
-  uint32_t tx_test_last_ms_{0};
-  uint8_t tx_test_data_gpio_{34};
 
   std::vector<std::function<void(Frame *)>> handlers_;
 

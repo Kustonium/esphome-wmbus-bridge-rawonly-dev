@@ -227,21 +227,6 @@ void Radio::setup() {
              (unsigned) (this->meter_window_interval_ms_ / 1000));
   }
 
-  if (this->tx_test_enabled_) {
-    ESP_LOGI(TAG, "TX test mode enabled / wlaczono tryb nadajnika testowego: radio=%s mode=%s frame_length=%u interval=%ums tx_data_gpio=%u",
-             this->radio != nullptr ? this->radio->get_name() : "<null>",
-             listen_mode_to_string_(this->tx_test_mode_),
-             (unsigned) this->tx_test_frame_length_,
-             (unsigned) this->tx_test_interval_ms_,
-             (unsigned) this->tx_test_data_gpio_);
-    this->boot_log_done_ = false;
-    this->boot_log_last_ms_ = (uint32_t) esphome::millis();
-    this->boot_log_count_ = 0;
-    this->boot_info_mqtt_pending_ = true;
-    this->boot_info_event_pending_ = true;
-    return;
-  }
-
   ASSERT_SETUP(this->packet_queue_ = xQueueCreate(3, sizeof(Packet *)));
 
   // This component uses its own FreeRTOS receiver task instead of ESPHome's
@@ -301,16 +286,7 @@ void Radio::dump_config() {
   ESP_LOGCONFIG(TAG, "  Listen mode filter: %s",
                 this->listen_mode_filter_after_parse_ ? "after parse (experimental)" : "before parse (legacy)");
   ESP_LOGCONFIG(TAG, "  Receiver task stack: %u bytes", (unsigned) this->receiver_task_stack_size_);
-  if (this->tx_test_enabled_) {
-    ESP_LOGCONFIG(TAG, "  Operation: tx_test");
-    ESP_LOGCONFIG(TAG, "  TX test: mode=%s frame_length=%u interval=%ums tx_data_gpio=%u",
-                  listen_mode_to_string_(this->tx_test_mode_),
-                  (unsigned) this->tx_test_frame_length_,
-                  (unsigned) this->tx_test_interval_ms_,
-                  (unsigned) this->tx_test_data_gpio_);
-  } else {
-    ESP_LOGCONFIG(TAG, "  Operation: rx");
-  }
+  ESP_LOGCONFIG(TAG, "  Operation: rx (receive only - this component does not transmit)");
   const char *busy_mode = (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::NORMAL) ? "normal"
                            : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE) ? "aggressive"
                            : "adaptive";
@@ -477,18 +453,6 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              (unsigned) this->dev_err_after_, (unsigned) this->dev_err_after_);
     mqtt->publish(this->diag_topic_, payload);
     this->dev_err_cleared_pending_ = false;
-  }
-
-  if (this->tx_test_enabled_) {
-    if (this->radio != nullptr && (this->tx_test_last_ms_ == 0 || loop_now_ms - this->tx_test_last_ms_ >= this->tx_test_interval_ms_)) {
-      this->tx_test_last_ms_ = loop_now_ms;
-      const bool ok = this->radio->transmit_test_frame(this->tx_test_mode_, this->tx_test_frame_length_, this->tx_test_data_gpio_);
-      ESP_LOGI(TAG, "TX test frame / ramka testowa TX: mode=%s length=%u result=%s",
-               listen_mode_to_string_(this->tx_test_mode_),
-               (unsigned) this->tx_test_frame_length_,
-               ok ? "OK" : "FAIL");
-    }
-    return;
   }
 
   this->maybe_publish_health_(loop_now_ms);
