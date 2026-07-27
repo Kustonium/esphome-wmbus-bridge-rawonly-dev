@@ -74,8 +74,9 @@ public:
     int8_t result{0};         // level finally reported for the frame
   };
 
-  // Pops one pending snapshot. Returns false when there is nothing to report,
-  // which is the default for drivers that do not record provenance.
+  // Pops one pending snapshot. Returns false when there is nothing left to
+  // report, which is the default for drivers that do not record provenance.
+  // Call it until it returns false: a driver may have more than one waiting.
   virtual bool take_rssi_diag(RssiDiag &out) { return false; }
 
   bool read_in_task(uint8_t *buffer, size_t length);

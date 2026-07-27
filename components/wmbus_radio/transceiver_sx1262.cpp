@@ -314,26 +314,29 @@ void SX1262::record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, i
   const uint8_t slot = (uint8_t) path;
   if (this->rssi_diag_reported_[slot])
     return;
-  // Claim the slot before filling the snapshot, so a frame arriving on the
-  // other path cannot start a second write into the same single-slot mailbox.
+  // Claim the slot before filling it, so a second frame on this same path
+  // cannot start another write into it.
   this->rssi_diag_reported_[slot] = true;
 
-  this->rssi_diag_.path = path_str;
-  this->rssi_diag_.source = source;
-  this->rssi_diag_.raw_sync = raw_sync;
-  this->rssi_diag_.raw_avg = raw_avg;
-  this->rssi_diag_.inflight = inflight;
-  this->rssi_diag_.result = this->last_rssi_dbm_;
+  this->rssi_diag_[slot].path = path_str;
+  this->rssi_diag_[slot].source = source;
+  this->rssi_diag_[slot].raw_sync = raw_sync;
+  this->rssi_diag_[slot].raw_avg = raw_avg;
+  this->rssi_diag_[slot].inflight = inflight;
+  this->rssi_diag_[slot].result = this->last_rssi_dbm_;
   // Published last: the main task treats this flag as "snapshot is complete".
-  this->rssi_diag_pending_ = true;
+  this->rssi_diag_pending_[slot] = true;
 }
 
 bool SX1262::take_rssi_diag(RssiDiag &out) {
-  if (!this->rssi_diag_pending_)
-    return false;
-  out = this->rssi_diag_;
-  this->rssi_diag_pending_ = false;
-  return true;
+  for (uint8_t slot = 0; slot < 2; slot++) {
+    if (!this->rssi_diag_pending_[slot])
+      continue;
+    out = this->rssi_diag_[slot];
+    this->rssi_diag_pending_[slot] = false;
+    return true;
+  }
+  return false;
 }
 
 

@@ -323,8 +323,10 @@ void Radio::loop() {
   // main task. Drivers report the first frame on each receive path and then go
   // quiet, so this is a handful of lines per boot, not per frame.
   if (this->radio != nullptr) {
+    // Drain every pending snapshot, not just one: a driver reports once per
+    // receive path, and both can be waiting after a single busy stretch.
     RadioTransceiver::RssiDiag rssi_diag{};
-    if (this->radio->take_rssi_diag(rssi_diag)) {
+    while (this->radio->take_rssi_diag(rssi_diag)) {
       ESP_LOGI(TAG,
                "RSSI source / zrodlo RSSI: %s (path=%s RssiSync=0x%02X RssiAvg=0x%02X inflight=%ddBm) -> %ddBm",
                rssi_diag.source, rssi_diag.path, (unsigned) rssi_diag.raw_sync,

@@ -137,11 +137,15 @@ class SX1262 : public RadioTransceiver {
   // -127 = not measured for this frame; rf_runtime.cpp ignores anything <= -126.
   int8_t last_rssi_dbm_{-127};
 
-  // Single-slot mailbox handing the RSSI provenance of the first frame on each
-  // receive path to the main task, which is the only one that can log it.
-  // Written by the receiver task, drained by take_rssi_diag() from Radio::loop().
-  RssiDiag rssi_diag_{};
-  bool rssi_diag_pending_{false};
+  // Mailbox handing the RSSI provenance of the first frame on each receive path
+  // to the main task, which is the only one that can log it. Written by the
+  // receiver task, drained by take_rssi_diag() from Radio::loop().
+  //
+  // One slot per path, indexed by RxPath. A single shared slot loses reports:
+  // the receiver task can take both paths within one Radio::loop() iteration,
+  // and the second snapshot then overwrites the first before anything reads it.
+  RssiDiag rssi_diag_[2]{};
+  bool rssi_diag_pending_[2]{};
   bool rssi_diag_reported_[2]{};
 };
 
