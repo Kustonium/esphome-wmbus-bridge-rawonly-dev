@@ -72,6 +72,11 @@ public:
     uint8_t raw_avg{0};       // raw RssiAvg (0 = not latched)
     int8_t inflight{0};       // level sampled while the frame was on air
     int8_t result{0};         // level finally reported for the frame
+    uint16_t trigger_irq{0};  // IRQ snapshot that selected the receive path
+    uint16_t captured{0};     // bytes captured before the upper drain limit
+    const char *exit_reason{"n/a"};
+    uint8_t first_bytes[8]{};
+    uint8_t first_len{0};
   };
 
   // Pops one pending snapshot. Returns false when there is nothing left to

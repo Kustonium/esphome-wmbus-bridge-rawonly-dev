@@ -88,7 +88,8 @@ class SX1262 : public RadioTransceiver {
 
   // Diagnostic: note which source the frame's RSSI came from, for Radio::loop()
   // to report. Called from the receiver task; must not log at INFO itself.
-  void record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight);
+  void record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight,
+                         uint16_t trigger_irq = 0, const char *exit_reason = "n/a");
 
   void set_rf_frequency_(uint32_t freq_hz);
   void set_sync_word_(uint8_t sync2);
@@ -98,7 +99,7 @@ class SX1262 : public RadioTransceiver {
   bool load_rx_buffer_();
 
   // Long GFSK reception (Semtech AN1200.53)
-  bool capture_rx_stream_();
+  bool capture_rx_stream_(uint16_t trigger_irq);
 
   // Adaptive long-packet mode:
   // long_gfsk_packets=false -> always use fast normal FIFO/RX_DONE path.

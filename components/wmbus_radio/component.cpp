@@ -331,6 +331,16 @@ void Radio::loop() {
                "RSSI source / zrodlo RSSI: %s (path=%s RssiSync=0x%02X RssiAvg=0x%02X inflight=%ddBm) -> %ddBm",
                rssi_diag.source, rssi_diag.path, (unsigned) rssi_diag.raw_sync,
                (unsigned) rssi_diag.raw_avg, (int) rssi_diag.inflight, (int) rssi_diag.result);
+      if (rssi_diag.trigger_irq != 0 || rssi_diag.captured != 0) {
+        ESP_LOGI(TAG,
+                 "SX1262 stream snapshot: IRQ=0x%04X captured=%u exit=%s first[%u]=%02X%02X%02X%02X%02X%02X%02X%02X",
+                 (unsigned) rssi_diag.trigger_irq, (unsigned) rssi_diag.captured,
+                 rssi_diag.exit_reason, (unsigned) rssi_diag.first_len,
+                 (unsigned) rssi_diag.first_bytes[0], (unsigned) rssi_diag.first_bytes[1],
+                 (unsigned) rssi_diag.first_bytes[2], (unsigned) rssi_diag.first_bytes[3],
+                 (unsigned) rssi_diag.first_bytes[4], (unsigned) rssi_diag.first_bytes[5],
+                 (unsigned) rssi_diag.first_bytes[6], (unsigned) rssi_diag.first_bytes[7]);
+      }
     }
   }
 

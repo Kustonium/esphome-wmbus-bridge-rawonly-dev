@@ -4,6 +4,8 @@
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
 
+#include <algorithm>
+
 namespace esphome {
 namespace wmbus_radio {
 
@@ -304,7 +306,8 @@ void SX1262::read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg) {
 // different registers, so seeing both is what makes the report worth having;
 // after that the radio goes quiet instead of narrating every frame.
 // ---------------------------------------------------------------------------
-void SX1262::record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight) {
+void SX1262::record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, int8_t inflight,
+                               uint16_t trigger_irq, const char *exit_reason) {
   const char *source = (this->last_rssi_dbm_ == RSSI_NOT_MEASURED) ? "none"
                      : (inflight != RSSI_NOT_MEASURED && this->last_rssi_dbm_ == inflight) ? "inflight"
                      : (raw_sync != 0 && this->last_rssi_dbm_ == sx126x_rssi_dbm_(raw_sync)) ? "sync"
@@ -328,6 +331,16 @@ void SX1262::record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, i
   this->rssi_diag_[slot].raw_avg = raw_avg;
   this->rssi_diag_[slot].inflight = inflight;
   this->rssi_diag_[slot].result = this->last_rssi_dbm_;
+  this->rssi_diag_[slot].trigger_irq = trigger_irq;
+  this->rssi_diag_[slot].exit_reason = exit_reason;
+  if (path == RxPath::STREAM) {
+    this->rssi_diag_[slot].captured = (uint16_t) this->rx_buffer_.size();
+    const size_t first_len =
+        std::min<size_t>(this->rx_buffer_.size(), sizeof(this->rssi_diag_[slot].first_bytes));
+    this->rssi_diag_[slot].first_len = (uint8_t) first_len;
+    for (size_t i = 0; i < first_len; i++)
+      this->rssi_diag_[slot].first_bytes[i] = this->rx_buffer_[i];
+  }
   // Published last: the main task treats this flag as "snapshot is complete".
   this->rssi_diag_pending_[slot] = true;
 }
@@ -481,7 +494,7 @@ bool SX1262::load_rx_buffer_() {
 // The manual first/second read split below is a conservative defensive measure;
 // ReadBuffer wraps automatically in HW so both produce identical results.
 // ---------------------------------------------------------------------------
-bool SX1262::capture_rx_stream_() {
+bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   // Semtech AN1200.53: stream from the 256-byte internal buffer while RX is still running.
   // We rely on IRQ_RX_DONE / IRQ_TIMEOUT to decide when the burst is complete (not a tiny "silence" window),
   // otherwise we may cut valid frames (WMBus T1 airtime is several ms).
@@ -499,6 +512,7 @@ bool SX1262::capture_rx_stream_() {
 
   // Capture until RX_DONE/TIMEOUT (latched IRQ), then allow a short drain window.
   bool seen_end_irq = false;
+  const char *exit_reason = "unknown";
 
   // Peak-hold of the instantaneous RSSI sampled while bytes were arriving.
   // See the RSSI block after the loop for why this is the primary source here.
@@ -510,11 +524,13 @@ bool SX1262::capture_rx_stream_() {
     // Safety: don't hang forever
     if ((now - start_ms) > 250) {
       ESP_LOGD(TAG, "Long RX capture timeout, copied=%u", (unsigned) copied);
+      exit_reason = "safety_timeout";
       break;
     }
     // Hard cap (covers max WMBus T1 raw size comfortably)
     if (copied >= 512) {
       ESP_LOGD(TAG, "Long RX capture capped at 512 bytes");
+      exit_reason = "buffer_cap";
       break;
     }
 
@@ -562,6 +578,7 @@ bool SX1262::capture_rx_stream_() {
 
       // After we saw end IRQ, wait a short "drain" window to pull remaining bytes, then stop.
       if (seen_end_irq && (now - last_change_ms) > 15) {
+        exit_reason = "end_irq";
         break;
       }
 
@@ -572,6 +589,7 @@ bool SX1262::capture_rx_stream_() {
       // rx_buffer_ and corrupt both decodes. 30ms silence at 32.768 kcps (Manchester)
       // is unambiguously end-of-packet.
       if (copied > 0 && (now - last_change_ms) > 30) {
+        exit_reason = "silence";
         break;
       }
 
@@ -606,7 +624,8 @@ bool SX1262::capture_rx_stream_() {
   } else {
     this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
   }
-  this->record_rssi_diag_(RxPath::STREAM, raw_sync, raw_avg, rssi_inflight);
+  this->record_rssi_diag_(RxPath::STREAM, raw_sync, raw_avg, rssi_inflight,
+                          trigger_irq, exit_reason);
 
   // Stop RX and clear IRQs.
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
@@ -923,7 +942,7 @@ optional<uint8_t> SX1262::read() {
         return {};
       }
       ESP_LOGD(TAG, "IRQ=%04X, capturing RX stream (adaptive long GFSK)", irq);
-      if (!this->capture_rx_stream_())
+      if (!this->capture_rx_stream_(irq))
         return {};
     } else {
       // Fast normal FIFO path. This is intentionally the default even when
