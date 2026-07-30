@@ -48,6 +48,10 @@ Radio::StageBucket Radio::bucket_for_stage_(const std::string &stage) {
   if (stage == "c1_suffix") return SB_C1_SUFFIX;
   if (stage == "c1_l_field") return SB_C1_L_FIELD;
   if (stage == "c1_length_check") return SB_C1_LENGTH_CHECK;
+  if (stage == "s1_precheck") return SB_S1_PRECHECK;
+  if (stage == "s1_manchester") return SB_S1_MANCHESTER;
+  if (stage == "s1_l_field") return SB_S1_L_FIELD;
+  if (stage == "s1_length_check") return SB_S1_LENGTH_CHECK;
   if (stage == "dll_crc_first") return SB_DLL_CRC_FIRST;
   if (stage == "dll_crc_mid") return SB_DLL_CRC_MID;
   if (stage == "dll_crc_final") return SB_DLL_CRC_FINAL;
@@ -353,7 +357,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
                                 : "unknown";
   const uint32_t interval_s = elapsed / 1000U;
 
-  char payload[2048];
+  char payload[3072];
   const uint32_t crc_failed = this->diag_dropped_by_bucket_[DB_DLL_CRC_FAILED];
   const uint32_t total = this->diag_total_;
   const uint32_t ok = this->diag_ok_;
@@ -381,6 +385,22 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   const int32_t c1_avg_ok_rssi = (this->diag_mode_rssi_ok_n_[C1] == 0) ? 0 : (this->diag_mode_rssi_ok_sum_[C1] / (int32_t) this->diag_mode_rssi_ok_n_[C1]);
   const int32_t t1_avg_drop_rssi = (this->diag_mode_rssi_drop_n_[T1] == 0) ? 0 : (this->diag_mode_rssi_drop_sum_[T1] / (int32_t) this->diag_mode_rssi_drop_n_[T1]);
   const int32_t c1_avg_drop_rssi = (this->diag_mode_rssi_drop_n_[C1] == 0) ? 0 : (this->diag_mode_rssi_drop_sum_[C1] / (int32_t) this->diag_mode_rssi_drop_n_[C1]);
+
+  // S1 is collected by the same per-mode counters as T1 and C1 (the arrays are
+  // indexed by LinkMode), it was simply never read here.
+  const uint8_t S1 = (uint8_t) LinkMode::S1;
+  const uint32_t s1_total = this->diag_mode_total_[S1];
+  const uint32_t s1_ok = this->diag_mode_ok_[S1];
+  const uint32_t s1_drop = this->diag_mode_dropped_[S1];
+  const uint32_t s1_crc = this->diag_mode_crc_failed_[S1];
+  const uint32_t s1_per_pct = (s1_total == 0) ? 0 : (s1_drop * 100U) / s1_total;
+  const uint32_t s1_crc_pct = (s1_total == 0) ? 0 : (s1_crc * 100U) / s1_total;
+  const int32_t s1_avg_ok_rssi = (this->diag_mode_rssi_ok_n_[S1] == 0) ? 0 : (this->diag_mode_rssi_ok_sum_[S1] / (int32_t) this->diag_mode_rssi_ok_n_[S1]);
+  const int32_t s1_avg_drop_rssi = (this->diag_mode_rssi_drop_n_[S1] == 0) ? 0 : (this->diag_mode_rssi_drop_sum_[S1] / (int32_t) this->diag_mode_rssi_drop_n_[S1]);
+  // S-mode is Manchester coded, so its analogue of the T1 3-of-6 symbol errors
+  // is the share of frames that died at the manchester stage.
+  const uint32_t s1_manch_drop = this->diag_dropped_by_stage_[SB_S1_MANCHESTER];
+  const uint32_t s1_manch_pct = (s1_total == 0) ? 0 : (s1_manch_drop * 100U) / s1_total;
 
   const uint32_t t1_sym_total = this->diag_t1_symbols_total_;
   const uint32_t t1_sym_invalid = this->diag_t1_symbols_invalid_;
@@ -429,6 +449,27 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
       hint_code = "C1_OVERLOAD_OR_MULTIPATH";
       hint_en = "C1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move antenna 0.5-2m, change polarization, or attenuate.";
       hint_pl = "C1: CRC pada mimo dobrego RSSI; możliwy przester odbiornika lub wielodrogowość. Odsuń antenę 0,5-2m, zmień polaryzację lub stłum sygnał.";
+    } else if (s1_total > 0 && s1_ok == 0 && s1_crc == s1_total) {
+      if (s1_avg_drop_rssi <= -95) {
+        hint_code = "S1_WEAK_SIGNAL";
+        hint_en = "S1 frames fail DLL CRC at very low RSSI; improve antenna/placement";
+        hint_pl = "S1: CRC DLL nie przechodzi przy bardzo niskim RSSI; popraw antenę/pozycję";
+      } else {
+        hint_code = "S1_INTERFERENCE_OR_RX";
+        hint_en = "S1 frames fail DLL CRC despite decent RSSI; check interference/RX settings";
+        hint_pl = "S1: CRC DLL nie przechodzi mimo niezłego RSSI; sprawdź zakłócenia/ustawienia RX";
+      }
+    } else if (s1_total > 0 && s1_manch_pct >= 20) {
+      // S-mode analogue of T1_SYMBOL_ERRORS: the 3-of-6 coding of T1 is
+      // replaced by Manchester, so frames that die at the manchester stage are
+      // the same class of symptom.
+      hint_code = "S1_MANCHESTER_ERRORS";
+      hint_en = "many S1 frames fail Manchester decoding; likely collisions, interference, or a receiver not locked to the 32.768 kbps S-mode timing";
+      hint_pl = "wiele ramek S1 nie przechodzi dekodowania Manchester; możliwe kolizje, zakłócenia lub odbiornik niezsynchronizowany z timingiem S-mode 32,768 kbps";
+    } else if (s1_total > 0 && s1_crc > 0 && s1_avg_ok_rssi >= -65 && s1_avg_drop_rssi >= -80) {
+      hint_code = "S1_OVERLOAD_OR_MULTIPATH";
+      hint_en = "S1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move antenna 0.5-2m, change polarization, or attenuate.";
+      hint_pl = "S1: CRC pada mimo dobrego RSSI; możliwy przester odbiornika lub wielodrogowość. Odsuń antenę 0,5-2m, zmień polaryzację lub stłum sygnał.";
     } else if (t1_total > 0 && t1_crc > 0 && t1_avg_ok_rssi >= -65 && t1_avg_drop_rssi >= -80) {
       hint_code = "T1_OVERLOAD_OR_MULTIPATH";
       hint_en = "T1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move/rotate antenna or attenuate.";
@@ -485,7 +526,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
     }
   }
 
-  snprintf(payload, sizeof(payload),
+  const int payload_len = snprintf(payload, sizeof(payload),
            "{"
            "\"event\":\"summary\"," 
            "\"interval_s\":%u,"
@@ -510,6 +551,11 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
              "\"total\":%u,\"ok\":%u,\"dropped\":%u,\"per_pct\":%u,"
              "\"crc_failed\":%u,\"crc_pct\":%u,\"avg_ok_rssi\":%d,\"avg_drop_rssi\":%d"
            "},"
+           "\"s1\":{"
+             "\"total\":%u,\"ok\":%u,\"dropped\":%u,\"per_pct\":%u,"
+             "\"crc_failed\":%u,\"crc_pct\":%u,\"avg_ok_rssi\":%d,\"avg_drop_rssi\":%d,"
+             "\"manchester_drop\":%u,\"manchester_pct\":%u"
+           "},"
            "\"dropped_by_reason\":{"
              "\"too_short\":%u,"
              "\"decode_failed\":%u,"
@@ -529,6 +575,10 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
              "\"c1_suffix\":%u,"
              "\"c1_l_field\":%u,"
              "\"c1_length_check\":%u,"
+             "\"s1_precheck\":%u,"
+             "\"s1_manchester\":%u,"
+             "\"s1_l_field\":%u,"
+             "\"s1_length_check\":%u,"
              "\"dll_crc_first\":%u,"
              "\"dll_crc_mid\":%u,"
              "\"dll_crc_final\":%u,"
@@ -595,6 +645,16 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
            (unsigned) c1_crc_pct,
            (int) c1_avg_ok_rssi,
            (int) c1_avg_drop_rssi,
+           (unsigned) s1_total,
+           (unsigned) s1_ok,
+           (unsigned) s1_drop,
+           (unsigned) s1_per_pct,
+           (unsigned) s1_crc,
+           (unsigned) s1_crc_pct,
+           (int) s1_avg_ok_rssi,
+           (int) s1_avg_drop_rssi,
+           (unsigned) s1_manch_drop,
+           (unsigned) s1_manch_pct,
            (unsigned) this->diag_dropped_by_bucket_[DB_TOO_SHORT],
            (unsigned) this->diag_dropped_by_bucket_[DB_DECODE_FAILED],
            (unsigned) this->diag_dropped_by_bucket_[DB_DLL_CRC_FAILED],
@@ -611,6 +671,10 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
            (unsigned) this->diag_dropped_by_stage_[SB_C1_SUFFIX],
            (unsigned) this->diag_dropped_by_stage_[SB_C1_L_FIELD],
            (unsigned) this->diag_dropped_by_stage_[SB_C1_LENGTH_CHECK],
+           (unsigned) this->diag_dropped_by_stage_[SB_S1_PRECHECK],
+           (unsigned) this->diag_dropped_by_stage_[SB_S1_MANCHESTER],
+           (unsigned) this->diag_dropped_by_stage_[SB_S1_L_FIELD],
+           (unsigned) this->diag_dropped_by_stage_[SB_S1_LENGTH_CHECK],
            (unsigned) this->diag_dropped_by_stage_[SB_DLL_CRC_FIRST],
            (unsigned) this->diag_dropped_by_stage_[SB_DLL_CRC_MID],
            (unsigned) this->diag_dropped_by_stage_[SB_DLL_CRC_FINAL],
@@ -658,6 +722,11 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
                : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::ADAPTIVE)
                    ? (this->busy_ether_was_active_ ? "adaptive_active" : "adaptive_passive")
                    : (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::AGGRESSIVE ? "aggressive" : "normal"));
+
+  if (payload_len < 0 || (size_t) payload_len >= sizeof(payload)) {
+    ESP_LOGW(TAG, "DIAG summary payload truncated (%d of %u bytes); published JSON is incomplete",
+             payload_len, (unsigned) sizeof(payload));
+  }
 
   const std::string summary_topic = this->diag_summary_topic_();
   mqtt->publish(summary_topic, payload);
@@ -723,7 +792,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
                                 : "unknown";
   const uint32_t interval_s = elapsed / 1000U;
 
-  char payload[2048];
+  char payload[3072];
   const uint32_t crc_failed = this->diag_15m_dropped_by_bucket_[DB_DLL_CRC_FAILED];
   const uint32_t total = this->diag_15m_total_;
   const uint32_t ok = this->diag_15m_ok_;
@@ -751,6 +820,18 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
   const int32_t c1_avg_ok_rssi = (this->diag_15m_mode_rssi_ok_n_[C1] == 0) ? 0 : (this->diag_15m_mode_rssi_ok_sum_[C1] / (int32_t) this->diag_15m_mode_rssi_ok_n_[C1]);
   const int32_t t1_avg_drop_rssi = (this->diag_15m_mode_rssi_drop_n_[T1] == 0) ? 0 : (this->diag_15m_mode_rssi_drop_sum_[T1] / (int32_t) this->diag_15m_mode_rssi_drop_n_[T1]);
   const int32_t c1_avg_drop_rssi = (this->diag_15m_mode_rssi_drop_n_[C1] == 0) ? 0 : (this->diag_15m_mode_rssi_drop_sum_[C1] / (int32_t) this->diag_15m_mode_rssi_drop_n_[C1]);
+
+  const uint8_t S1 = (uint8_t) LinkMode::S1;
+  const uint32_t s1_total = this->diag_15m_mode_total_[S1];
+  const uint32_t s1_ok = this->diag_15m_mode_ok_[S1];
+  const uint32_t s1_drop = this->diag_15m_mode_dropped_[S1];
+  const uint32_t s1_crc = this->diag_15m_mode_crc_failed_[S1];
+  const uint32_t s1_per_pct = (s1_total == 0) ? 0 : (s1_drop * 100U) / s1_total;
+  const uint32_t s1_crc_pct = (s1_total == 0) ? 0 : (s1_crc * 100U) / s1_total;
+  const int32_t s1_avg_ok_rssi = (this->diag_15m_mode_rssi_ok_n_[S1] == 0) ? 0 : (this->diag_15m_mode_rssi_ok_sum_[S1] / (int32_t) this->diag_15m_mode_rssi_ok_n_[S1]);
+  const int32_t s1_avg_drop_rssi = (this->diag_15m_mode_rssi_drop_n_[S1] == 0) ? 0 : (this->diag_15m_mode_rssi_drop_sum_[S1] / (int32_t) this->diag_15m_mode_rssi_drop_n_[S1]);
+  const uint32_t s1_manch_drop = this->diag_15m_dropped_by_stage_[SB_S1_MANCHESTER];
+  const uint32_t s1_manch_pct = (s1_total == 0) ? 0 : (s1_manch_drop * 100U) / s1_total;
 
   const uint32_t t1_sym_total = this->diag_15m_t1_symbols_total_;
   const uint32_t t1_sym_invalid = this->diag_15m_t1_symbols_invalid_;
@@ -799,6 +880,27 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
       hint_code = "C1_OVERLOAD_OR_MULTIPATH";
       hint_en = "C1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move antenna 0.5-2m, change polarization, or attenuate.";
       hint_pl = "C1: CRC pada mimo dobrego RSSI; możliwy przester odbiornika lub wielodrogowość. Odsuń antenę 0,5-2m, zmień polaryzację lub stłum sygnał.";
+    } else if (s1_total > 0 && s1_ok == 0 && s1_crc == s1_total) {
+      if (s1_avg_drop_rssi <= -95) {
+        hint_code = "S1_WEAK_SIGNAL";
+        hint_en = "S1 frames fail DLL CRC at very low RSSI; improve antenna/placement";
+        hint_pl = "S1: CRC DLL nie przechodzi przy bardzo niskim RSSI; popraw antenę/pozycję";
+      } else {
+        hint_code = "S1_INTERFERENCE_OR_RX";
+        hint_en = "S1 frames fail DLL CRC despite decent RSSI; check interference/RX settings";
+        hint_pl = "S1: CRC DLL nie przechodzi mimo niezłego RSSI; sprawdź zakłócenia/ustawienia RX";
+      }
+    } else if (s1_total > 0 && s1_manch_pct >= 20) {
+      // S-mode analogue of T1_SYMBOL_ERRORS: the 3-of-6 coding of T1 is
+      // replaced by Manchester, so frames that die at the manchester stage are
+      // the same class of symptom.
+      hint_code = "S1_MANCHESTER_ERRORS";
+      hint_en = "many S1 frames fail Manchester decoding; likely collisions, interference, or a receiver not locked to the 32.768 kbps S-mode timing";
+      hint_pl = "wiele ramek S1 nie przechodzi dekodowania Manchester; możliwe kolizje, zakłócenia lub odbiornik niezsynchronizowany z timingiem S-mode 32,768 kbps";
+    } else if (s1_total > 0 && s1_crc > 0 && s1_avg_ok_rssi >= -65 && s1_avg_drop_rssi >= -80) {
+      hint_code = "S1_OVERLOAD_OR_MULTIPATH";
+      hint_en = "S1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move antenna 0.5-2m, change polarization, or attenuate.";
+      hint_pl = "S1: CRC pada mimo dobrego RSSI; możliwy przester odbiornika lub wielodrogowość. Odsuń antenę 0,5-2m, zmień polaryzację lub stłum sygnał.";
     } else if (t1_total > 0 && t1_crc > 0 && t1_avg_ok_rssi >= -65 && t1_avg_drop_rssi >= -80) {
       hint_code = "T1_OVERLOAD_OR_MULTIPATH";
       hint_en = "T1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move/rotate antenna or attenuate.";
@@ -855,7 +957,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
     }
   }
 
-  snprintf(payload, sizeof(payload),
+  const int payload_len = snprintf(payload, sizeof(payload),
            "{"
            "\"event\":\"summary\"," 
            "\"interval_s\":%u,"
@@ -880,6 +982,11 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
              "\"total\":%u,\"ok\":%u,\"dropped\":%u,\"per_pct\":%u,"
              "\"crc_failed\":%u,\"crc_pct\":%u,\"avg_ok_rssi\":%d,\"avg_drop_rssi\":%d"
            "},"
+           "\"s1\":{"
+             "\"total\":%u,\"ok\":%u,\"dropped\":%u,\"per_pct\":%u,"
+             "\"crc_failed\":%u,\"crc_pct\":%u,\"avg_ok_rssi\":%d,\"avg_drop_rssi\":%d,"
+             "\"manchester_drop\":%u,\"manchester_pct\":%u"
+           "},"
            "\"dropped_by_reason\":{"
              "\"too_short\":%u,"
              "\"decode_failed\":%u,"
@@ -899,6 +1006,10 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
              "\"c1_suffix\":%u,"
              "\"c1_l_field\":%u,"
              "\"c1_length_check\":%u,"
+             "\"s1_precheck\":%u,"
+             "\"s1_manchester\":%u,"
+             "\"s1_l_field\":%u,"
+             "\"s1_length_check\":%u,"
              "\"dll_crc_first\":%u,"
              "\"dll_crc_mid\":%u,"
              "\"dll_crc_final\":%u,"
@@ -964,6 +1075,16 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            (unsigned) c1_crc_pct,
            (int) c1_avg_ok_rssi,
            (int) c1_avg_drop_rssi,
+           (unsigned) s1_total,
+           (unsigned) s1_ok,
+           (unsigned) s1_drop,
+           (unsigned) s1_per_pct,
+           (unsigned) s1_crc,
+           (unsigned) s1_crc_pct,
+           (int) s1_avg_ok_rssi,
+           (int) s1_avg_drop_rssi,
+           (unsigned) s1_manch_drop,
+           (unsigned) s1_manch_pct,
            (unsigned) this->diag_15m_dropped_by_bucket_[DB_TOO_SHORT],
            (unsigned) this->diag_15m_dropped_by_bucket_[DB_DECODE_FAILED],
            (unsigned) this->diag_15m_dropped_by_bucket_[DB_DLL_CRC_FAILED],
@@ -980,6 +1101,10 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            (unsigned) this->diag_15m_dropped_by_stage_[SB_C1_SUFFIX],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_C1_L_FIELD],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_C1_LENGTH_CHECK],
+           (unsigned) this->diag_15m_dropped_by_stage_[SB_S1_PRECHECK],
+           (unsigned) this->diag_15m_dropped_by_stage_[SB_S1_MANCHESTER],
+           (unsigned) this->diag_15m_dropped_by_stage_[SB_S1_L_FIELD],
+           (unsigned) this->diag_15m_dropped_by_stage_[SB_S1_LENGTH_CHECK],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_DLL_CRC_FIRST],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_DLL_CRC_MID],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_DLL_CRC_FINAL],
@@ -1020,6 +1145,11 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            hint_code,
            hint_en,
            hint_pl);
+
+  if (payload_len < 0 || (size_t) payload_len >= sizeof(payload)) {
+    ESP_LOGW(TAG, "DIAG summary payload truncated (%d of %u bytes); published JSON is incomplete",
+             payload_len, (unsigned) sizeof(payload));
+  }
 
   const std::string summary_topic = this->diag_summary_15min_topic_();
   mqtt->publish(summary_topic, payload);
@@ -1098,7 +1228,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
                                 : "unknown";
   const uint32_t interval_s = elapsed / 1000U;
 
-  char payload[2048];
+  char payload[3072];
   const uint32_t crc_failed = this->diag_60min_dropped_by_bucket_[DB_DLL_CRC_FAILED];
   const uint32_t total = this->diag_60min_total_;
   const uint32_t ok = this->diag_60min_ok_;
@@ -1126,6 +1256,18 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
   const int32_t c1_avg_ok_rssi = (this->diag_60min_mode_rssi_ok_n_[C1] == 0) ? 0 : (this->diag_60min_mode_rssi_ok_sum_[C1] / (int32_t) this->diag_60min_mode_rssi_ok_n_[C1]);
   const int32_t t1_avg_drop_rssi = (this->diag_60min_mode_rssi_drop_n_[T1] == 0) ? 0 : (this->diag_60min_mode_rssi_drop_sum_[T1] / (int32_t) this->diag_60min_mode_rssi_drop_n_[T1]);
   const int32_t c1_avg_drop_rssi = (this->diag_60min_mode_rssi_drop_n_[C1] == 0) ? 0 : (this->diag_60min_mode_rssi_drop_sum_[C1] / (int32_t) this->diag_60min_mode_rssi_drop_n_[C1]);
+
+  const uint8_t S1 = (uint8_t) LinkMode::S1;
+  const uint32_t s1_total = this->diag_60min_mode_total_[S1];
+  const uint32_t s1_ok = this->diag_60min_mode_ok_[S1];
+  const uint32_t s1_drop = this->diag_60min_mode_dropped_[S1];
+  const uint32_t s1_crc = this->diag_60min_mode_crc_failed_[S1];
+  const uint32_t s1_per_pct = (s1_total == 0) ? 0 : (s1_drop * 100U) / s1_total;
+  const uint32_t s1_crc_pct = (s1_total == 0) ? 0 : (s1_crc * 100U) / s1_total;
+  const int32_t s1_avg_ok_rssi = (this->diag_60min_mode_rssi_ok_n_[S1] == 0) ? 0 : (this->diag_60min_mode_rssi_ok_sum_[S1] / (int32_t) this->diag_60min_mode_rssi_ok_n_[S1]);
+  const int32_t s1_avg_drop_rssi = (this->diag_60min_mode_rssi_drop_n_[S1] == 0) ? 0 : (this->diag_60min_mode_rssi_drop_sum_[S1] / (int32_t) this->diag_60min_mode_rssi_drop_n_[S1]);
+  const uint32_t s1_manch_drop = this->diag_60min_dropped_by_stage_[SB_S1_MANCHESTER];
+  const uint32_t s1_manch_pct = (s1_total == 0) ? 0 : (s1_manch_drop * 100U) / s1_total;
 
   const uint32_t t1_sym_total = this->diag_60min_t1_symbols_total_;
   const uint32_t t1_sym_invalid = this->diag_60min_t1_symbols_invalid_;
@@ -1174,6 +1316,27 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
       hint_code = "C1_OVERLOAD_OR_MULTIPATH";
       hint_en = "C1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move antenna 0.5-2m, change polarization, or attenuate.";
       hint_pl = "C1: CRC pada mimo dobrego RSSI; możliwy przester odbiornika lub wielodrogowość. Odsuń antenę 0,5-2m, zmień polaryzację lub stłum sygnał.";
+    } else if (s1_total > 0 && s1_ok == 0 && s1_crc == s1_total) {
+      if (s1_avg_drop_rssi <= -95) {
+        hint_code = "S1_WEAK_SIGNAL";
+        hint_en = "S1 frames fail DLL CRC at very low RSSI; improve antenna/placement";
+        hint_pl = "S1: CRC DLL nie przechodzi przy bardzo niskim RSSI; popraw antenę/pozycję";
+      } else {
+        hint_code = "S1_INTERFERENCE_OR_RX";
+        hint_en = "S1 frames fail DLL CRC despite decent RSSI; check interference/RX settings";
+        hint_pl = "S1: CRC DLL nie przechodzi mimo niezłego RSSI; sprawdź zakłócenia/ustawienia RX";
+      }
+    } else if (s1_total > 0 && s1_manch_pct >= 20) {
+      // S-mode analogue of T1_SYMBOL_ERRORS: the 3-of-6 coding of T1 is
+      // replaced by Manchester, so frames that die at the manchester stage are
+      // the same class of symptom.
+      hint_code = "S1_MANCHESTER_ERRORS";
+      hint_en = "many S1 frames fail Manchester decoding; likely collisions, interference, or a receiver not locked to the 32.768 kbps S-mode timing";
+      hint_pl = "wiele ramek S1 nie przechodzi dekodowania Manchester; możliwe kolizje, zakłócenia lub odbiornik niezsynchronizowany z timingiem S-mode 32,768 kbps";
+    } else if (s1_total > 0 && s1_crc > 0 && s1_avg_ok_rssi >= -65 && s1_avg_drop_rssi >= -80) {
+      hint_code = "S1_OVERLOAD_OR_MULTIPATH";
+      hint_en = "S1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move antenna 0.5-2m, change polarization, or attenuate.";
+      hint_pl = "S1: CRC pada mimo dobrego RSSI; możliwy przester odbiornika lub wielodrogowość. Odsuń antenę 0,5-2m, zmień polaryzację lub stłum sygnał.";
     } else if (t1_total > 0 && t1_crc > 0 && t1_avg_ok_rssi >= -65 && t1_avg_drop_rssi >= -80) {
       hint_code = "T1_OVERLOAD_OR_MULTIPATH";
       hint_en = "T1 CRC fails despite strong RSSI; possible receiver overload or multipath. Move/rotate antenna or attenuate.";
@@ -1230,7 +1393,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
     }
   }
 
-  snprintf(payload, sizeof(payload),
+  const int payload_len = snprintf(payload, sizeof(payload),
            "{"
            "\"event\":\"summary\"," 
            "\"interval_s\":%u,"
@@ -1255,6 +1418,11 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
              "\"total\":%u,\"ok\":%u,\"dropped\":%u,\"per_pct\":%u,"
              "\"crc_failed\":%u,\"crc_pct\":%u,\"avg_ok_rssi\":%d,\"avg_drop_rssi\":%d"
            "},"
+           "\"s1\":{"
+             "\"total\":%u,\"ok\":%u,\"dropped\":%u,\"per_pct\":%u,"
+             "\"crc_failed\":%u,\"crc_pct\":%u,\"avg_ok_rssi\":%d,\"avg_drop_rssi\":%d,"
+             "\"manchester_drop\":%u,\"manchester_pct\":%u"
+           "},"
            "\"dropped_by_reason\":{"
              "\"too_short\":%u,"
              "\"decode_failed\":%u,"
@@ -1274,6 +1442,10 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
              "\"c1_suffix\":%u,"
              "\"c1_l_field\":%u,"
              "\"c1_length_check\":%u,"
+             "\"s1_precheck\":%u,"
+             "\"s1_manchester\":%u,"
+             "\"s1_l_field\":%u,"
+             "\"s1_length_check\":%u,"
              "\"dll_crc_first\":%u,"
              "\"dll_crc_mid\":%u,"
              "\"dll_crc_final\":%u,"
@@ -1339,6 +1511,16 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            (unsigned) c1_crc_pct,
            (int) c1_avg_ok_rssi,
            (int) c1_avg_drop_rssi,
+           (unsigned) s1_total,
+           (unsigned) s1_ok,
+           (unsigned) s1_drop,
+           (unsigned) s1_per_pct,
+           (unsigned) s1_crc,
+           (unsigned) s1_crc_pct,
+           (int) s1_avg_ok_rssi,
+           (int) s1_avg_drop_rssi,
+           (unsigned) s1_manch_drop,
+           (unsigned) s1_manch_pct,
            (unsigned) this->diag_60min_dropped_by_bucket_[DB_TOO_SHORT],
            (unsigned) this->diag_60min_dropped_by_bucket_[DB_DECODE_FAILED],
            (unsigned) this->diag_60min_dropped_by_bucket_[DB_DLL_CRC_FAILED],
@@ -1355,6 +1537,10 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            (unsigned) this->diag_60min_dropped_by_stage_[SB_C1_SUFFIX],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_C1_L_FIELD],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_C1_LENGTH_CHECK],
+           (unsigned) this->diag_60min_dropped_by_stage_[SB_S1_PRECHECK],
+           (unsigned) this->diag_60min_dropped_by_stage_[SB_S1_MANCHESTER],
+           (unsigned) this->diag_60min_dropped_by_stage_[SB_S1_L_FIELD],
+           (unsigned) this->diag_60min_dropped_by_stage_[SB_S1_LENGTH_CHECK],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_DLL_CRC_FIRST],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_DLL_CRC_MID],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_DLL_CRC_FINAL],
@@ -1395,6 +1581,11 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            hint_code,
            hint_en,
            hint_pl);
+
+  if (payload_len < 0 || (size_t) payload_len >= sizeof(payload)) {
+    ESP_LOGW(TAG, "DIAG summary payload truncated (%d of %u bytes); published JSON is incomplete",
+             payload_len, (unsigned) sizeof(payload));
+  }
 
   const std::string summary_topic = this->diag_summary_60min_topic_();
   mqtt->publish(summary_topic, payload);

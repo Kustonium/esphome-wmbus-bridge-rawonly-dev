@@ -1,3 +1,27 @@
+# Feature: S1 gets the same diagnostics as T1 and C1
+
+## EN
+
+### Added
+- Summaries publish an `s1` block next to `t1` and `c1` - `total`, `ok`, `dropped`, `per_pct`, `crc_failed`, `crc_pct`, `avg_ok_rssi`, `avg_drop_rssi` - plus `manchester_drop` and `manchester_pct`. The per-mode counters are indexed by link mode and S1 frames were always written to them; nothing read them back, so S1 traffic was invisible in every summary except the global totals.
+- Hints `S1_WEAK_SIGNAL`, `S1_INTERFERENCE_OR_RX` and `S1_OVERLOAD_OR_MULTIPATH`, mirroring the C1 branches, and `S1_MANCHESTER_ERRORS` when at least 20% of S1 frames die at the Manchester stage. S-mode is Manchester coded, so that stage is the analogue of T1's invalid 3-of-6 symbols.
+- `dropped_by_stage` gains `s1_precheck`, `s1_manchester`, `s1_l_field` and `s1_length_check`. The parser has emitted these stage names all along, but `bucket_for_stage_()` did not recognise them, so every S1 failure was filed under `other`.
+
+### Fixed
+- The summary payload buffer was 2048 B while the JSON needs roughly 2.2 kB once a long hint text is included, and more as counters grow. `snprintf` truncated it silently and published invalid JSON. The buffer is now 3072 B and a truncation logs a warning instead of shipping a broken payload. This could already happen before the `s1` block was added, with any of the longer C1/T1 hints.
+
+## PL
+
+### Dodano
+- Podsumowania publikują blok `s1` obok `t1` i `c1` - `total`, `ok`, `dropped`, `per_pct`, `crc_failed`, `crc_pct`, `avg_ok_rssi`, `avg_drop_rssi` - oraz `manchester_drop` i `manchester_pct`. Liczniki per tryb są indeksowane trybem łącza i ramki S1 zawsze do nich trafiały; nikt ich nie odczytywał, więc ruch S1 był niewidoczny w podsumowaniach poza sumami globalnymi.
+- Hinty `S1_WEAK_SIGNAL`, `S1_INTERFERENCE_OR_RX` i `S1_OVERLOAD_OR_MULTIPATH`, odwzorowujące gałęzie C1, oraz `S1_MANCHESTER_ERRORS`, gdy co najmniej 20% ramek S1 pada na etapie Manchester. S-mode jest kodowany Manchesterem, więc ten etap jest odpowiednikiem błędnych symboli 3-of-6 w T1.
+- `dropped_by_stage` zyskuje `s1_precheck`, `s1_manchester`, `s1_l_field` i `s1_length_check`. Parser od dawna emitował te nazwy etapów, ale `bucket_for_stage_()` ich nie rozpoznawał, więc każda porażka S1 lądowała w `other`.
+
+### Naprawiono
+- Bufor payloadu podsumowania miał 2048 B, podczas gdy JSON potrzebuje około 2,2 kB przy dłuższym tekście hinta, a rośnie wraz z licznikami. `snprintf` ucinał go po cichu i publikował niepoprawny JSON. Bufor ma teraz 3072 B, a ucięcie loguje ostrzeżenie zamiast wysyłać zepsuty payload. Mogło się to zdarzać już wcześniej, przy którymkolwiek z dłuższych hintów C1/T1.
+
+---
+
 # Fix: a window where every frame failed CRC was reported as "looks good"
 
 ## EN
