@@ -26,6 +26,19 @@ namespace wmbus_radio {
 
 static const char *TAG = "wmbus";
 
+// The three periodic summaries build a ~2-3 kB JSON document. Keeping that on
+// the stack cost the loop task 3 kB inside a call chain that goes on to nest
+// maybe_publish_suggestion_() (another 640 B buffer) and then the logger, which
+// itself writes through newlib and the VFS. That was enough to overflow the
+// loop task stack and crash inside an unrelated ESP_LOGI - the symptom was a
+// LoadProhibited fault in esp_vfs_write, not anything the diagnostics touched.
+//
+// One shared static buffer instead: the three summaries run only from
+// Radio::loop(), one after another, never concurrently, so they cannot clobber
+// each other. Costs 3 kB of .bss and takes 3 kB off the loop stack - strictly
+// less stack than before this buffer ever grew.
+static char diag_summary_payload_[3072];
+
 Radio::DropBucket Radio::bucket_for_reason_(const std::string &reason) {
   // Keep this stable: these strings come from Packet::set_drop_()
   if (reason == "too_short") return DB_TOO_SHORT;
@@ -357,7 +370,8 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
                                 : "unknown";
   const uint32_t interval_s = elapsed / 1000U;
 
-  char payload[3072];
+  // Shared static buffer, see diag_summary_payload_ above - not on the stack.
+  char (&payload)[3072] = diag_summary_payload_;
   const uint32_t crc_failed = this->diag_dropped_by_bucket_[DB_DLL_CRC_FAILED];
   const uint32_t total = this->diag_total_;
   const uint32_t ok = this->diag_ok_;
@@ -792,7 +806,8 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
                                 : "unknown";
   const uint32_t interval_s = elapsed / 1000U;
 
-  char payload[3072];
+  // Shared static buffer, see diag_summary_payload_ above - not on the stack.
+  char (&payload)[3072] = diag_summary_payload_;
   const uint32_t crc_failed = this->diag_15m_dropped_by_bucket_[DB_DLL_CRC_FAILED];
   const uint32_t total = this->diag_15m_total_;
   const uint32_t ok = this->diag_15m_ok_;
@@ -1228,7 +1243,8 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
                                 : "unknown";
   const uint32_t interval_s = elapsed / 1000U;
 
-  char payload[3072];
+  // Shared static buffer, see diag_summary_payload_ above - not on the stack.
+  char (&payload)[3072] = diag_summary_payload_;
   const uint32_t crc_failed = this->diag_60min_dropped_by_bucket_[DB_DLL_CRC_FAILED];
   const uint32_t total = this->diag_60min_total_;
   const uint32_t ok = this->diag_60min_ok_;

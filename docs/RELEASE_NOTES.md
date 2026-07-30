@@ -1,3 +1,19 @@
+# Fix: the summary payload buffer belongs in .bss, not on the loop stack
+
+## EN
+
+### Fixed
+- Growing the summary payload buffer to 3072 B put 3 kB on the loop task stack inside a call chain that then nests `maybe_publish_suggestion_()` (another 640 B buffer) and the logger, which writes through newlib and the VFS. On a LilyGO SX1276 node this crashed with `Fault - LoadProhibited` in `esp_vfs_write`, reached from an `ESP_LOGI` that only formats string literals - the signature of a stack overflow, not of a bad pointer. It fired immediately after the first 60 s summary, on the node whose suggestion path actually runs.
+- The three summaries now share one static buffer. They are called only from `Radio::loop()`, one after another and never concurrently, so they cannot clobber each other. This costs 3 kB of `.bss` and takes 3 kB off the loop stack - less stack than the code used before the buffer was ever enlarged.
+
+## PL
+
+### Naprawiono
+- Powiększenie bufora payloadu podsumowania do 3072 B umieściło 3 kB na stosie zadania pętli, w ścieżce, która zagnieżdża dalej `maybe_publish_suggestion_()` (kolejne 640 B) i logger, piszący przez newlib i VFS. Na węźle LilyGO z SX1276 kończyło się to crashem `Fault - LoadProhibited` w `esp_vfs_write`, osiągniętym z `ESP_LOGI`, które formatuje wyłącznie literały - to sygnatura przepełnienia stosu, nie złego wskaźnika. Występowało tuż po pierwszym podsumowaniu 60 s, na węźle, u którego ścieżka sugestii faktycznie się wykonuje.
+- Trzy podsumowania korzystają teraz ze wspólnego bufora statycznego. Są wołane wyłącznie z `Radio::loop()`, jedno po drugim i nigdy równolegle, więc nie mogą sobie nadpisać danych. Kosztuje to 3 kB `.bss` i zdejmuje 3 kB ze stosu pętli - mniej stosu, niż kod zajmował przed powiększeniem bufora.
+
+---
+
 # Feature: S1 gets the same diagnostics as T1 and C1
 
 ## EN
