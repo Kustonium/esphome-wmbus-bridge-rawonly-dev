@@ -85,7 +85,11 @@ static constexpr uint16_t IRQ_CRC_ERROR = 0x0040; // CRC error
 // Sync word base register
 static constexpr uint16_t REG_SYNC_WORD_0 = 0x06C0;
 
-// Rx gain register (datasheet SX1261/2 Rev 2.2)
+// Rx gain register (datasheet SX1261/2 Rev 2.2, "Rx Gain" / boosted-RX section).
+// 0x94 = power-saving gain (chip default after reset), 0x96 = boosted gain:
+// better sensitivity at a higher RX current. Not retained over sleep, so it is
+// re-written on every setup. These two byte values come straight from the
+// datasheet table — they are not tuned here.
 static constexpr uint16_t REG_RX_GAIN = 0x08AC;
 static constexpr uint8_t RX_GAIN_POWER_SAVING = 0x94;
 static constexpr uint8_t RX_GAIN_BOOSTED = 0x96;
@@ -743,12 +747,20 @@ void SX1262::setup() {
   // DIO2 RF switch
   this->cmd_write_(CMD_SET_DIO2_AS_RF_SWITCH_CTRL, {uint8_t(this->dio2_rf_switch_ ? 0x01 : 0x00)});
 
-  // TCXO only if enabled
+  // TCXO only if enabled.
+  // SetDIO3AsTcxoCtrl(tcxoVoltage, timeout[23:0]) per SX1261/2 datasheet:
+  // DIO3_OUTPUT_3_0 selects 3.0 V, and the 24-bit timeout counts in 15.625 us
+  // steps, so 0x000040 = 64 steps = 1 ms of TCXO start-up time before the chip
+  // considers the reference stable.
   if (this->has_tcxo_) {
     this->cmd_write_(CMD_SET_DIO3_AS_TCXO_CTRL, {DIO3_OUTPUT_3_0, 0x00, 0x00, 0x40});
     delay(5);
   }
 
+  // CalibrateImage(freq1, freq2) per SX1261/2 datasheet: the two bytes select the
+  // band the image rejection is calibrated for. 0xD7/0xDB is the datasheet entry
+  // for 863-870 MHz, i.e. the wM-Bus EU band this bridge listens on. Changing the
+  // configured frequency outside that band would need the matching pair.
   this->cmd_write_(CMD_CALIBRATE_IMAGE, {0xD7, 0xDB});
 
   this->cmd_write_(CMD_SET_PACKET_TYPE, {PACKET_TYPE_GFSK});

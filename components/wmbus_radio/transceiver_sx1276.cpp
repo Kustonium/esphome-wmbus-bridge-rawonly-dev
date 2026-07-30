@@ -76,6 +76,35 @@ optional<uint8_t> SX1276::drain_fifo_once_() {
   return {};
 }
 
+// ---------------------------------------------------------------------------
+// Register map used by setup() below. Addresses are written as raw literals to
+// keep the configuration sequence readable in datasheet order; this table is the
+// key. Source: Semtech SX1276/77/78/79 datasheet, FSK/OOK mode register table
+// (the LoRa-mode table maps the same addresses to different registers, so read
+// it in the FSK column).
+//
+//   0x02,0x03  RegBitrateMsb/Lsb     bit rate (100 kbps T1/C1, 32.768 kbps S1)
+//   0x04,0x05  RegFdevMsb/Lsb        frequency deviation (50 kHz T1, 45 kHz C1)
+//   0x06..0x08 RegFrfMsb/Mid/Lsb     carrier frequency, step = F_OSC / 2^19
+//   0x0D       RegRxConfig           AFC/AGC auto-on + RX trigger source
+//   0x0E       RegRssiConfig         RSSI smoothing
+//   0x12,0x13  RegRxBw / RegAfcBw    receiver and AFC bandwidth
+//   0x1F       RegPreambleDetect     detector on, size, tolerance
+//   0x24       RegOsc                CLKOUT divider (0b111 = CLKOUT off)
+//   0x25,0x26  RegPreambleMsb/Lsb    preamble length
+//   0x27       RegSyncConfig         sync on/off, fill condition, sync size
+//   0x28..0x2F RegSyncValue1..8      sync word bytes (0x54 0x3D T1, 0x54 0xCD C1)
+//   0x30       RegPacketConfig1      packet format, CRC, whitening (0 = raw)
+//   0x32       RegPayloadLength      0 with fixed-length = unlimited packet mode
+//   0x35       RegFifoThresh         FIFO level threshold driving DIO1
+//   0x3F       RegIrqFlags2          FIFO empty/level/overrun status bits
+//   0x40       RegDioMapping1        DIO1 function select
+//   0x42       RegVersion            silicon revision (0x11..0x13 expected)
+//   0x5D       RegBitrateFrac        fractional part of the bit rate divider
+//
+// The named constants above (REG_FIFO, REG_OP_MODE, ...) cover the registers
+// touched outside setup(); everything else is listed here rather than duplicated.
+// ---------------------------------------------------------------------------
 void SX1276::setup() {
   // Original driver used DIO1=FifoEmpty with falling edge.
   // Here DIO1 is remapped to FifoLevel, which is active-high, so wake on rising edge.
