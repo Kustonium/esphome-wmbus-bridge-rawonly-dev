@@ -181,12 +181,18 @@ void Radio::maybe_publish_suggestion_(uint32_t now_ms) {
   // NOTE: check highlight_meter_ids_ (user config), not highlight_meter_stats_ (runtime),
   // because stats may be empty simply because the listed meters haven't been seen yet.
   if (this->highlight_meter_ids_.empty() && this->highlight_meter_raw_ids_.empty()) {
-    publish_suggestion_(mqtt, topic, this->last_suggestion_ms_, now_ms, SUGGESTION_THROTTLE_MS_,
-        chip, "ADD_HIGHLIGHT_METERS",
-        "highlight_meters", "<meter_id>",
-        "highlight_meters:\n  - \"<meter_id>\"",
-        "Meters are being received. Check which IDs appear in wmbusmeters, then add them to highlight_meters to track per-meter reception quality.",
-        "Liczniki są odbierane. Sprawdź w wmbusmeters jakie ID pojawiają się, następnie dodaj je do highlight_meters aby śledzić skuteczność odbioru per licznik.");
+    // Only claim that meters are being received once at least one frame in this
+    // window actually decoded. A frame that arrived and failed CRC never reaches
+    // wmbusmeters, so telling the user to look up its id there sends them
+    // hunting for something that was never published.
+    if (this->diag_ok_ > 0) {
+      publish_suggestion_(mqtt, topic, this->last_suggestion_ms_, now_ms, SUGGESTION_THROTTLE_MS_,
+          chip, "ADD_HIGHLIGHT_METERS",
+          "highlight_meters", "<meter_id>",
+          "highlight_meters:\n  - \"<meter_id>\"",
+          "Meters are being received. Check which IDs appear in wmbusmeters, then add them to highlight_meters to track per-meter reception quality.",
+          "Liczniki są odbierane. Sprawdź w wmbusmeters jakie ID pojawiają się, następnie dodaj je do highlight_meters aby śledzić skuteczność odbioru per licznik.");
+    }
     return; // advanced suggestions only make sense once user knows their meters
   }
 
@@ -466,6 +472,16 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
       hint_code = "GOOD";
       hint_en = "RF link looks stable";
       hint_pl = "łącze radiowe wygląda stabilnie";
+    } else if (ok == 0) {
+      // Nothing in this window decoded. Whatever the cause, "looks good" is the
+      // one answer that is certainly wrong - and that is what the default hint
+      // used to say whenever no branch above matched. It matched nothing on S1,
+      // where the C1/T1 branches cannot fire at all, and the generic weak-signal
+      // branches need avg_drop_rssi <= -90, so a single CRC failure at -87 dBm
+      // was reported as OK.
+      hint_code = "ALL_DROPPED";
+      hint_en = "frames arrive but none decode; check that listen_mode matches what the meters transmit, otherwise the signal is too weak or colliding";
+      hint_pl = "ramki docierają, ale żadna się nie dekoduje; sprawdź czy listen_mode pasuje do tego, co nadają liczniki, w przeciwnym razie sygnał jest za słaby lub kolidujący";
     }
   }
 
@@ -826,6 +842,16 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
       hint_code = "GOOD";
       hint_en = "RF link looks stable";
       hint_pl = "łącze radiowe wygląda stabilnie";
+    } else if (ok == 0) {
+      // Nothing in this window decoded. Whatever the cause, "looks good" is the
+      // one answer that is certainly wrong - and that is what the default hint
+      // used to say whenever no branch above matched. It matched nothing on S1,
+      // where the C1/T1 branches cannot fire at all, and the generic weak-signal
+      // branches need avg_drop_rssi <= -90, so a single CRC failure at -87 dBm
+      // was reported as OK.
+      hint_code = "ALL_DROPPED";
+      hint_en = "frames arrive but none decode; check that listen_mode matches what the meters transmit, otherwise the signal is too weak or colliding";
+      hint_pl = "ramki docierają, ale żadna się nie dekoduje; sprawdź czy listen_mode pasuje do tego, co nadają liczniki, w przeciwnym razie sygnał jest za słaby lub kolidujący";
     }
   }
 
@@ -1191,6 +1217,16 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
       hint_code = "GOOD";
       hint_en = "RF link looks stable";
       hint_pl = "łącze radiowe wygląda stabilnie";
+    } else if (ok == 0) {
+      // Nothing in this window decoded. Whatever the cause, "looks good" is the
+      // one answer that is certainly wrong - and that is what the default hint
+      // used to say whenever no branch above matched. It matched nothing on S1,
+      // where the C1/T1 branches cannot fire at all, and the generic weak-signal
+      // branches need avg_drop_rssi <= -90, so a single CRC failure at -87 dBm
+      // was reported as OK.
+      hint_code = "ALL_DROPPED";
+      hint_en = "frames arrive but none decode; check that listen_mode matches what the meters transmit, otherwise the signal is too weak or colliding";
+      hint_pl = "ramki docierają, ale żadna się nie dekoduje; sprawdź czy listen_mode pasuje do tego, co nadają liczniki, w przeciwnym razie sygnał jest za słaby lub kolidujący";
     }
   }
 

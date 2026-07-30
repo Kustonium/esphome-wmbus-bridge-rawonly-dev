@@ -1,3 +1,27 @@
+# Fix: a window where every frame failed CRC was reported as "looks good"
+
+## EN
+
+### Fixed
+- `DIAG hint` starts as `OK / "looks good"` and each branch only overrides it. No branch covered a window where frames arrived but none decoded: the mode-specific branches key on the `c1_*` and `t1_*` counters, which stay at zero under `listen_mode: s1`, and the generic weak-signal branches need `avg_drop_rssi <= -90`. A real S1 window - `total=1 ok=0 dropped=1 crc_failed=1` at -87 dBm - therefore reported `OK | looks good`, and at INFO level, while an empty window is logged as a warning. A window that failed completely read better than a quiet one.
+- New hint `ALL_DROPPED` covers `ok == 0`. It sits after the specific branches, so `C1_WEAK_SIGNAL`, `T1_BITFLIPS` and the rest keep priority and only the wrong default is replaced. Like every non-`OK` hint it is logged as a warning. It applies to all three summary windows (60 s, 15 min, 60 min).
+- The `ADD_HIGHLIGHT_METERS` suggestion fired on frames *arriving* (`total > 0`), so the same window advised "Meters are being received. Check which IDs appear in wmbusmeters" although nothing decoded and no id was ever published - sending the user to look for something that does not exist. It now requires at least one decoded frame in the window.
+
+### Notes
+- The hint tree still has no counters of its own for S1; only `c1_*` and `t1_*` exist, so S1 windows fall back to generic diagnoses. That is a separate change.
+
+## PL
+
+### Naprawiono
+- `DIAG hint` startuje jako `OK / "looks good"`, a każda gałąź tylko go nadpisuje. Żadna nie obejmowała okna, w którym ramki dotarły, ale żadna się nie zdekodowała: gałęzie dla konkretnych trybów opierają się na licznikach `c1_*` i `t1_*`, a te w `listen_mode: s1` pozostają zerowe; gałęzie ogólne o słabym sygnale wymagają `avg_drop_rssi <= -90`. Realne okno S1 - `total=1 ok=0 dropped=1 crc_failed=1` przy -87 dBm - raportowało więc `OK | looks good`, i to na poziomie INFO, podczas gdy puste okno logowane jest jako ostrzeżenie. Okno w całości nieudane wypadało lepiej niż ciche.
+- Nowy hint `ALL_DROPPED` obejmuje `ok == 0`. Stoi za gałęziami szczegółowymi, więc `C1_WEAK_SIGNAL`, `T1_BITFLIPS` i pozostałe zachowują pierwszeństwo, a zastąpiona zostaje wyłącznie błędna wartość domyślna. Jak każdy hint inny niż `OK` jest logowany jako ostrzeżenie. Dotyczy wszystkich trzech okien podsumowania (60 s, 15 min, 60 min).
+- Sugestia `ADD_HIGHLIGHT_METERS` wyzwalała się na samym *dotarciu* ramki (`total > 0`), więc to samo okno radziło "Liczniki są odbierane. Sprawdź w wmbusmeters jakie ID pojawiają się", choć nic się nie zdekodowało i żadne ID nigdy nie zostało opublikowane - wysyłając użytkownika na poszukiwanie czegoś, czego nie ma. Teraz wymaga co najmniej jednej zdekodowanej ramki w oknie.
+
+### Uwagi
+- Drzewo hintów nadal nie ma własnych liczników dla S1; istnieją tylko `c1_*` i `t1_*`, więc okna S1 dostają diagnozy ogólne. To osobna zmiana.
+
+---
+
 # Fix: XIAO with Wio-SX1262 received through a disabled antenna switch
 
 ## EN
