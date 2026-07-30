@@ -509,6 +509,17 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
 
   size_t copied = 0;
   uint8_t state_index = 0;  // last read index (wraps 0..255)
+  if (this->listen_mode_ == LISTEN_MODE_S1) {
+    // The SX126x buffer is circular. GetRxBufferStatus reports the start
+    // pointer selected for the current packet; assuming zero here can prepend
+    // stale bytes after an RX re-arm and destroys Manchester alignment.
+    //
+    // Keep the established adaptive long-T1 stream path unchanged: this
+    // correction is deliberately limited to the forced S1 stream path.
+    uint8_t rx_status[2]{};
+    this->cmd_read_(CMD_GET_RX_BUFFER_STATUS, {}, rx_status, sizeof(rx_status));
+    state_index = rx_status[1];
+  }
 
   // Capture until RX_DONE/TIMEOUT (latched IRQ), then allow a short drain window.
   bool seen_end_irq = false;
@@ -881,6 +892,11 @@ void SX1262::restart_rx() {
     this->set_s1_sync_word_();
     this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
     this->cmd_write_(CMD_SET_STANDBY, {STANDBY_XOSC});
+    // Re-assert the S1 RX base on every re-arm. The stream reader uses the
+    // packet start pointer returned by GetRxBufferStatus, but resetting the
+    // base here also prevents state left by an earlier circular capture from
+    // becoming the next packet's starting point.
+    this->cmd_write_(CMD_SET_BUFFER_BASE_ADDRESS, {0x00, 0x00});
     this->configure_irq_params_();
     this->cmd_write_(CMD_SET_RX, {0xFF, 0xFF, 0xFF});
     this->rx_loaded_ = false;
