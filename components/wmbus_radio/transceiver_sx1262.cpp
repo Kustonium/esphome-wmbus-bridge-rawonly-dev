@@ -144,6 +144,48 @@ static inline int8_t sx126x_rssi_dbm_(uint8_t raw) {
   return (int8_t) (dbm < RSSI_MIN_VALID ? RSSI_MIN_VALID : dbm);
 }
 
+// Decode the S1 L- and C-fields from the first four raw Manchester bytes.
+// The full parser tries both polarities as well; here we additionally require a
+// valid wM-Bus C-field so the complemented polarity cannot select a plausible
+// but wrong L-field. Returns the exact number of raw Manchester bytes needed
+// for the complete format-A frame including DLL CRC bytes.
+static size_t s1_expected_raw_len_(const std::vector<uint8_t> &raw) {
+  if (raw.size() < 4)
+    return 0;
+
+  for (uint8_t polarity = 0; polarity < 2; polarity++) {
+    uint8_t decoded[2]{};
+    bool valid = true;
+    for (size_t out_byte = 0; out_byte < 2 && valid; out_byte++) {
+      for (size_t bit = 0; bit < 8; bit++) {
+        const size_t pair = out_byte * 16U + bit * 2U;
+        const uint8_t a = (uint8_t) ((raw[pair >> 3] >> (7U - (pair & 7U))) & 0x01U);
+        const size_t pair_b = pair + 1U;
+        const uint8_t b = (uint8_t) ((raw[pair_b >> 3] >> (7U - (pair_b & 7U))) & 0x01U);
+        if (a == b) {
+          valid = false;
+          break;
+        }
+        uint8_t value = (a == 0 && b == 1) ? 0 : 1;
+        if (polarity != 0)
+          value ^= 1U;
+        decoded[out_byte] = (uint8_t) ((decoded[out_byte] << 1U) | value);
+      }
+    }
+
+    const uint8_t l_field = decoded[0];
+    const uint8_t c_field = decoded[1];
+    const size_t frame_len = (size_t) l_field + 1U;
+    if (!valid || frame_len < 12U || frame_len > 260U || (c_field != 0x44 && c_field != 0x46))
+      continue;
+
+    const size_t blocks = (l_field < 26U) ? 2U : (size_t) ((l_field - 26U) / 16U + 3U);
+    const size_t decoded_with_crc = frame_len + 2U * blocks;
+    return decoded_with_crc * 2U;
+  }
+  return 0;
+}
+
 // ---------------------------------------------------------------------------
 // wait_while_busy_: poll BUSY pin until low (command accepted).
 // Bail out after 200 ms to avoid hanging on a broken SPI bus.
@@ -501,25 +543,18 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   this->rx_buffer_.clear();
   this->rx_buffer_.reserve(512);
 
-  // Ensure payload length starts at 255 (0xFF) so the packet engine doesn't stop early.
-  this->write_register_(REG_RXTX_PAYLOAD_LEN, {0xFF});
+  // Adaptive long-T1 enters this routine after the trigger, so preserve its
+  // established late write. S1 follows AN1200.53 and writes 0xFF before SetRx
+  // in restart_rx(); rewriting it after SyncWordValid would be too late.
+  if (this->listen_mode_ != LISTEN_MODE_S1)
+    this->write_register_(REG_RXTX_PAYLOAD_LEN, {0xFF});
 
   const uint32_t start_ms = millis();
   uint32_t last_change_ms = start_ms;
 
   size_t copied = 0;
   uint8_t state_index = 0;  // last read index (wraps 0..255)
-  if (this->listen_mode_ == LISTEN_MODE_S1) {
-    // The SX126x buffer is circular. GetRxBufferStatus reports the start
-    // pointer selected for the current packet; assuming zero here can prepend
-    // stale bytes after an RX re-arm and destroys Manchester alignment.
-    //
-    // Keep the established adaptive long-T1 stream path unchanged: this
-    // correction is deliberately limited to the forced S1 stream path.
-    uint8_t rx_status[2]{};
-    this->cmd_read_(CMD_GET_RX_BUFFER_STATUS, {}, rx_status, sizeof(rx_status));
-    state_index = rx_status[1];
-  }
+  size_t s1_expected_raw_len = 0;
 
   // Capture until RX_DONE/TIMEOUT (latched IRQ), then allow a short drain window.
   bool seen_end_irq = false;
@@ -580,6 +615,17 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
       copied += avail;
       state_index = current_index;
       last_change_ms = now;
+
+      if (this->listen_mode_ == LISTEN_MODE_S1) {
+        if (s1_expected_raw_len == 0)
+          s1_expected_raw_len = s1_expected_raw_len_(this->rx_buffer_);
+        if (s1_expected_raw_len != 0 && copied >= s1_expected_raw_len) {
+          this->rx_buffer_.resize(s1_expected_raw_len);
+          copied = s1_expected_raw_len;
+          exit_reason = "s1_length";
+          break;
+        }
+      }
     } else {
       // No new bytes right now.
       const uint16_t irq = this->get_irq_status_();
@@ -897,6 +943,9 @@ void SX1262::restart_rx() {
     // base here also prevents state left by an earlier circular capture from
     // becoming the next packet's starting point.
     this->cmd_write_(CMD_SET_BUFFER_BASE_ADDRESS, {0x00, 0x00});
+    // AN1200.53 initializes both the software index and the hidden payload-end
+    // register before SetRx. capture_rx_stream_() starts its index at zero.
+    this->write_register_(REG_RXTX_PAYLOAD_LEN, {0xFF});
     this->configure_irq_params_();
     this->cmd_write_(CMD_SET_RX, {0xFF, 0xFF, 0xFF});
     this->rx_loaded_ = false;
