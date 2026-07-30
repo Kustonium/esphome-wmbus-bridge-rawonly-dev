@@ -1,3 +1,27 @@
+# Fix: SX1262 listened to S1 through the T1 receive bandwidth
+
+## EN
+
+### Fixed
+- On SX1262 the receive bandwidth was chosen between C1 (234.3 kHz) and everything else (312 kHz), so `listen_mode: s1` inherited the T1 setting. S-mode is 32.768 kbps at 50 kHz deviation, which needs `2 * (fdev + bitrate/2)` = 132.8 kHz double-sideband; 312 kHz is 2.3x wider than the signal and raises the noise floor by about 3 dB while letting neighbouring transmitters into the window. S1 now uses 156.2 kHz, the next step above the requirement.
+- The wide setting bought no margin on this chip: boards that run S1 on an SX1262 here have a TCXO, so the frequency error is single-digit kHz, not the tens of kHz that would justify the extra bandwidth.
+- SX1276 is deliberately left at 125 kHz. Its bandwidth figures are single-sideband, the requirement there is about 66 kHz, and the remaining margin covers the +-17 kHz a 20 ppm crystal can drift on boards without a TCXO. Narrowing it would trade a stable receiver for roughly 1.8 dB.
+
+### Notes
+- Measured symptom that led here: two nodes on the same S-mode transmitter, an SX1276 decoding it cleanly at -100 dBm while an SX1262 either heard nothing or failed the DLL CRC at -86 dBm.
+
+## PL
+
+### Naprawiono
+- Na SX1262 szerokość pasma odbiornika wybierana była między C1 (234,3 kHz) a całą resztą (312 kHz), więc `listen_mode: s1` dziedziczył ustawienie T1. S-mode to 32,768 kbps przy dewiacji 50 kHz, co wymaga `2 * (fdev + bitrate/2)` = 132,8 kHz dwuwstęgowo; 312 kHz jest 2,3x szersze od sygnału, podnosi próg szumu o około 3 dB i wpuszcza do okna sąsiednie nadajniki. S1 używa teraz 156,2 kHz, czyli pierwszego stopnia powyżej wymagania.
+- Szerokie pasmo nie kupowało tu żadnego marginesu: płytki, które uruchamiają S1 na SX1262, mają TCXO, więc błąd częstotliwości to pojedyncze kiloherce, a nie dziesiątki, które uzasadniałyby dodatkową szerokość.
+- SX1276 celowo zostaje na 125 kHz. Tam wartości są jednowstęgowe, wymóg wynosi około 66 kHz, a pozostały margines pokrywa +-17 kHz dryfu kwarcu 20 ppm na płytkach bez TCXO. Zwężenie wymieniłoby stabilny odbiornik na jakieś 1,8 dB.
+
+### Uwagi
+- Objaw, który do tego doprowadził: dwa węzły na tym samym nadajniku S-mode - SX1276 dekodował czysto przy -100 dBm, podczas gdy SX1262 albo nie słyszał nic, albo nie przechodził CRC DLL przy -86 dBm.
+
+---
+
 # Fix: the summary payload buffer belongs in .bss, not on the loop stack
 
 ## EN

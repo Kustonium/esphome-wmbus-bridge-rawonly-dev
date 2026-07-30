@@ -50,7 +50,13 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 // ---------------------------------------------------------------------------
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
 static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;
-static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (legacy, unused)
+static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (C1)
+// 156.2 kHz, used for S1. The SX126x RX bandwidth table is double-sideband, and
+// S-mode needs 2 * (fdev + bitrate/2) = 2 * (50 + 16.4) = 132.8 kHz. 156.2 is the
+// next step above that; 117.3 would sit below the signal. The wide 312 kHz that
+// S1 inherited from T1 bought no margin here - a Heltec V4 has a TCXO, so the
+// frequency error is a few kHz, not tens - and cost about 3 dB of noise floor.
+static constexpr uint8_t GFSK_RX_BW_156_2 = 0x1A;
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_8  = 0x04;  // detect after 8 preamble bits — more sensitive, tolerates noisy/weak preamble starts
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;  // detect after 16 preamble bits (previous default)
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
@@ -774,7 +780,9 @@ void SX1262::setup() {
 
   const uint32_t freq_dev = (this->listen_mode_ == LISTEN_MODE_C1) ? 45000UL : 50000UL;
   const uint32_t fdev = ((uint64_t) freq_dev << 25) / XTAL_FREQ;
-  const uint8_t rx_bw = (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3 : GFSK_RX_BW_312_0;
+  const uint8_t rx_bw = (this->listen_mode_ == LISTEN_MODE_C1)   ? GFSK_RX_BW_234_3
+                        : (this->listen_mode_ == LISTEN_MODE_S1) ? GFSK_RX_BW_156_2
+                                                                 : GFSK_RX_BW_312_0;
 
   {
     char buf[96];
@@ -782,7 +790,7 @@ void SX1262::setup() {
              this->configured_frequency_hz_ / 1000000.0f,
              (unsigned long) (bitrate / 1000UL),
              (unsigned long) (freq_dev / 1000UL),
-             (rx_bw == GFSK_RX_BW_234_3) ? "234kHz" : "312kHz",
+             (rx_bw == GFSK_RX_BW_234_3) ? "234kHz" : (rx_bw == GFSK_RX_BW_156_2) ? "156kHz" : "312kHz",
              (this->listen_mode_ == LISTEN_MODE_S1) ? " Manchester/S-mode" : "");
     this->rf_params_str_ = buf;
   }
