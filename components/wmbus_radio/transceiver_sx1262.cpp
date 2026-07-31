@@ -57,6 +57,28 @@ static constexpr uint8_t GFSK_PREAMBLE_DETECT_8  = 0x04;  // detect after 8 prea
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;  // detect after 16 preamble bits (previous default)
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
+// ---------------------------------------------------------------------------
+// DIAGNOSTIC EXPERIMENT 2026-07-31 - revert once it has answered its question.
+//
+// Symptom: three receivers on the same firmware, one SX1276 decodes real S-mode
+// frames at -103 dBm while two SX1262 boards report nothing at all - not a
+// failed CRC, not a dropped frame, nothing. On this driver the whole S1 path
+// starts at the SYNC_WORD_VALID interrupt, so a sync detector that never fires
+// is indistinguishable from an antenna that hears nothing: both count zero.
+//
+// Shortening the sync word makes the detector trigger far more readily at low
+// SNR - 54 76 instead of 54 76 96 - at the cost of false starts. That trade is
+// the point: if captures (even CRC failures) start appearing when the SX1276
+// decodes, sync detection was the bottleneck. If it stays silent, the signal is
+// not reaching this board at a usable level and the answer lies in the antenna
+// or the placement, not in the registers.
+//
+// 24 = the full S-mode sync word, the correct production value.
+// 16 = experiment.
+static constexpr uint8_t S1_SYNC_WORD_BITS = 16;
+#define S1_SYNC_WORD_BITS_OR_DEFAULT(mode) \
+  static_cast<uint8_t>((mode) == LISTEN_MODE_S1 ? S1_SYNC_WORD_BITS : 16)
+
 // SX126x GFSK header type:
 // 0x00 = FIX_LEN (no length byte in-air)
 // 0x01 = VAR_LEN (first payload byte is length in-air)
@@ -887,7 +909,7 @@ void SX1262::setup() {
   const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
                    {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_8,
-                    static_cast<uint8_t>((this->listen_mode_ == LISTEN_MODE_S1) ? 0x18 : 0x10),  // 24 bits sync for S1, 16 bits for T1/C1
+                    S1_SYNC_WORD_BITS_OR_DEFAULT(this->listen_mode_),
                     GFSK_ADDRESS_FILT_OFF, pkt_len_mode,
                     0xFF,  // max payload
                     GFSK_CRC_OFF, GFSK_WHITENING_OFF});
@@ -908,8 +930,10 @@ void SX1262::log_reg_status() {
   const uint8_t reg_sync1    = this->read_register8_(REG_SYNC_WORD_0 + 1);
   const uint8_t reg_sync2    = this->read_register8_(REG_SYNC_WORD_0 + 2);
 
-  ESP_LOGI(TAG, "RegRxGain=0x%02X RegSyncWord[0]=0x%02X [1]=0x%02X [2]=0x%02X",
-           reg_rx_gain, reg_sync0, reg_sync1, reg_sync2);
+  ESP_LOGI(TAG, "RegRxGain=0x%02X RegSyncWord[0]=0x%02X [1]=0x%02X [2]=0x%02X sync_bits=%u%s",
+           reg_rx_gain, reg_sync0, reg_sync1, reg_sync2,
+           (unsigned) S1_SYNC_WORD_BITS_OR_DEFAULT(this->listen_mode_),
+           (this->listen_mode_ == LISTEN_MODE_S1 && S1_SYNC_WORD_BITS != 24) ? " (EXPERIMENT: shortened S1 sync)" : "");
 
   if (reg_rx_gain == 0x00 && reg_sync0 == 0x00 && reg_sync1 == 0x00 && reg_sync2 == 0x00) {
     ESP_LOGE(TAG, "SX1262 not responding over SPI / SX1262 nie odpowiada po SPI. "
