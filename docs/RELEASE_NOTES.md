@@ -1,3 +1,47 @@
+# Fix: one bad chip in the C-field threw away the whole S1 capture
+
+## EN
+
+### Fixed
+- `s1_expected_raw_len_()` required all sixteen Manchester pairs of the L- and C-fields to decode. The C-field now tolerates up to two invalid pairs and is matched against 0x44 / 0x46 on the bits that did decode; the L-field still demands perfection, because its value cuts the capture and a substituted bit there produces a wrong length rather than a recoverable one.
+- The C-field exists only to stop the complemented polarity selecting a plausible but wrong L-field. It contributes nothing to the length, so demanding it decode perfectly bought nothing and cost a great deal.
+
+### Measured
+At the sensitivity threshold on 2026-08-01, two captures of the same 85-byte transmission 30 seconds apart:
+
+| RssiSync | first bytes | outcome |
+|---|---|---|
+| -88 dBm | `66 65 65 65 …` | `exit=s1_length`, 194 B captured, decoded, one bad pair in 776 |
+| -89.5 dBm | `66 65 65 6D …` | `exit=buffer_cap`, 512 B captured, lost |
+
+- One chip error, in raw byte 3, turned `0x65` into `0x6D`. That byte is the second half of the C-field. No length could be derived, so the capture ran to the cap and collected roughly 85 ms of post-frame noise on top of a 47 ms frame.
+- The measurement consequence was worse than the lost frame. A successful capture reports invalid pairs out of 776, a failed one out of 2048 with three quarters of it noise, so the same signal degrading by a fraction of a dB appears to fall off a cliff. That artefact made the S1 failures look categorically different from marginal reception when they were the same thing.
+
+### Notes
+- This does not make a transmitter below the noise floor decodable. It recovers frames at the very edge where the unlucky chip landed in the header instead of the payload, and it makes `symbols_invalid` and the capture-quality figures measure signal quality rather than whether the header happened to survive.
+
+## PL
+
+### Naprawiono
+- `s1_expected_raw_len_()` wymagało, żeby wszystkie szesnaście par Manchester pól L i C zdekodowało się bezbłędnie. Pole C toleruje teraz do dwóch niepoprawnych par i jest porównywane z 0x44 / 0x46 tylko na bitach, które się zdekodowały; pole L nadal wymaga bezbłędności, bo jego wartość tnie przechwytywanie, a podstawiony bit daje tam złą długość, a nie taką, którą da się odzyskać.
+- Pole C istnieje wyłącznie po to, żeby odwrócona polaryzacja nie wybrała wiarygodnego, ale błędnego L. Do długości nie wnosi nic, więc wymaganie od niego bezbłędności nic nie dawało, a kosztowało bardzo dużo.
+
+### Zmierzono
+Na progu czułości 2026-08-01, dwa przechwycenia tej samej 85-bajtowej transmisji w odstępie 30 sekund:
+
+| RssiSync | pierwsze bajty | wynik |
+|---|---|---|
+| -88 dBm | `66 65 65 65 …` | `exit=s1_length`, 194 B, zdekodowana, jedna błędna para na 776 |
+| -89,5 dBm | `66 65 65 6D …` | `exit=buffer_cap`, 512 B, przepadła |
+
+- Jeden błąd chipowy w surowym bajcie 3 zamienił `0x65` w `0x6D`. Ten bajt to druga połowa pola C. Długości nie dało się wyprowadzić, więc przechwytywanie doszło do limitu i zebrało około 85 ms szumu po ramce na 47 ms samej ramki.
+- Skutek pomiarowy był gorszy niż utrata ramki. Udane przechwycenie raportuje niepoprawne pary z 776, nieudane z 2048, z czego trzy czwarte to szum - więc ten sam sygnał pogarszający się o ułamek decybela wygląda na urwanie z klifu. Ten artefakt sprawiał, że porażki S1 wyglądały jakościowo inaczej niż odbiór na granicy, choć są tym samym.
+
+### Uwagi
+- To nie sprawi, że nadajnik pod podłogą szumu zacznie się dekodować. Odzyskuje ramki na samej granicy, gdzie pechowy chip trafił w nagłówek zamiast w ładunek, i sprawia, że `symbols_invalid` oraz miary jakości przechwycenia mierzą jakość sygnału, a nie to, czy nagłówek akurat przeżył.
+
+---
+
 # Result: S1 bandwidth sweep finished, 234.3 kHz is the optimum
 
 ## EN

@@ -356,35 +356,64 @@ void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
   }
 }
 
-// for the complete format-A frame including DLL CRC bytes.
+// Decode the S1 L- and C-fields from the start of the captured stream and
+// return the exact number of raw Manchester bytes a complete format-A frame
+// occupies, DLL CRC bytes included. Zero means "cannot tell", which is what
+// makes capture_rx_stream_() run on to its 512-byte cap.
 static size_t s1_expected_raw_len_(const std::vector<uint8_t> &raw) {
   if (raw.size() < 4)
     return 0;
 
   for (uint8_t polarity = 0; polarity < 2; polarity++) {
-    uint8_t decoded[2]{};
-    bool valid = true;
-    for (size_t out_byte = 0; out_byte < 2 && valid; out_byte++) {
-      for (size_t bit = 0; bit < 8; bit++) {
-        const size_t pair = out_byte * 16U + bit * 2U;
-        const uint8_t a = (uint8_t) ((raw[pair >> 3] >> (7U - (pair & 7U))) & 0x01U);
-        const size_t pair_b = pair + 1U;
-        const uint8_t b = (uint8_t) ((raw[pair_b >> 3] >> (7U - (pair_b & 7U))) & 0x01U);
-        if (a == b) {
-          valid = false;
-          break;
-        }
-        uint8_t value = (a == 0 && b == 1) ? 0 : 1;
-        if (polarity != 0)
-          value ^= 1U;
-        decoded[out_byte] = (uint8_t) ((decoded[out_byte] << 1U) | value);
+    // L-field, raw bytes 0-1. Every pair must decode: this value cuts the
+    // capture, so a substituted bit here yields a wrong length rather than a
+    // recoverable one. No tolerance.
+    uint8_t l_field = 0;
+    bool l_ok = true;
+    for (size_t bit = 0; bit < 8; bit++) {
+      uint8_t v = 0;
+      if (!s1_chip_pair_(raw, bit, polarity != 0, v)) {
+        l_ok = false;
+        break;
+      }
+      l_field = (uint8_t) ((l_field << 1U) | v);
+    }
+    if (!l_ok)
+      continue;
+
+    const size_t frame_len = (size_t) l_field + 1U;
+    if (frame_len < 12U || frame_len > 260U)
+      continue;
+
+    // C-field, raw bytes 2-3. Up to two invalid pairs tolerated, and only the
+    // bits that did decode are compared against 0x44 / 0x46.
+    //
+    // The C-field is here to stop the complemented polarity selecting a
+    // plausible but wrong L-field - it contributes nothing to the length. So
+    // demanding it decode perfectly buys nothing and costs a great deal:
+    // measured 2026-08-01 at the sensitivity threshold, a single chip error in
+    // raw byte 3 turned 0x65 into 0x6D, no length was derived, and the capture
+    // ran to the 512-byte cap collecting 85 ms of post-frame noise. The frame
+    // itself had one bad pair in 776.
+    //
+    // Two masked bits still leave six to match, so the complement (0xBB against
+    // 0x44) is not going to slip through.
+    uint8_t c_bits = 0, c_mask = 0;
+    size_t c_invalid = 0;
+    for (size_t bit = 0; bit < 8; bit++) {
+      uint8_t v = 0;
+      c_bits = (uint8_t) (c_bits << 1U);
+      c_mask = (uint8_t) (c_mask << 1U);
+      if (s1_chip_pair_(raw, 8U + bit, polarity != 0, v)) {
+        c_bits = (uint8_t) (c_bits | v);
+        c_mask = (uint8_t) (c_mask | 1U);
+      } else {
+        c_invalid++;
       }
     }
-
-    const uint8_t l_field = decoded[0];
-    const uint8_t c_field = decoded[1];
-    const size_t frame_len = (size_t) l_field + 1U;
-    if (!valid || frame_len < 12U || frame_len > 260U || (c_field != 0x44 && c_field != 0x46))
+    if (c_invalid > 2)
+      continue;
+    if ((c_bits & c_mask) != (0x44U & c_mask) && (c_bits & c_mask) != (0x46U & c_mask))
       continue;
 
     const size_t blocks = (l_field < 26U) ? 2U : (size_t) ((l_field - 26U) / 16U + 3U);
