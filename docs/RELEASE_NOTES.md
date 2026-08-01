@@ -1,3 +1,29 @@
+# Fix: `clear_device_errors_on_boot` did nothing on a node that received nothing
+
+## EN
+
+### Fixed
+- The SX1262 device-error clear has moved from `capture_rx_stream_()` to `setup()`. It was gated on the first captured frame, so on a node receiving normally it ran within seconds and nobody ever saw the flag, while on a node receiving nothing it never ran at all - leaving `clear_device_errors_on_boot: true` inert in the one case where the error register is the only thing left to read. Observed on hardware 2026-08-01: two SX1262 nodes reporting `XOSC_START_ERR` for minutes on end while sitting in RX with a correct configuration.
+- `XOSC_START_ERR` is set during the power-on sequence as a matter of course on a TCXO board, because the chip tries to start its crystal oscillator before DIO3 has been told to power the TCXO - DIO3 is configured after reset. Clearing it once the reference is set up is what the datasheet expects. Paired with the re-read at the end of `setup()`, the flag now means something: one that clears was a power-on artefact, one that comes back after a clean clear is a reference that genuinely is not starting.
+- Removing the block from the receive path also takes a 7 ms blocking delay off the first capture.
+
+### Added
+- SX1276 reads `RegOpMode` back after arming RX and warns when the chip is not there, naming the mode it reached and whether `ModeReady`/`RxReady` came up. Measured on S1: `restart_rx()` writes RX and five seconds later the chip still reads back `FSRX` with `ModeReady` clear - synthesiser locked, receiver off, configuration perfect, nothing received. From outside that is indistinguishable from an empty band.
+- The readback is observation only: it does not wait, retry or otherwise alter the arming sequence, which is shared with T1. It runs solely under `diagnostic_verbose`, because the receiver is deaf for as long as `restart_rx()` holds the SPI bus and two extra reads per re-arm are not free on a node that receives. First failure is reported immediately, then at most every 10 s.
+
+## PL
+
+### Naprawiono
+- Czyszczenie błędów układu SX1262 przeniesione z `capture_rx_stream_()` do `setup()`. Było uzależnione od pierwszej przechwyconej ramki, więc na węźle odbierającym normalnie wykonywało się w kilka sekund i nikt nigdy tej flagi nie zobaczył, a na węźle nieodbierającym nic nie wykonywało się wcale - przez co `clear_device_errors_on_boot: true` nie robiło nic dokładnie w tym jedynym przypadku, w którym rejestr błędów jest ostatnią rzeczą, jaka została do odczytania. Zaobserwowane na sprzęcie 2026-08-01: dwa węzły SX1262 raportujące `XOSC_START_ERR` przez wiele minut, stojąc w RX z poprawną konfiguracją.
+- `XOSC_START_ERR` jest ustawiane przy starcie na płytce z TCXO w sposób normalny, bo układ próbuje uruchomić swój oscylator kwarcowy, zanim DIO3 dostanie polecenie zasilania TCXO - DIO3 konfiguruje się po resecie. Wyczyszczenie flagi po ustawieniu referencji jest tym, czego oczekuje datasheet. W parze z ponownym odczytem na końcu `setup()` flaga wreszcie coś znaczy: taka, która znika, była artefaktem startu, taka, która wraca po czystym wyczyszczeniu, to referencja, która naprawdę nie startuje.
+- Usunięcie tego bloku ze ścieżki odbiorczej zdejmuje przy okazji 7 ms blokującego opóźnienia z pierwszego przechwycenia.
+
+### Dodano
+- SX1276 odczytuje `RegOpMode` po uzbrojeniu RX i ostrzega, gdy układ tam nie dotarł, podając tryb, w którym stanął, oraz czy pojawiły się `ModeReady`/`RxReady`. Zmierzone na S1: `restart_rx()` zapisuje RX, a pięć sekund później układ nadal czyta się jako `FSRX` z wyzerowanym `ModeReady` - syntezer zestrojony, odbiornik wyłączony, konfiguracja bez zarzutu, zero odebranych ramek. Z zewnątrz jest to nieodróżnialne od pustego pasma.
+- Odczyt jest wyłącznie obserwacją: nie czeka, nie ponawia i nie zmienia sekwencji uzbrajania, która jest wspólna z T1. Działa tylko przy `diagnostic_verbose`, bo odbiornik jest głuchy tak długo, jak `restart_rx()` trzyma magistralę SPI, a dwa dodatkowe odczyty na każde uzbrojenie nie są darmowe na węźle, który odbiera. Pierwsza awaria raportowana natychmiast, potem najwyżej co 10 s.
+
+---
+
 # Diagnostics: repeatable radio state instead of one snapshot per boot
 
 ## EN

@@ -759,35 +759,12 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   // Stop RX and clear IRQs.
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
 
-  // ---------------------------------------------------------------------------
-  // One-shot device-error snapshot (boot diagnostics).
-  //
-  // This block must execute ONLY ONCE - on the first captured frame after power-on.
-  // It snapshots the latched SX126x device error register before and after clearing,
-  // storing both values for diagnostic reporting via MQTT.
-  //
-  // Runs in STANDBY_RC because ClearDeviceErrors can be silently ignored in other states.
-  //
-  // *** BUG FIX: clear_device_errors_on_boot_ is reset to false inside this block.
-  // Without it the block would run on every frame, causing:
-  //   - 7 ms blocking delay per frame
-  //   - boot snapshot overwritten each frame (losing the real power-on state)
-  // ---------------------------------------------------------------------------
-  if (this->clear_device_errors_on_boot_) {
-    uint8_t de[2]{};
-    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {}, de, sizeof(de));
-    this->boot_dev_err_before_ = u16be_(de);
-
-    // Ensure we're in standby before clearing.
-    this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
-    delay(5);
-    this->cmd_write_(CMD_CLEAR_DEVICE_ERRORS, {0x00, 0x00});
-    delay(2);
-    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {}, de, sizeof(de));
-    this->boot_dev_err_after_ = u16be_(de);
-    this->boot_dev_err_valid_ = true;
-    this->clear_device_errors_on_boot_ = false;  // <<< FIX: run only once
-  }
+  // The device-error snapshot used to live here, gated on the first captured
+  // frame. It has moved to setup(), where "on boot" is actually true: gating it
+  // on a frame meant a node that receives nothing never cleared the power-on
+  // XOSC_START_ERR, and that node is the only one whose error register anybody
+  // reads. Removing it from the receive path also takes a 7 ms blocking delay
+  // off the first capture.
   this->cmd_write_(CMD_CLEAR_IRQ_STATUS, {0xFF, 0xFF});
 
   if (this->rx_buffer_.empty())
@@ -928,6 +905,49 @@ void SX1262::setup() {
   // for 863-870 MHz, i.e. the wM-Bus EU band this bridge listens on. Changing the
   // configured frequency outside that band would need the matching pair.
   this->cmd_write_(CMD_CALIBRATE_IMAGE, {0xD7, 0xDB});
+
+  // ---------------------------------------------------------------------------
+  // Clear the latched device errors, here rather than on the first frame.
+  //
+  // XOSC_START_ERR is set during the power-on sequence as a matter of course on
+  // a TCXO board: the chip tries to start its crystal oscillator before DIO3
+  // has been told to power the TCXO, because DIO3 is configured after reset.
+  // The datasheet expects the flag to be cleared once the reference is properly
+  // set up. Until that happens the register reports a startup that failed
+  // minutes ago and has since been fixed.
+  //
+  // This used to live in capture_rx_stream_(), gated on the first captured
+  // frame. On a node receiving normally the first frame arrives within seconds,
+  // the flag clears, and nobody ever saw it. On a node receiving nothing it
+  // never ran at all - so `clear_device_errors_on_boot` did nothing precisely
+  // in the case where the error register is the only thing left to read.
+  // Observed 2026-08-01: two SX1262 nodes reporting XOSC_START_ERR for minutes
+  // while sitting in RX with a correct configuration.
+  //
+  // The re-read at the end of setup() is what makes this worth doing: an error
+  // that clears was a power-on artefact, an error that comes back after a clean
+  // clear is a reference that genuinely is not starting.
+  // ---------------------------------------------------------------------------
+  if (this->clear_device_errors_on_boot_) {
+    uint8_t de[2]{};
+    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {}, de, sizeof(de));
+    this->boot_dev_err_before_ = u16be_(de);
+
+    // ClearDeviceErrors can be ignored outside standby; setup() has not left
+    // STANDBY_RC since it was entered above, but say so explicitly rather than
+    // depend on the reader tracking the chip state across thirty lines.
+    this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
+    delay(5);
+    this->cmd_write_(CMD_CLEAR_DEVICE_ERRORS, {0x00, 0x00});
+    delay(2);
+
+    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {}, de, sizeof(de));
+    this->boot_dev_err_after_ = u16be_(de);
+    this->boot_dev_err_valid_ = true;
+
+    ESP_LOGI(TAG, "Device errors cleared on boot / bledy ukladu wyczyszczone przy starcie: 0x%04X -> 0x%04X",
+             this->boot_dev_err_before_, this->boot_dev_err_after_);
+  }
 
   this->cmd_write_(CMD_SET_PACKET_TYPE, {PACKET_TYPE_GFSK});
   this->set_rf_frequency_(this->configured_frequency_hz_);

@@ -322,6 +322,45 @@ optional<uint8_t> SX1276::read() {
   return {};
 }
 
+// ---------------------------------------------------------------------------
+// verify_rx_mode_: did the chip actually reach RX after restart_rx() asked for it?
+//
+// Observation only. It does not wait for ModeReady, does not retry and does not
+// touch the arming sequence, because that sequence is shared with T1 and T1
+// currently works. It also runs only under verbose diagnostics: the receiver is
+// deaf for as long as restart_rx() holds the SPI bus, so two extra register
+// reads on every re-arm are not free on a node that receives.
+//
+// Worth having because the failure is completely silent otherwise. Measured
+// 2026-08-01 on S1: restart_rx() writes RX, and five seconds later the chip is
+// still reading back FSRX with ModeReady clear - synthesiser locked, receiver
+// off, configuration perfect, nothing received. From outside that is
+// indistinguishable from an empty band.
+// ---------------------------------------------------------------------------
+void SX1276::verify_rx_mode_() {
+  const uint8_t op_mode = this->spi_read(REG_OP_MODE);
+  if ((op_mode & 0x07) == 0x05) {
+    this->rx_mode_ok_ = true;
+    return;
+  }
+
+  const uint8_t irq1 = this->spi_read(REG_IRQ_FLAGS1);
+  const int64_t now_us = esp_timer_get_time();
+
+  // Report the first failure immediately, then at most every 10 s: restart_rx()
+  // runs every few seconds while waiting, and a stuck chip would otherwise fill
+  // the log with the same line instead of leaving room for what follows it.
+  if (this->rx_mode_ok_ || (now_us - this->rx_mode_warn_us_) > 10000000LL) {
+    this->rx_mode_warn_us_ = now_us;
+    ESP_LOGW(TAG,
+             "restart_rx asked for RX, chip is in %s (OpMode=0x%02X IrqFlags1=0x%02X ModeReady=%s RxReady=%s). "
+             "Nothing can be received in this state / w tym stanie nic nie zostanie odebrane.",
+             sx1276_mode_name_(op_mode), op_mode, irq1, (irq1 & (1 << 7)) ? "yes" : "no",
+             (irq1 & (1 << 6)) ? "yes" : "no");
+  }
+  this->rx_mode_ok_ = false;
+}
+
 void SX1276::restart_rx() {
   if (this->listen_mode_ == LISTEN_MODE_S1) {
     this->spi_write(REG_OP_MODE, (uint8_t) 0b001);  // standby
@@ -334,6 +373,8 @@ void SX1276::restart_rx() {
     this->last_rssi_dbm_ = -127;
     this->abort_requested_ = false;
     this->spi_write(REG_OP_MODE, (uint8_t) 0b101);  // RX
+    if (this->diag_verbose_)
+      this->verify_rx_mode_();
     return;
   }
 
@@ -365,6 +406,8 @@ void SX1276::restart_rx() {
   this->abort_requested_ = false;
 
   this->spi_write(REG_OP_MODE, (uint8_t) 0b101);  // RX
+  if (this->diag_verbose_)
+    this->verify_rx_mode_();
 }
 
 int8_t SX1276::get_rssi() {

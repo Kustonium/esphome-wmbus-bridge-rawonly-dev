@@ -60,6 +60,15 @@ class SX1276 : public RadioTransceiver {
 
   // Drain one safe chunk or one safe tail byte if available.
   optional<uint8_t> drain_fifo_once_();
+
+  // Read RegOpMode back after arming RX and complain if the chip did not get
+  // there. Observation only - it does not wait, retry or otherwise change the
+  // arming sequence, and it runs solely under verbose diagnostics so the normal
+  // re-arm path keeps its exact timing. The radio is deaf while restart_rx()
+  // talks over SPI, so two extra reads per re-arm are not free on a busy node.
+  void verify_rx_mode_();
+  bool rx_mode_ok_{true};
+  int64_t rx_mode_warn_us_{0};
 };
 
 }  // namespace wmbus_radio
