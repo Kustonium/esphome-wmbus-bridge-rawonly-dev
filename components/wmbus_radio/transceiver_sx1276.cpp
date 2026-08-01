@@ -118,6 +118,7 @@ optional<uint8_t> SX1276::drain_fifo_once_() {
 //   0x02,0x03  RegBitrateMsb/Lsb     bit rate (100 kbps T1/C1, 32.768 kbps S1)
 //   0x04,0x05  RegFdevMsb/Lsb        frequency deviation (50 kHz T1, 45 kHz C1)
 //   0x06..0x08 RegFrfMsb/Mid/Lsb     carrier frequency, step = F_OSC / 2^19
+//   0x0C       RegLna                LNA gain + high-frequency LNA boost
 //   0x0D       RegRxConfig           AFC/AGC auto-on + RX trigger source
 //   0x0E       RegRssiConfig         RSSI smoothing
 //   0x12,0x13  RegRxBw / RegAfcBw    receiver and AFC bandwidth
@@ -198,6 +199,22 @@ void SX1276::setup() {
   this->spi_write(0x25, {BYTE(preamble_length, 1), BYTE(preamble_length, 0)});
 
   this->spi_write(0x1F, (uint8_t) ((1 << 7) | (1 << 5) | 0x0A));
+
+  // RegLna: maximum gain (G1) with the high-frequency LNA boost on.
+  //
+  // 0x23 is Semtech's own value - it is what LoRaMac-node writes into RegLna in
+  // RADIO_INIT_REGISTERS_VALUE for every FSK board. This driver never wrote the
+  // register at all, so it ran on the reset default 0x20: same G1 gain, but
+  // LnaBoostHf = 00, boost off. Confirmed on hardware 2026-08-01, register dump
+  // of a LilyGO T3-S3 read back 0x0C = 0x20.
+  //
+  // The gain field is the less interesting half: AgcAutoOn is set on the next
+  // line, so the AGC drives LnaGain itself and whatever is written here is
+  // overridden as soon as a signal arrives. LnaBoostHf is the part that stays -
+  // it raises the LNA current by 50% for a better noise figure, applies only
+  // above 525 MHz, and is ignored at lower frequencies rather than harmful.
+  this->spi_write(0x0C, (uint8_t) 0x23);
+
   this->spi_write(0x0D, (uint8_t) ((1 << 4) | (1 << 3) | 0b110));
   this->spi_write(0x24, (uint8_t) 0b111);
 

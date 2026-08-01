@@ -1,3 +1,27 @@
+# Fix: SX1276 ran with the high-frequency LNA boost off
+
+## EN
+
+### Fixed
+- `RegLna` (0x0C) is now written as `0x23`: maximum gain plus `LnaBoostHf`. The driver never wrote the register at all, so it ran on the reset default `0x20` - same gain, boost off. Confirmed on hardware 2026-08-01, a register-bank dump of a LilyGO T3-S3 read `0x0C = 0x20`.
+- `0x23` is Semtech's own value. It is what LoRaMac-node puts in `RADIO_INIT_REGISTERS_VALUE` for every FSK board, and the omission was found by diffing this driver's setup sequence against that table rather than by observing a symptom.
+- The gain half of the register matters less than it looks: `AgcAutoOn` is set immediately afterwards, so the AGC drives `LnaGain` itself. `LnaBoostHf` is the part that persists - it raises LNA current by 50% for a better noise figure. It applies above 525 MHz and is ignored below, so the write is unconditional.
+
+### Notes
+- This is a sensitivity change on every listen mode, not just S1. It has not been measured here; the argument for it is that the manufacturer's reference driver sets it and this one did not. Frame counts before and after on an unchanged node are the way to find out whether it is worth anything.
+
+## PL
+
+### Naprawiono
+- `RegLna` (0x0C) jest teraz zapisywany wartością `0x23`: maksymalne wzmocnienie plus `LnaBoostHf`. Sterownik w ogóle nie dotykał tego rejestru, więc pracował na wartości resetowej `0x20` - to samo wzmocnienie, boost wyłączony. Potwierdzone na sprzęcie 2026-08-01, zrzut banku rejestrów LilyGO T3-S3 pokazał `0x0C = 0x20`.
+- `0x23` to wartość samego Semtecha. Tyle wpisuje LoRaMac-node w `RADIO_INIT_REGISTERS_VALUE` dla każdej płytki FSK, a brak wyszedł z porównania sekwencji `setup()` z tamtą tablicą, nie z obserwacji objawu.
+- Połowa dotycząca wzmocnienia znaczy mniej, niż wygląda: `AgcAutoOn` jest ustawiane linijkę dalej, więc `LnaGain` prowadzi sam układ AGC. Zostaje `LnaBoostHf` - podnosi prąd LNA o 50% dla lepszej liczby szumowej. Działa powyżej 525 MHz, poniżej jest ignorowany, więc zapis jest bezwarunkowy.
+
+### Uwagi
+- To zmiana czułości we wszystkich trybach nasłuchu, nie tylko w S1. Nie została tutaj zmierzona; argumentem za nią jest to, że sterownik referencyjny producenta to ustawia, a ten nie ustawiał. Liczba ramek przed i po na niezmienionym węźle jest sposobem, żeby się dowiedzieć, czy to cokolwiek daje.
+
+---
+
 # Note: on the SX127x in FSK, RegOpMode does not tell you whether RX is running
 
 ## EN
