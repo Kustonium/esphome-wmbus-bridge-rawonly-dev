@@ -1,3 +1,31 @@
+# Diagnostics: find where the S1 frame actually starts in a capture
+
+## EN
+
+### Added
+- Under `diagnostic_verbose`, every S1 stream capture on the SX1262 is searched for the chip offset at which a valid L+C header actually sits - all offsets up to 512 chips, both Manchester polarities - and the result is logged with the frame length and the number of invalid pairs inside the frame itself.
+- `s1_expected_raw_len_()` assumes the frame begins at chip 0, because the radio strips the sync word in hardware and the payload should follow immediately. Every S1 capture on this driver ends at `exit=buffer_cap`, which is exactly what happens when no length can be derived from those first bytes.
+- What prompted it: three captures of the same repeater transmission, decoded identically by an SX1276 in the same second on 2026-08-01, produced three completely different first bytes here - `99363510…`, `998A9A9A…`, `DDFBDA9A…`. Identical air content, different buffer content.
+
+### Notes
+- The output separates three cases that were previously indistinguishable. A stable `chip=0` clears the capture path and points at demodulation. An offset that moves between captures locates a start-alignment bug. No valid header anywhere means the frame is not in the capture at all.
+- The invalid-pair count is deliberately taken over the frame body only. Counted across the whole 416-byte buffer it is dominated by the post-frame noise the capture keeps collecting, which is what made earlier readings of that number misleading.
+- Nothing is changed in how captures are taken. This only looks at what was captured.
+
+## PL
+
+### Dodano
+- Przy `diagnostic_verbose` każde przechwycenie strumienia S1 na SX1262 jest przeszukiwane pod kątem przesunięcia chipowego, na którym faktycznie siedzi poprawny nagłówek L+C - wszystkie przesunięcia do 512 chipów, obie polaryzacje Manchester - a wynik trafia do logu razem z długością ramki i liczbą niepoprawnych par wewnątrz samej ramki.
+- `s1_expected_raw_len_()` zakłada, że ramka zaczyna się na chipie 0, bo radio zdejmuje słowo synchronizacji sprzętowo i ładunek powinien następować od razu po nim. Każde przechwycenie S1 na tym sterowniku kończy się na `exit=buffer_cap`, czyli dokładnie tym, co dzieje się, gdy z tych pierwszych bajtów nie da się wyprowadzić długości.
+- Co to sprowokowało: trzy przechwycenia tej samej transmisji repeatera, zdekodowane identycznie przez SX1276 w tej samej sekundzie dnia 2026-08-01, dały tutaj trzy zupełnie różne pierwsze bajty - `99363510…`, `998A9A9A…`, `DDFBDA9A…`. Identyczna treść w eterze, różna treść w buforze.
+
+### Uwagi
+- Wynik rozdziela trzy przypadki, dotąd nieodróżnialne. Stabilne `chip=0` oczyszcza ścieżkę przechwytywania i wskazuje na demodulację. Przesunięcie zmieniające się między przechwyceniami lokalizuje błąd wyrównania startu. Brak poprawnego nagłówka gdziekolwiek oznacza, że ramki w przechwyceniu w ogóle nie ma.
+- Liczba niepoprawnych par jest celowo liczona wyłącznie po ciele ramki. Liczona po całym 416-bajtowym buforze jest zdominowana przez szum po ramce, który przechwytywanie zbiera dalej - i to właśnie czyniło wcześniejsze odczyty tej liczby mylącymi.
+- Sposób przechwytywania nie zmienia się w niczym. To tylko patrzy na to, co zostało przechwycone.
+
+---
+
 # Fix: the frequency-error readout described noise, not the decoded frame
 
 ## EN

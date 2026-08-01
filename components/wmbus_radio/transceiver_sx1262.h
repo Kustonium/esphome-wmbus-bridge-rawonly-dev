@@ -101,6 +101,11 @@ class SX1262 : public RadioTransceiver {
   void set_sync_word_(uint8_t sync2);
   void set_s1_sync_word_();
 
+  // Diagnostic: search the captured stream for the chip offset at which a valid
+  // L+C actually sits, and report how clean the frame is from there. Answers
+  // whether capture_rx_stream_() starts where s1_expected_raw_len_() assumes.
+  void log_s1_frame_start_(const std::vector<uint8_t> &raw);
+
   bool has_rx_done_();
   bool load_rx_buffer_();
 

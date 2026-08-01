@@ -193,6 +193,110 @@ static inline int8_t sx126x_rssi_dbm_(uint8_t raw) {
 // The full parser tries both polarities as well; here we additionally require a
 // valid wM-Bus C-field so the complemented polarity cannot select a plausible
 // but wrong L-field. Returns the exact number of raw Manchester bytes needed
+// ---------------------------------------------------------------------------
+// Frame-start search, diagnostic only.
+//
+// s1_expected_raw_len_() below assumes the frame begins at chip 0 of the
+// captured buffer, because the radio strips the sync word in hardware and the
+// payload should start immediately after it. Every S1 capture on this driver
+// ends at exit=buffer_cap, which is what happens when that assumption fails and
+// no length can be derived - and three captures of the same repeater
+// transmission, decoded identically by an SX1276 in the same second, produced
+// three completely different first bytes here.
+//
+// So look instead of assuming: try every chip offset and both polarities, and
+// report where a valid L+C actually sits. A stable answer of chip 0 clears the
+// capture path; an answer that moves between captures locates the bug.
+// ---------------------------------------------------------------------------
+
+// One Manchester pair at absolute chip index `chip` in raw. Returns false when
+// the pair is 00 or 11, which encodes nothing.
+static bool s1_chip_pair_(const std::vector<uint8_t> &raw, size_t chip, bool polarity, uint8_t &bit_out) {
+  const size_t a_i = chip * 2U;
+  const size_t b_i = a_i + 1U;
+  if ((b_i >> 3) >= raw.size())
+    return false;
+  const uint8_t a = (uint8_t) ((raw[a_i >> 3] >> (7U - (a_i & 7U))) & 0x01U);
+  const uint8_t b = (uint8_t) ((raw[b_i >> 3] >> (7U - (b_i & 7U))) & 0x01U);
+  if (a == b)
+    return false;
+  bit_out = (uint8_t) ((a == 0 && b == 1) ? 0 : 1);
+  if (polarity)
+    bit_out ^= 1U;
+  return true;
+}
+
+// Decode `count` bytes starting at Manchester-pair index `start_pair`. Returns
+// false on the first invalid pair.
+static bool s1_decode_bytes_(const std::vector<uint8_t> &raw, size_t start_pair, bool polarity,
+                             uint8_t *out, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    uint8_t byte = 0;
+    for (size_t bit = 0; bit < 8; bit++) {
+      uint8_t v = 0;
+      if (!s1_chip_pair_(raw, start_pair + i * 8U + bit, polarity, v))
+        return false;
+      byte = (uint8_t) ((byte << 1U) | v);
+    }
+    out[i] = byte;
+  }
+  return true;
+}
+
+// Raw length of a complete format-A frame with DLL CRCs, from its L-field.
+static size_t s1_raw_len_from_l_(uint8_t l_field) {
+  const size_t frame_len = (size_t) l_field + 1U;
+  const size_t blocks = (l_field < 26U) ? 2U : (size_t) ((l_field - 26U) / 16U + 3U);
+  return (frame_len + 2U * blocks) * 2U;
+}
+
+void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
+  // 512 chips = 64 raw bytes of search window. A frame starting later than that
+  // is not a start-alignment problem, it is a different capture entirely.
+  const size_t max_start_pair = 512;
+
+  for (size_t start = 0; start < max_start_pair; start++) {
+    for (uint8_t polarity = 0; polarity < 2; polarity++) {
+      uint8_t hdr[2]{};
+      if (!s1_decode_bytes_(raw, start, polarity != 0, hdr, 2))
+        continue;
+      const uint8_t l_field = hdr[0];
+      const uint8_t c_field = hdr[1];
+      const size_t frame_len = (size_t) l_field + 1U;
+      if (frame_len < 12U || frame_len > 260U)
+        continue;
+      if (c_field != 0x44 && c_field != 0x46)
+        continue;
+
+      // Found a plausible header. Count invalid pairs over the frame body only,
+      // which separates "the frame is clean, we just started in the wrong
+      // place" from "the frame itself came out corrupted".
+      const size_t raw_len = s1_raw_len_from_l_(l_field);
+      const size_t pairs = raw_len * 4U;  // raw bytes -> chips/2
+      size_t invalid = 0, checked = 0;
+      for (size_t p = 0; p < pairs; p++) {
+        uint8_t v = 0;
+        if (((start + p) * 2U + 1U) >> 3 >= raw.size())
+          break;
+        checked++;
+        if (!s1_chip_pair_(raw, start + p, polarity != 0, v))
+          invalid++;
+      }
+
+      ESP_LOGI(TAG,
+               "S1 frame start: chip=%u (raw byte %u bit %u) polarity=%u L=0x%02X C=0x%02X "
+               "-> frame %uB, invalid pairs in frame %u/%u",
+               (unsigned) start, (unsigned) (start / 4U), (unsigned) ((start * 2U) % 8U),
+               (unsigned) polarity, l_field, c_field, (unsigned) frame_len,
+               (unsigned) invalid, (unsigned) checked);
+      return;
+    }
+  }
+
+  ESP_LOGI(TAG, "S1 frame start: no valid L+C in the first %u chips (both polarities), captured=%u B",
+           (unsigned) max_start_pair, (unsigned) raw.size());
+}
+
 // for the complete format-A frame including DLL CRC bytes.
 static size_t s1_expected_raw_len_(const std::vector<uint8_t> &raw) {
   if (raw.size() < 4)
@@ -755,6 +859,12 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   }
   this->record_rssi_diag_(RxPath::STREAM, raw_sync, raw_avg, rssi_inflight,
                           trigger_irq, exit_reason);
+
+  // Where does the frame actually start in what we just captured? Verbose only:
+  // it is a search over up to 512 chip offsets and belongs nowhere near a node
+  // that is receiving normally.
+  if (this->diag_verbose_ && this->listen_mode_ == LISTEN_MODE_S1 && !this->rx_buffer_.empty())
+    this->log_s1_frame_start_(this->rx_buffer_);
 
   // Stop RX and clear IRQs.
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
