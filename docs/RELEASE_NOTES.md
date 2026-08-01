@@ -1,3 +1,47 @@
+# Result: S1 bandwidth sweep finished, 234.3 kHz is the optimum
+
+## EN
+
+### Changed
+- The S1 receive bandwidth returns to 234.3 kHz and stays there. The two test commits that moved it to 312 kHz and then 156.2 kHz have served their purpose.
+
+### Measured
+Longest run of valid Manchester pairs in an SX1262 capture, each taken on a transmission an SX1276 decoded in the same second, out of the 680 pairs an 85-byte telegram needs. Random data gives about 11.
+
+| RX bandwidth | longest valid run |
+|---|---|
+| 312.0 kHz | 30 pairs |
+| **234.3 kHz** | **191 pairs** |
+| 156.2 kHz | 47 pairs |
+
+- A genuine peak, not a trend: both directions cost a factor of four to six. Widening admits noise, narrowing starts cutting a signal whose occupied spectrum is wider than either Carson's rule (133 kHz) or Semtech's sizing rule (143 kHz) predicts for a Manchester-coded BT=0.5 chip stream.
+- The 2026-07-30 finding that 156.2 kHz "stopped reception entirely" is now qualified: it does capture, it captures worse. That earlier measurement was taken before the AN1200.53 capture fix, when no bandwidth decoded anything.
+
+### Notes
+- At the optimum the capture still holds 191 of the 680 pairs a frame needs. Bandwidth is worth a factor of four here and no more; it is not what stops the SX1262 decoding S-mode. The sweep is closed and does not need re-running.
+
+## PL
+
+### Zmieniono
+- Szerokość pasma odbioru dla S1 wraca na 234,3 kHz i tam zostaje. Dwa commity testowe, które przestawiły ją na 312 kHz, a potem na 156,2 kHz, spełniły swoje zadanie.
+
+### Zmierzono
+Najdłuższa seria poprawnych par Manchester w przechwyceniu SX1262, każda na transmisji zdekodowanej przez SX1276 w tej samej sekundzie, wobec 680 par potrzebnych na telegram 85-bajtowy. Dane losowe dają około 11.
+
+| pasmo RX | najdłuższa poprawna seria |
+|---|---|
+| 312,0 kHz | 30 par |
+| **234,3 kHz** | **191 par** |
+| 156,2 kHz | 47 par |
+
+- To jest rzeczywiste maksimum, a nie trend: oba kierunki kosztują czynnik cztery do sześciu. Poszerzanie wpuszcza szum, zwężanie zaczyna obcinać sygnał, którego zajętość widma jest szersza, niż przewiduje reguła Carsona (133 kHz) czy reguła doboru Semtecha (143 kHz) dla strumienia chipów Manchester z BT=0,5.
+- Ustalenie z 2026-07-30, że 156,2 kHz „całkowicie zatrzymuje odbiór", zostaje doprecyzowane: przechwytuje, tylko gorzej. Tamten pomiar wykonano przed poprawką przechwytywania AN1200.53, gdy żadne pasmo niczego nie dekodowało.
+
+### Uwagi
+- W optimum przechwycenie nadal zawiera 191 z 680 par potrzebnych na ramkę. Pasmo jest tu warte czynnik cztery i nic ponadto; nie to zatrzymuje dekodowanie S-mode na SX1262. Przemiatanie jest zamknięte i nie wymaga powtarzania.
+
+---
+
 # Test: S1 bandwidth sweep, third point at 156.2 kHz
 
 ## EN

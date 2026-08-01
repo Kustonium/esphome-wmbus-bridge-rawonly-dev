@@ -1129,31 +1129,31 @@ void SX1262::setup() {
 
   const uint32_t freq_dev = (this->listen_mode_ == LISTEN_MODE_C1) ? 45000UL : 50000UL;
   const uint32_t fdev = ((uint64_t) freq_dev << 25) / XTAL_FREQ;
-  // S1 sweep, third measurement point: 156.2 kHz. Test, not a settled value.
+  // S1 stays at 234.3 kHz. Measured, not argued.
   //
-  // Measured with the capture-quality diagnostic, same transmitter, same second
-  // as an SX1276 decoding it, longest run of valid Manchester pairs out of the
-  // 680 an 85-byte telegram needs:
+  // Three-point sweep, 2026-08-01. Each figure is the longest run of valid
+  // Manchester pairs in an SX1262 capture, taken on a transmission an SX1276
+  // decoded in the same second, out of the 680 pairs an 85-byte telegram needs.
+  // Random data gives about 11.
   //
-  //   312.0 kHz  ->  30 pairs   (random data would give about 11)
-  //   234.3 kHz  -> 191 pairs
-  //   156.2 kHz  -> this build
+  //   312.0 kHz  ->  30 pairs
+  //   234.3 kHz  -> 191 pairs   <- optimum
+  //   156.2 kHz  ->  47 pairs
   //
-  // Widening made it six times worse, which killed the argument that a filter
-  // narrower than the signal was smearing chip edges. What is left is ordinary
-  // noise bandwidth, and the trend between the two measured points runs towards
-  // narrower.
+  // Both directions cost a factor of four to six, so this is a genuine peak and
+  // not a monotonic trend anyone can keep chasing. Widening admits noise;
+  // narrowing starts cutting the signal, whose occupied spectrum is wider than
+  // either Carson (133 kHz) or Semtech's sizing rule (143 kHz) predicts for a
+  // Manchester-coded BT=0.5 chip stream.
   //
-  // 156.2 kHz was tried once before, on 2026-07-30, and reported as stopping S1
-  // reception entirely - but that was measured before the AN1200.53 capture fix
-  // (c1a4c86 at 20:31, b38a582 at 22:40), when no bandwidth decoded anything.
-  // The same objection that justified re-testing 312 kHz applies here.
-  //
-  // C1 keeps 234.3 kHz throughout: it decodes normally and is not part of this.
+  // Worth stating plainly: at the optimum the capture still holds 191 of the
+  // 680 pairs a frame needs. Bandwidth is not what stops the SX1262 decoding
+  // S-mode - it is worth about a factor of four and no more. Do not re-run this
+  // sweep; the numbers are here.
   const uint8_t rx_bw =
-      (this->listen_mode_ == LISTEN_MODE_S1) ? GFSK_RX_BW_156_2
-      : (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3
-                                               : GFSK_RX_BW_312_0;
+      (this->listen_mode_ == LISTEN_MODE_C1 || this->listen_mode_ == LISTEN_MODE_S1)
+          ? GFSK_RX_BW_234_3
+          : GFSK_RX_BW_312_0;
 
   {
     char buf[96];
