@@ -1,26 +1,26 @@
-# Fix: SX1276 never reached RX on S1 and parked in FSRX
+# Note: on the SX127x in FSK, RegOpMode does not tell you whether RX is running
 
 ## EN
 
-### Fixed
-- `restart_rx()` now waits for `ModeReady` after each mode change on the S1 path. It never waited: the driver wrote standby and then wrote RX a few microseconds later, while the standby transition was still in flight. `ModeReady` is cleared when the Mode bits change and set once the chip has actually arrived, so the second write landed on a chip that was not ready for it.
-- Measured on a LilyGO T3-S3 and confirmed on a clean build: with `listen_mode: s1` the chip parked in `FSRX` - synthesiser locked, `ModeReady` and `RxReady` both clear, receiver off - and stayed there across re-arms for as long as the node was up. Configuration was correct throughout: right frequency, right sync word, right bandwidth. Nothing was received and nothing said why. From outside it was indistinguishable from an empty band, and it was read as one for most of a day.
-- Why the identical sequence survives 100 kbps and not 32.768 kcps is not established. What is established is that the sequence was never correct.
+After writing RX (`0b101`) to `RegOpMode`, the SX1276 reads the register back as `0b100` - FSRX, frequency synthesis with the receiver off - and reports `ModeReady` and `RxReady` clear in `RegIrqFlags1`, on a receiver that is working normally. Measured on a LilyGO T3-S3 on 2026-08-01: a node in that exact state decoded three T1 frames at -75, -91 and -95 dBm within the same second, and printed the register readback in between.
+
+This is known behaviour, not a board fault. RadioLib's `SX127x::setMode()` masks the low mode bit out of its write verification for FSK RX specifically, with the comment "disable checking of RX bit in FSK RX mode, as it sometimes seem to fail (#276)".
 
 ### Notes
-- The waits are on the S1 branch only. The T1/C1 path has the same write sequence, works without them, and is what runs on production nodes; adding SPI polling there would change the timing of a path with no defect to fix. If S1 turns out to need this for a reason that applies to every bit rate, unify then - with a measurement, not by symmetry.
-- A mode-transition timeout is reported at most once every 10 s, since `restart_rx()` runs every few seconds while waiting for a frame.
+- Nothing in the driver tests the mode readback any more. `dump_debug_status()` still prints `RegOpMode`, because the value is worth seeing, but it no longer derives a `receiver_running` claim from it and no longer warns that nothing can be received. An earlier version of that warning fired for hours on a receiver that was decoding frames while it fired.
+- A `ModeReady` wait was added to the S1 arming path on the strength of that reading and has been removed again. It was polling for a bit that does not come back even when the transition succeeds, and it cost 2 ms of busy-waiting twice per re-arm.
+- The general lesson is the one this project already applies to RSSI: a register that reports something impossible is worse than a register nobody reads, because the impossible value still gets reasoned about.
 
 ## PL
 
-### Naprawiono
-- `restart_rx()` czeka teraz na `ModeReady` po każdej zmianie trybu na ścieżce S1. Nigdy nie czekał: sterownik zapisywał standby, a kilka mikrosekund później zapisywał RX, gdy przejście do standby było jeszcze w toku. `ModeReady` jest zerowane przy zmianie bitów trybu i ustawiane, gdy układ faktycznie dotrze na miejsce, więc drugi zapis trafiał w układ, który nie był na niego gotowy.
-- Zmierzone na LilyGO T3-S3 i potwierdzone na czystym buildzie: przy `listen_mode: s1` układ parkował w `FSRX` - syntezer zestrojony, `ModeReady` i `RxReady` wyzerowane, odbiornik wyłączony - i zostawał tam przez kolejne uzbrojenia tak długo, jak węzeł działał. Konfiguracja była przez cały czas poprawna: właściwa częstotliwość, właściwe słowo synchronizacji, właściwe pasmo. Nic nie było odbierane i nic nie mówiło dlaczego. Z zewnątrz było to nieodróżnialne od pustego pasma i przez większość dnia było za nie brane.
-- Dlaczego identyczna sekwencja przechodzi przy 100 kbps, a nie przy 32,768 kcps, nie zostało ustalone. Ustalone zostało, że sekwencja nigdy nie była poprawna.
+Po zapisaniu RX (`0b101`) do `RegOpMode` SX1276 odczytuje ten rejestr jako `0b100` - FSRX, czyli synteza częstotliwości z wyłączonym odbiornikiem - i raportuje wyzerowane `ModeReady` oraz `RxReady` w `RegIrqFlags1`, na odbiorniku pracującym normalnie. Zmierzone na LilyGO T3-S3 dnia 2026-08-01: węzeł dokładnie w tym stanie zdekodował trzy ramki T1 przy -75, -91 i -95 dBm w tej samej sekundzie, a pomiędzy nimi wypisał ten odczyt rejestru.
+
+To jest znane zachowanie, nie usterka płytki. `SX127x::setMode()` w RadioLib maskuje najmłodszy bit trybu przy weryfikacji zapisu, konkretnie dla FSK RX, z komentarzem „disable checking of RX bit in FSK RX mode, as it sometimes seem to fail (#276)".
 
 ### Uwagi
-- Czekanie jest wyłącznie w gałęzi S1. Ścieżka T1/C1 ma tę samą sekwencję zapisów, działa bez tego i to ona chodzi na węzłach produkcyjnych; dołożenie tam odpytywania po SPI zmieniłoby timing ścieżki, w której nie ma czego naprawiać. Jeśli okaże się, że S1 potrzebuje tego z powodu wspólnego dla wszystkich prędkości, ujednolicimy wtedy - na podstawie pomiaru, nie symetrii.
-- Przekroczenie czasu przejścia trybu jest raportowane najwyżej raz na 10 s, bo `restart_rx()` biegnie co kilka sekund w oczekiwaniu na ramkę.
+- Nic w sterowniku nie testuje już odczytu trybu. `dump_debug_status()` nadal wypisuje `RegOpMode`, bo tę wartość warto widzieć, ale nie wyprowadza z niej twierdzenia `receiver_running` ani nie ostrzega, że nic nie zostanie odebrane. Wcześniejsza wersja tego ostrzeżenia wypisywała się godzinami na odbiorniku, który w trakcie dekodował ramki.
+- Na podstawie tego odczytu dodano wcześniej czekanie na `ModeReady` na ścieżce uzbrajania S1 i zostało ono usunięte. Odpytywało o bit, który nie wraca nawet przy udanym przejściu, i kosztowało 2 ms zajętego oczekiwania dwukrotnie na każde uzbrojenie.
+- Ogólny wniosek jest ten sam, który ten projekt stosuje już do RSSI: rejestr raportujący rzecz niemożliwą jest gorszy od rejestru, którego nikt nie czyta, bo o niemożliwej wartości i tak się potem argumentuje.
 
 ---
 
@@ -33,9 +33,8 @@
 - `XOSC_START_ERR` is set during the power-on sequence as a matter of course on a TCXO board, because the chip tries to start its crystal oscillator before DIO3 has been told to power the TCXO - DIO3 is configured after reset. Clearing it once the reference is set up is what the datasheet expects. Paired with the re-read at the end of `setup()`, the flag now means something: one that clears was a power-on artefact, one that comes back after a clean clear is a reference that genuinely is not starting.
 - Removing the block from the receive path also takes a 7 ms blocking delay off the first capture.
 
-### Added
-- SX1276 reads `RegOpMode` back after arming RX and warns when the chip is not there, naming the mode it reached and whether `ModeReady`/`RxReady` came up. Measured on S1: `restart_rx()` writes RX and five seconds later the chip still reads back `FSRX` with `ModeReady` clear - synthesiser locked, receiver off, configuration perfect, nothing received. From outside that is indistinguishable from an empty band.
-- The readback is observation only: it does not wait, retry or otherwise alter the arming sequence, which is shared with T1. It runs solely under `diagnostic_verbose`, because the receiver is deaf for as long as `restart_rx()` holds the SPI bus and two extra reads per re-arm are not free on a node that receives. First failure is reported immediately, then at most every 10 s.
+### Notes
+- This entry originally also announced an SX1276 warning derived from reading `RegOpMode` back after arming RX. That reading turned out not to mean what it looked like and the warning has been removed - see the note about `RegOpMode` in FSK RX above.
 
 ## PL
 
@@ -44,9 +43,8 @@
 - `XOSC_START_ERR` jest ustawiane przy starcie na płytce z TCXO w sposób normalny, bo układ próbuje uruchomić swój oscylator kwarcowy, zanim DIO3 dostanie polecenie zasilania TCXO - DIO3 konfiguruje się po resecie. Wyczyszczenie flagi po ustawieniu referencji jest tym, czego oczekuje datasheet. W parze z ponownym odczytem na końcu `setup()` flaga wreszcie coś znaczy: taka, która znika, była artefaktem startu, taka, która wraca po czystym wyczyszczeniu, to referencja, która naprawdę nie startuje.
 - Usunięcie tego bloku ze ścieżki odbiorczej zdejmuje przy okazji 7 ms blokującego opóźnienia z pierwszego przechwycenia.
 
-### Dodano
-- SX1276 odczytuje `RegOpMode` po uzbrojeniu RX i ostrzega, gdy układ tam nie dotarł, podając tryb, w którym stanął, oraz czy pojawiły się `ModeReady`/`RxReady`. Zmierzone na S1: `restart_rx()` zapisuje RX, a pięć sekund później układ nadal czyta się jako `FSRX` z wyzerowanym `ModeReady` - syntezer zestrojony, odbiornik wyłączony, konfiguracja bez zarzutu, zero odebranych ramek. Z zewnątrz jest to nieodróżnialne od pustego pasma.
-- Odczyt jest wyłącznie obserwacją: nie czeka, nie ponawia i nie zmienia sekwencji uzbrajania, która jest wspólna z T1. Działa tylko przy `diagnostic_verbose`, bo odbiornik jest głuchy tak długo, jak `restart_rx()` trzyma magistralę SPI, a dwa dodatkowe odczyty na każde uzbrojenie nie są darmowe na węźle, który odbiera. Pierwsza awaria raportowana natychmiast, potem najwyżej co 10 s.
+### Uwagi
+- Ten wpis pierwotnie zapowiadał także ostrzeżenie SX1276 wyprowadzone z odczytu `RegOpMode` po uzbrojeniu RX. Ten odczyt okazał się nie znaczyć tego, na co wyglądał, i ostrzeżenie zostało usunięte - patrz notatka o `RegOpMode` w FSK RX powyżej.
 
 ---
 

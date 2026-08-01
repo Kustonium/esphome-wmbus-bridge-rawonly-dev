@@ -61,28 +61,11 @@ class SX1276 : public RadioTransceiver {
   // Drain one safe chunk or one safe tail byte if available.
   optional<uint8_t> drain_fifo_once_();
 
-  // Read RegOpMode back after arming RX and complain if the chip did not get
-  // there. Observation only - it does not wait, retry or otherwise change the
-  // arming sequence, and it runs solely under verbose diagnostics so the normal
-  // re-arm path keeps its exact timing. The radio is deaf while restart_rx()
-  // talks over SPI, so two extra reads per re-arm are not free on a busy node.
-  void verify_rx_mode_();
-  bool rx_mode_ok_{true};
-  int64_t rx_mode_warn_us_{0};
-
-  // Block until ModeReady comes back after a mode change. Called only on the S1
-  // arming path; the T1/C1 path keeps its original timing. Returns false on
-  // timeout, silently - warn_mode_timeout_() owns the reporting so the rate
-  // limiting lives in one place.
   // Whole FSK register bank as hex, once at boot under verbose diagnostics.
   // Meant to be run in one listen mode and then the other, and the two logs
   // diffed - reading the registers beats arguing from the setup sequence about
   // which of them can possibly differ.
   void dump_register_bank_();
-
-  bool wait_mode_ready_(uint32_t timeout_us);
-  void warn_mode_timeout_(const char *stage);
-  int64_t mode_ready_warn_us_{0};
 };
 
 }  // namespace wmbus_radio

@@ -27,17 +27,14 @@ static constexpr uint8_t REG_PREAMBLE_DETECT = 0x1F;
 static constexpr uint8_t REG_SYNC_CONFIG     = 0x27;
 static constexpr uint8_t REG_IRQ_FLAGS1      = 0x3E;
 
-// RegIrqFlags1 bits, FSK/OOK mode. Only the ones acted on are named; the rest
-// are printed as hex.
-static constexpr uint8_t FLAG1_MODE_READY      = (1 << 7);
-static constexpr uint8_t FLAG1_RX_READY        = (1 << 6);
+// RegIrqFlags1 bits, FSK/OOK mode. Only the two that answer "is anything
+// arriving at all" are named; the rest are printed as hex.
+//
+// ModeReady and RxReady are deliberately not named and not tested. On this chip
+// in FSK they read clear on a receiver that is demonstrably working - see the
+// note in dump_debug_status().
 static constexpr uint8_t FLAG1_PREAMBLE_DETECT = (1 << 1);
 static constexpr uint8_t FLAG1_SYNC_MATCH      = (1 << 0);
-
-// Upper bound for a mode transition. The datasheet ready times for FSK are tens
-// of microseconds; 2 ms is far beyond any of them, so reaching this timeout
-// means the chip is not going to arrive rather than that it needs longer.
-static constexpr uint32_t SX1276_MODE_READY_TIMEOUT_US = 2000;
 
 // RegOpMode bits 2:0 in FSK/OOK mode. FSRX is the trap worth naming: the
 // synthesiser is locked to the receive frequency but the receiver itself is
@@ -320,20 +317,24 @@ void SX1276::dump_debug_status(const char *reason) {
            reason != nullptr ? reason : "?", op_mode, sx1276_mode_name_(op_mode), irq1, irq2, rssi,
            -((int) rssi) / 2, rx_cfg, rx_bw, pre_det, sync_cfg, sync1, sync2, sync3, irq_level);
 
-  // The interesting part restated in words, because the two bits that say
-  // whether the air is empty are one bit each in the middle of a hex byte.
-  ESP_LOGI(TAG, "DEBUG [%s]: preamble_detected=%s sync_matched=%s receiver_running=%s",
+  // The two bits that say whether anything is arriving, restated in words -
+  // they are one bit each in the middle of a hex byte.
+  //
+  // OpMode is printed above but deliberately not turned into a claim about
+  // whether the receiver is running. On the SX127x in FSK, RegOpMode reads back
+  // 0b100 (FSRX) after a successful write of 0b101 (RX), and IrqFlags1 reports
+  // ModeReady and RxReady clear at the same time. RadioLib works around exactly
+  // this - SX127x::setMode() masks the low mode bit out of its write
+  // verification for FSK RX, "as it sometimes seem to fail (#276)".
+  //
+  // Measured here 2026-08-01: a node reading OpMode=0x04 with ModeReady=no and
+  // RxReady=no decoded three T1 frames at -75, -91 and -95 dBm in the same
+  // second. An earlier version of this function called that state "not in RX -
+  // nothing can be received", which was false and was believed for hours.
+  ESP_LOGI(TAG, "DEBUG [%s]: preamble_detected=%s sync_matched=%s (OpMode/ModeReady unreliable in FSK RX)",
            reason != nullptr ? reason : "?",
            (irq1 & FLAG1_PREAMBLE_DETECT) ? "yes" : "no",
-           (irq1 & FLAG1_SYNC_MATCH) ? "yes" : "no",
-           ((op_mode & 0x07) == 0x05) ? "yes" : "NO");
-
-  if ((op_mode & 0x07) != 0x05) {
-    ESP_LOGW(TAG,
-             "SX1276 is not in RX (mode=%s) / SX1276 nie jest w trybie RX. "
-             "Nothing can be received in this state.",
-             sx1276_mode_name_(op_mode));
-  }
+           (irq1 & FLAG1_SYNC_MATCH) ? "yes" : "no");
 }
 
 optional<uint8_t> SX1276::read() {
@@ -367,96 +368,9 @@ optional<uint8_t> SX1276::read() {
   return {};
 }
 
-// ---------------------------------------------------------------------------
-// verify_rx_mode_: did the chip actually reach RX after restart_rx() asked for it?
-//
-// Observation only. It does not wait for ModeReady, does not retry and does not
-// touch the arming sequence, because that sequence is shared with T1 and T1
-// currently works. It also runs only under verbose diagnostics: the receiver is
-// deaf for as long as restart_rx() holds the SPI bus, so two extra register
-// reads on every re-arm are not free on a node that receives.
-//
-// Worth having because the failure is completely silent otherwise. Measured
-// 2026-08-01 on S1: restart_rx() writes RX, and five seconds later the chip is
-// still reading back FSRX with ModeReady clear - synthesiser locked, receiver
-// off, configuration perfect, nothing received. From outside that is
-// indistinguishable from an empty band.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// wait_mode_ready_: block until the chip reports the requested mode is live.
-//
-// ModeReady is cleared when the Mode bits change and set again once the chip
-// has actually arrived. The driver never waited for it: restart_rx() wrote
-// standby and then wrote RX a few microseconds later, while the standby
-// transition was still in flight.
-//
-// On T1 that has always worked and this function is deliberately not called
-// there - see restart_rx(). On S1 it does not: measured 2026-08-01 on a LilyGO
-// T3-S3, confirmed on a clean build, the chip parks in FSRX with the
-// synthesiser locked, ModeReady never set, and stays there across re-arms. Why
-// the same sequence survives one bit rate and not the other is not established;
-// what is established is that the sequence was never correct to begin with.
-//
-// Returns false on timeout. Callers report that; this stays silent so the
-// rate limiting lives in one place.
-// ---------------------------------------------------------------------------
-bool SX1276::wait_mode_ready_(uint32_t timeout_us) {
-  const int64_t deadline = esp_timer_get_time() + (int64_t) timeout_us;
-  do {
-    if (this->spi_read(REG_IRQ_FLAGS1) & FLAG1_MODE_READY)
-      return true;
-  } while (esp_timer_get_time() < deadline);
-  return false;
-}
-
-// Report a mode-transition timeout without filling the log. restart_rx() runs
-// every few seconds while waiting for a frame, so an unrecoverable chip would
-// otherwise print the same line until it crowds out whatever follows it.
-void SX1276::warn_mode_timeout_(const char *stage) {
-  const int64_t now_us = esp_timer_get_time();
-  if (this->mode_ready_warn_us_ != 0 && (now_us - this->mode_ready_warn_us_) < 10000000LL)
-    return;
-  this->mode_ready_warn_us_ = now_us;
-  const uint8_t op_mode = this->spi_read(REG_OP_MODE);
-  ESP_LOGW(TAG,
-           "ModeReady timeout after %s (OpMode=0x%02X %s) / przekroczony czas oczekiwania na gotowosc trybu",
-           stage, op_mode, sx1276_mode_name_(op_mode));
-}
-
-void SX1276::verify_rx_mode_() {
-  const uint8_t op_mode = this->spi_read(REG_OP_MODE);
-  if ((op_mode & 0x07) == 0x05) {
-    this->rx_mode_ok_ = true;
-    return;
-  }
-
-  const uint8_t irq1 = this->spi_read(REG_IRQ_FLAGS1);
-  const int64_t now_us = esp_timer_get_time();
-
-  // Report the first failure immediately, then at most every 10 s: restart_rx()
-  // runs every few seconds while waiting, and a stuck chip would otherwise fill
-  // the log with the same line instead of leaving room for what follows it.
-  if (this->rx_mode_ok_ || (now_us - this->rx_mode_warn_us_) > 10000000LL) {
-    this->rx_mode_warn_us_ = now_us;
-    ESP_LOGW(TAG,
-             "restart_rx asked for RX, chip is in %s (OpMode=0x%02X IrqFlags1=0x%02X ModeReady=%s RxReady=%s). "
-             "Nothing can be received in this state / w tym stanie nic nie zostanie odebrane.",
-             sx1276_mode_name_(op_mode), op_mode, irq1, (irq1 & FLAG1_MODE_READY) ? "yes" : "no",
-             (irq1 & FLAG1_RX_READY) ? "yes" : "no");
-  }
-  this->rx_mode_ok_ = false;
-}
-
 void SX1276::restart_rx() {
   if (this->listen_mode_ == LISTEN_MODE_S1) {
-    // The two waits below exist only on this branch, on purpose. The T1/C1 path
-    // has the identical write sequence and works without them, and it is what
-    // runs on production nodes; adding SPI polling there would change the
-    // timing of a path that has no defect to fix. If S1 turns out to need this
-    // for a reason that applies to every bit rate, unify then, with a measurement.
     this->spi_write(REG_OP_MODE, (uint8_t) 0b001);  // standby
-    if (!this->wait_mode_ready_(SX1276_MODE_READY_TIMEOUT_US))
-      this->warn_mode_timeout_("standby");
     this->spi_write(0x28, {0x54, 0x76, 0x96});
     this->spi_write(REG_IRQ_FLAGS2, (uint8_t) FLAG2_FIFO_OVERRUN);
     this->chunk_len_ = 0;
@@ -466,10 +380,6 @@ void SX1276::restart_rx() {
     this->last_rssi_dbm_ = -127;
     this->abort_requested_ = false;
     this->spi_write(REG_OP_MODE, (uint8_t) 0b101);  // RX
-    if (!this->wait_mode_ready_(SX1276_MODE_READY_TIMEOUT_US))
-      this->warn_mode_timeout_("rx");
-    if (this->diag_verbose_)
-      this->verify_rx_mode_();
     return;
   }
 
@@ -501,8 +411,6 @@ void SX1276::restart_rx() {
   this->abort_requested_ = false;
 
   this->spi_write(REG_OP_MODE, (uint8_t) 0b101);  // RX
-  if (this->diag_verbose_)
-    this->verify_rx_mode_();
 }
 
 int8_t SX1276::get_rssi() {
