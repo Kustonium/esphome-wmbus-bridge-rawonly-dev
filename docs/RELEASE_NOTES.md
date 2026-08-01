@@ -1,3 +1,27 @@
+# Fix: the frequency-error readout described noise, not the decoded frame
+
+## EN
+
+### Fixed
+- `RegAfc` and `RegFei` are now sampled once per frame by `latch_frame_metrics_()`, at the moment its first bytes reach the FIFO, together with RSSI. `dump_debug_status()` reports the latched values and how many seconds old they are, and no longer re-reads the registers.
+- The previous version read them live inside the dump. That dump runs on a receive-wait timeout - by definition when nothing has arrived for a minute - so it returned whatever noise last tripped the preamble detector. Measured on 2026-08-01 on a node decoding one transmitter every 123 seconds: +23.5 kHz two seconds before a frame, then -17.6 kHz corrected with a +68.5 kHz residual on a preamble that never matched sync, then -16.1 kHz three seconds before the next frame. None of those came from the transmitter being decoded.
+- RSSI is copied into a separate sticky field for the diagnostic. `restart_rx()` resets the value handed to the packet to the not-measured sentinel on every re-arm, which is correct there but would have made the dump report -127 for a frame whose level was measured.
+
+### Notes
+- The general shape of this is the same mistake twice: a register that is only valid at one instant, read at another instant, producing a number that looks authoritative and describes nothing. The RSSI sampling fix in July had exactly this cause.
+
+## PL
+
+### Naprawiono
+- `RegAfc` i `RegFei` są teraz próbkowane raz na ramkę przez `latch_frame_metrics_()`, w chwili gdy jej pierwsze bajty trafiają do FIFO, razem z RSSI. `dump_debug_status()` raportuje zatrzaśnięte wartości oraz to, ile mają sekund, i nie odczytuje już rejestrów ponownie.
+- Poprzednia wersja czytała je na żywo wewnątrz dumpu. Ten dump biegnie na przeterminowaniu oczekiwania na ramkę - czyli z definicji wtedy, gdy od minuty nic nie przyszło - więc zwracał to, co ostatnio potrąciło detektor preambuły, czyli szum. Zmierzone 2026-08-01 na węźle dekodującym jeden nadajnik co 123 sekundy: +23,5 kHz dwie sekundy przed ramką, potem −17,6 kHz korekty z residuum +68,5 kHz na preambule, która nigdy nie dopasowała sync, potem −16,1 kHz trzy sekundy przed kolejną ramką. Żadna z tych liczb nie pochodziła od dekodowanego nadajnika.
+- RSSI jest kopiowane do osobnego, trwałego pola na potrzeby diagnostyki. `restart_rx()` przy każdym uzbrojeniu zeruje wartość przekazywaną do pakietu do sentinela „nie zmierzono", co jest tam poprawne, ale sprawiłoby, że dump raportowałby −127 dla ramki, której poziom zmierzono.
+
+### Uwagi
+- Kształt tego błędu jest ten sam co poprzednio: rejestr ważny tylko w jednej chwili, odczytany w innej, dający liczbę, która wygląda autorytatywnie i nie opisuje niczego. Lipcowa poprawka próbkowania RSSI miała dokładnie tę przyczynę.
+
+---
+
 # Diagnostics: SX1276 reports the frequency error of the last reception
 
 ## EN

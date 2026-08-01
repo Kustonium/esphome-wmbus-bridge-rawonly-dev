@@ -77,6 +77,38 @@ void SX1276::spi_read_burst_(uint8_t address, uint8_t *dst, size_t len) {
   this->delegate_->end_transaction();
 }
 
+// ---------------------------------------------------------------------------
+// latch_frame_metrics_: sample everything that describes THIS frame, once, at
+// the moment its first bytes reach the FIFO.
+//
+// RSSI has to be read here because after the transmission it measures the empty
+// channel. RegAfc and RegFei have the same problem for the opposite reason:
+// they are latched during the preamble/AFC phase, so by the time the first FIFO
+// byte arrives they already describe this frame - but they keep being
+// overwritten by every later preamble detection, including ones caused by noise.
+//
+// Reading them anywhere else produces numbers that look authoritative and
+// describe nothing. Measured 2026-08-01: a dump taken on a receive-wait timeout
+// reported +23.5 kHz two seconds before a frame, -17.6 kHz corrected with a
+// +68.5 kHz residual one minute later on a preamble that never matched sync,
+// and -16.1 kHz three seconds before the next frame - none of them from the
+// transmitter that was actually being decoded every 123 seconds.
+// ---------------------------------------------------------------------------
+void SX1276::latch_frame_metrics_() {
+  this->last_rssi_dbm_ = (int8_t) (-(int) this->spi_read(REG_RSSI_VALUE) / 2);
+  // Sticky copy: restart_rx() resets last_rssi_dbm_ to the not-measured
+  // sentinel on every re-arm, which is correct for the value handed to the
+  // packet but would leave the diagnostic reporting -127 for a frame it did
+  // measure.
+  this->last_frame_rssi_dbm_ = this->last_rssi_dbm_;
+  this->last_afc_msb_ = this->spi_read(REG_AFC_MSB);
+  this->last_afc_lsb_ = this->spi_read(REG_AFC_MSB + 1);
+  this->last_fei_msb_ = this->spi_read(REG_FEI_MSB);
+  this->last_fei_lsb_ = this->spi_read(REG_FEI_MSB + 1);
+  this->frame_metrics_us_ = esp_timer_get_time();
+  this->rssi_captured_ = true;
+}
+
 optional<uint8_t> SX1276::drain_fifo_once_() {
   const uint8_t irq2 = this->spi_read(REG_IRQ_FLAGS2);
 
@@ -95,10 +127,8 @@ optional<uint8_t> SX1276::drain_fifo_once_() {
 
   // Safe burst path: FifoLevel guarantees >= SX1276_CHUNK_SIZE bytes in FIFO.
   if (irq2 & FLAG2_FIFO_LEVEL) {
-    if (!this->rssi_captured_) {
-      this->last_rssi_dbm_ = (int8_t)(-(int) this->spi_read(REG_RSSI_VALUE) / 2);
-      this->rssi_captured_ = true;
-    }
+    if (!this->rssi_captured_)
+      this->latch_frame_metrics_();
 
     this->spi_read_burst_(REG_FIFO, this->chunk_buffer_.data(), SX1276_CHUNK_SIZE);
     this->chunk_len_ = SX1276_CHUNK_SIZE;
@@ -109,10 +139,8 @@ optional<uint8_t> SX1276::drain_fifo_once_() {
 
   // Tail path: less than threshold left, so only a single-byte read is safe.
   if (!(irq2 & FLAG2_FIFO_EMPTY)) {
-    if (!this->rssi_captured_) {
-      this->last_rssi_dbm_ = (int8_t)(-(int) this->spi_read(REG_RSSI_VALUE) / 2);
-      this->rssi_captured_ = true;
-    }
+    if (!this->rssi_captured_)
+      this->latch_frame_metrics_();
 
     this->frame_active_ = true;
     return this->spi_read(REG_FIFO);
@@ -347,26 +375,33 @@ void SX1276::dump_debug_status(const char *reason) {
            reason != nullptr ? reason : "?", op_mode, sx1276_mode_name_(op_mode), irq1, irq2, rssi,
            -((int) rssi) / 2, rx_cfg, rx_bw, pre_det, sync_cfg, sync1, sync2, sync3, irq_level);
 
-  // Frequency error of the last reception, in two forms.
+  // Frequency error, reported from the values latched by latch_frame_metrics_()
+  // when the last frame's first bytes arrived - deliberately NOT re-read here.
   //
-  // RegFei is what the receiver measured; RegAfc is what the AFC actually
-  // corrected by, and with AfcAutoOn set that correction is the reason this
-  // chip decodes transmitters an SX126x cannot - the SX126x has no AFC in GFSK
-  // at all, so whatever number appears here is error it has to swallow whole.
+  // RegFei is what the receiver measured; RegAfc is what the AFC corrected by.
+  // With AfcAutoOn set, that correction is work an SX126x cannot do at all: it
+  // has no AFC in GFSK, so whatever offset shows up here is error the other
+  // chip has to swallow whole.
   //
-  // Both are latched from the last received frame, so on a mode where frames
-  // are minutes apart this still reports the last real transmitter rather than
-  // noise. They read zero until something has been received since boot.
-  const uint8_t afc_msb = this->spi_read(REG_AFC_MSB);
-  const uint8_t afc_lsb = this->spi_read(REG_AFC_MSB + 1);
-  const uint8_t fei_msb = this->spi_read(REG_FEI_MSB);
-  const uint8_t fei_lsb = this->spi_read(REG_FEI_MSB + 1);
-  ESP_LOGI(TAG,
-           "DEBUG [%s]: RegAfc=%02X%02X (%ld Hz) RegFei=%02X%02X (%ld Hz) "
-           "-- last reception's frequency error / blad czestotliwosci ostatniego odbioru",
-           reason != nullptr ? reason : "?", afc_msb, afc_lsb,
-           (long) sx1276_steps_to_hz_(afc_msb, afc_lsb), fei_msb, fei_lsb,
-           (long) sx1276_steps_to_hz_(fei_msb, fei_lsb));
+  // The age matters as much as the value. This dump runs on a receive-wait
+  // timeout, i.e. precisely when nothing has arrived for a minute, so a live
+  // read of these registers returns whatever noise last tripped the preamble
+  // detector. The age says how long ago the reading came from a real frame.
+  if (this->frame_metrics_us_ != 0) {
+    const long age_s = (long) ((esp_timer_get_time() - this->frame_metrics_us_) / 1000000LL);
+    ESP_LOGI(TAG,
+             "DEBUG [%s]: last frame %lds ago: RegAfc=%02X%02X (%ld Hz) RegFei=%02X%02X (%ld Hz) "
+             "RSSI=%ddBm / blad czestotliwosci ostatniej ramki",
+             reason != nullptr ? reason : "?", age_s,
+             this->last_afc_msb_, this->last_afc_lsb_,
+             (long) sx1276_steps_to_hz_(this->last_afc_msb_, this->last_afc_lsb_),
+             this->last_fei_msb_, this->last_fei_lsb_,
+             (long) sx1276_steps_to_hz_(this->last_fei_msb_, this->last_fei_lsb_),
+             (int) this->last_frame_rssi_dbm_);
+  } else {
+    ESP_LOGI(TAG, "DEBUG [%s]: no frame received since boot, no frequency error to report",
+             reason != nullptr ? reason : "?");
+  }
 
   // The two bits that say whether anything is arriving, restated in words -
   // they are one bit each in the middle of a hex byte.
