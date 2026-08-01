@@ -789,6 +789,18 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   uint8_t state_index = 0;  // last read index (wraps 0..255)
   size_t s1_expected_raw_len = 0;
 
+  // Instrumentation for the capture itself, not for its contents.
+  //
+  // At 32.768 kchip/s one raw byte is 8 chips = 244 us, so 512 bytes cannot
+  // physically arrive in less than 125 ms. If a capture reaches the cap faster
+  // than that, the bytes are not coming off the air as they are read - the
+  // buffer is being re-read, and the frame may well be in there while we grind
+  // it into duplicates. That distinction decides whether buffer_cap is a
+  // symptom or the cause, and nothing else in the log answers it.
+  uint32_t poll_iterations = 0;
+  uint32_t reads_with_data = 0;
+  uint8_t max_avail = 0;
+
   // Capture until RX_DONE/TIMEOUT (latched IRQ), then allow a short drain window.
   bool seen_end_irq = false;
   const char *exit_reason = "unknown";
@@ -799,6 +811,7 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
 
   while (true) {
     const uint32_t now = millis();
+    poll_iterations++;
 
     // Safety: don't hang forever
     if ((now - start_ms) > 250) {
@@ -829,6 +842,9 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
     this->write_register_(REG_RXTX_PAYLOAD_LEN, {(uint8_t) (current_index - 1)});
 
     if (avail != 0) {
+      reads_with_data++;
+      if (avail > max_avail)
+        max_avail = avail;
       // Sample RSSI before draining: bytes are arriving right now, so the
       // transmitter is still on air and this is the frame's own signal level.
       // Draining 200+ bytes over SPI takes long enough that a sample taken
@@ -922,8 +938,19 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   // Where does the frame actually start in what we just captured? Verbose only:
   // it is a search over up to 512 chip offsets and belongs nowhere near a node
   // that is receiving normally.
-  if (this->diag_verbose_ && this->listen_mode_ == LISTEN_MODE_S1 && !this->rx_buffer_.empty())
+  if (this->diag_verbose_ && this->listen_mode_ == LISTEN_MODE_S1 && !this->rx_buffer_.empty()) {
+    // 8 chips per raw byte at 32768 chip/s = 244.14 us per byte, so
+    // ms = bytes * 8 * 1000 / 32768, which reduces to bytes * 2000 / 8192.
+    const uint32_t air_ms = (uint32_t) ((this->rx_buffer_.size() * 2000UL) / 8192UL);
+    const uint32_t took_ms = millis() - start_ms;
+    ESP_LOGI(TAG,
+             "S1 capture timing: %u B in %ums (air time for %u B is %ums) exit=%s "
+             "polls=%u with_data=%u max_avail=%u",
+             (unsigned) this->rx_buffer_.size(), (unsigned) took_ms,
+             (unsigned) this->rx_buffer_.size(), (unsigned) air_ms, exit_reason,
+             (unsigned) poll_iterations, (unsigned) reads_with_data, (unsigned) max_avail);
     this->log_s1_frame_start_(this->rx_buffer_);
+  }
 
   // Stop RX and clear IRQs.
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
