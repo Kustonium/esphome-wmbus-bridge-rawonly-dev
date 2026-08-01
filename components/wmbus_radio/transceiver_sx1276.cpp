@@ -26,6 +26,19 @@ static constexpr uint8_t REG_RX_BW           = 0x12;
 static constexpr uint8_t REG_PREAMBLE_DETECT = 0x1F;
 static constexpr uint8_t REG_SYNC_CONFIG     = 0x27;
 static constexpr uint8_t REG_IRQ_FLAGS1      = 0x3E;
+static constexpr uint8_t REG_AFC_MSB         = 0x1B;
+static constexpr uint8_t REG_FEI_MSB         = 0x1D;
+
+// Frequency synthesiser step, FXOSC / 2^19 = 61.03515625 Hz. Both RegAfc and
+// RegFei count in these steps, as signed 16-bit values.
+//
+// Read in millihertz-free integer arithmetic: value * 61035 / 1000 gives Hz
+// with an error under 0.01 % over the whole 16-bit range, which is far below
+// anything worth reporting here.
+static int32_t sx1276_steps_to_hz_(uint8_t msb, uint8_t lsb) {
+  const int32_t raw = (int32_t) (int16_t) (((uint16_t) msb << 8) | (uint16_t) lsb);
+  return (int32_t) ((int64_t) raw * 61035 / 1000);
+}
 
 // RegIrqFlags1 bits, FSK/OOK mode. Only the two that answer "is anything
 // arriving at all" are named; the rest are printed as hex.
@@ -333,6 +346,27 @@ void SX1276::dump_debug_status(const char *reason) {
            "RxConfig=0x%02X RxBw=0x%02X PreambleDetect=0x%02X SyncConfig=0x%02X Sync=%02X%02X%02X DIO1=%d",
            reason != nullptr ? reason : "?", op_mode, sx1276_mode_name_(op_mode), irq1, irq2, rssi,
            -((int) rssi) / 2, rx_cfg, rx_bw, pre_det, sync_cfg, sync1, sync2, sync3, irq_level);
+
+  // Frequency error of the last reception, in two forms.
+  //
+  // RegFei is what the receiver measured; RegAfc is what the AFC actually
+  // corrected by, and with AfcAutoOn set that correction is the reason this
+  // chip decodes transmitters an SX126x cannot - the SX126x has no AFC in GFSK
+  // at all, so whatever number appears here is error it has to swallow whole.
+  //
+  // Both are latched from the last received frame, so on a mode where frames
+  // are minutes apart this still reports the last real transmitter rather than
+  // noise. They read zero until something has been received since boot.
+  const uint8_t afc_msb = this->spi_read(REG_AFC_MSB);
+  const uint8_t afc_lsb = this->spi_read(REG_AFC_MSB + 1);
+  const uint8_t fei_msb = this->spi_read(REG_FEI_MSB);
+  const uint8_t fei_lsb = this->spi_read(REG_FEI_MSB + 1);
+  ESP_LOGI(TAG,
+           "DEBUG [%s]: RegAfc=%02X%02X (%ld Hz) RegFei=%02X%02X (%ld Hz) "
+           "-- last reception's frequency error / blad czestotliwosci ostatniego odbioru",
+           reason != nullptr ? reason : "?", afc_msb, afc_lsb,
+           (long) sx1276_steps_to_hz_(afc_msb, afc_lsb), fei_msb, fei_lsb,
+           (long) sx1276_steps_to_hz_(fei_msb, fei_lsb));
 
   // The two bits that say whether anything is arriving, restated in words -
   // they are one bit each in the middle of a hex byte.

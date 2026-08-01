@@ -1,3 +1,25 @@
+# Diagnostics: SX1276 reports the frequency error of the last reception
+
+## EN
+
+### Added
+- `dump_debug_status()` now prints `RegAfc` and `RegFei` with both the raw register value and the converted offset in Hz. `RegFei` is what the receiver measured, `RegAfc` is what the AFC actually corrected by; both are latched from the last received frame, so on a link mode where frames are minutes apart the reading still describes the last real transmitter rather than noise.
+- The reason it is worth having: the SX126x has no AFC in GFSK at all, so whatever offset this register reports is error an SX1262 has to swallow whole. Measured on T1 on a LilyGO T3-S3 on 2026-08-01, the AFC was correcting −37.8 kHz on live meters.
+
+### Notes
+- This turns a frequency sweep into a single read. Instead of retuning a receiver in steps and watching whether reception improves, the offset of the transmitter that was actually decoded can be read off directly and applied once.
+
+## PL
+
+### Dodano
+- `dump_debug_status()` wypisuje teraz `RegAfc` i `RegFei`, zarówno surową wartość rejestru, jak i przeliczone przesunięcie w hercach. `RegFei` to to, co odbiornik zmierzył, `RegAfc` to to, o ile AFC faktycznie skorygowało; obie wartości są zatrzaśnięte z ostatnio odebranej ramki, więc w trybie łącza, gdzie ramki dzielą minuty, odczyt nadal opisuje ostatni realny nadajnik, a nie szum.
+- Dlaczego warto: SX126x nie ma w GFSK żadnego AFC, więc każde przesunięcie raportowane przez ten rejestr jest błędem, który SX1262 musi przyjąć w całości. Zmierzone na T1 na LilyGO T3-S3 dnia 2026-08-01: AFC korygowało −37,8 kHz na żywych licznikach.
+
+### Uwagi
+- To zamienia przemiatanie częstotliwości w jeden odczyt. Zamiast przestrajać odbiornik krokami i patrzeć, czy odbiór się poprawia, można odczytać wprost przesunięcie nadajnika, który faktycznie się zdekodował, i zastosować je raz.
+
+---
+
 # Fix: SX1276 ran with the high-frequency LNA boost off
 
 ## EN
