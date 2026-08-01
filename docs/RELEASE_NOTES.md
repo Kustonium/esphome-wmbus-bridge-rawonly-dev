@@ -1,3 +1,27 @@
+# Fix: SX1262 was never recalibrated after the TCXO was enabled
+
+## EN
+
+### Fixed
+- `SetDIO3AsTcxoCtrl` hands the reference over to the TCXO, but DIO3 is what powers that TCXO - so every calibration the chip performed at power-on ran against the internal RC oscillator, a reference that stops existing one command later. The SX1261/2 datasheet requires the calibration to be relaunched afterwards. `Calibrate(0x7F)` is now issued right after the TCXO is enabled, recalibrating RC64k, RC13M, PLL, the three ADC blocks and the image. This runs only when `has_tcxo: true`, so boards without a TCXO are untouched.
+- Missing this step does not fail loudly. The radio starts, arms RX and receives a transmitter on the same desk perfectly well; what it loses is the last few dB, which is the band real meters arrive in. Nothing in the log distinguished that from a bad antenna.
+- `GetDeviceErrors` is now read once at the end of `setup()` and logged, with `XOSC_START_ERR` and `PLL_CALIB_ERR` raised to `ESP_LOGE`. A device-error snapshot already existed, but it lives in `capture_rx_stream_()` and fires on the first captured frame - never, in the one case worth diagnosing, where nothing is being received.
+
+### Notes
+- Found while comparing an SX1276 against an SX1262 on S-mode. It is not the explanation for that comparison and should not be credited with fixing it; it is a datasheet requirement that was missing on its own terms.
+
+## PL
+
+### Naprawiono
+- `SetDIO3AsTcxoCtrl` przekazuje referencję do TCXO, ale to właśnie DIO3 ten TCXO zasila - więc każda kalibracja, którą układ wykonał przy starcie, poszła względem wewnętrznego oscylatora RC, czyli referencji, która przestaje istnieć jedną komendę później. Datasheet SX1261/2 wymaga powtórzenia kalibracji po tym kroku. `Calibrate(0x7F)` jest teraz wysyłane bezpośrednio po włączeniu TCXO i przelicza RC64k, RC13M, PLL, trzy bloki ADC oraz obraz. Wykonuje się wyłącznie przy `has_tcxo: true`, więc płytki bez TCXO pozostają nietknięte.
+- Brak tego kroku nie objawia się głośno. Radio startuje, uzbraja odbiór i bez problemu odbiera nadajnik z tego samego biurka; traci ostatnie kilka dB, czyli dokładnie zakres, w którym docierają prawdziwe liczniki. Nic w logu nie odróżniało tego od złej anteny.
+- `GetDeviceErrors` jest teraz odczytywane raz na końcu `setup()` i logowane, przy czym `XOSC_START_ERR` i `PLL_CALIB_ERR` podniesione do `ESP_LOGE`. Snapshot błędów układu już istniał, ale mieszka w `capture_rx_stream_()` i odpala się na pierwszej przechwyconej ramce - czyli nigdy w jedynym przypadku wartym diagnozy, gdy nic nie jest odbierane.
+
+### Uwagi
+- Znalezione przy porównywaniu SX1276 z SX1262 na trybie S. To nie jest wyjaśnienie tamtego porównania i nie należy mu tego przypisywać; to wymóg datasheetu, którego brakowało niezależnie.
+
+---
+
 # Fix: a frame could be logged as "RSSI: 0dBm"
 
 ## EN

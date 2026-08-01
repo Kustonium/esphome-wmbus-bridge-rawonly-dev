@@ -33,6 +33,7 @@ static constexpr uint8_t CMD_GET_DEVICE_ERRORS = 0x17;
 static constexpr uint8_t CMD_CLEAR_DEVICE_ERRORS = 0x07;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
+static constexpr uint8_t CMD_CALIBRATE = 0x89;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
 static constexpr uint8_t CMD_WRITE_REGISTER = 0x0D;
 static constexpr uint8_t CMD_READ_REGISTER = 0x1D;
@@ -83,6 +84,16 @@ static constexpr uint8_t GFSK_WHITENING_OFF = 0x00;
 
 // DIO3 TCXO voltage
 static constexpr uint8_t DIO3_OUTPUT_3_0 = 0x06;
+
+// Calibrate(calibParam) bit mask, SX1261/2 datasheet Rev 2.2 table 13-4:
+// bit0 RC64k, bit1 RC13M, bit2 PLL, bit3 ADC pulse, bit4 ADC bulk N,
+// bit5 ADC bulk P, bit6 image. 0x7F therefore recalibrates every block.
+static constexpr uint8_t CALIBRATE_ALL = 0x7F;
+
+// Device-error bits (GetDeviceErrors), same datasheet. Only the two that say
+// "the reference or the PLL never came up" are named; the rest are TX-side.
+static constexpr uint16_t DEV_ERR_PLL_CALIB = 0x0010;
+static constexpr uint16_t DEV_ERR_XOSC_START = 0x0020;
 
 // ---------------------------------------------------------------------------
 // IRQ flag bits (GetIrqStatus register)
@@ -869,9 +880,27 @@ void SX1262::setup() {
   // DIO3_OUTPUT_3_0 selects 3.0 V, and the 24-bit timeout counts in 15.625 us
   // steps, so 0x000040 = 64 steps = 1 ms of TCXO start-up time before the chip
   // considers the reference stable.
+  //
+  // The recalibration below is not optional and not tuning. At power-on the
+  // chip calibrates itself against whatever reference it has, which at that
+  // point is the internal RC oscillator - the TCXO is still unpowered, because
+  // it is DIO3 that powers it and DIO3 has just been told so on the line above.
+  // Every block calibrated before this point therefore sits on a reference that
+  // no longer exists. The datasheet states the requirement directly: after
+  // SetDIO3AsTcxoCtrl the calibration must be relaunched.
+  //
+  // Skipping it does not fail loudly. The radio starts, arms RX, and receives a
+  // transmitter on the same desk perfectly well; what it loses is the last few
+  // dB, which is exactly the band the real meters live in. Nothing in the log
+  // distinguishes that from a bad antenna, which is why the device-error
+  // readback further down was added together with this call.
   if (this->has_tcxo_) {
     this->cmd_write_(CMD_SET_DIO3_AS_TCXO_CTRL, {DIO3_OUTPUT_3_0, 0x00, 0x00, 0x40});
     delay(5);
+    this->cmd_write_(CMD_CALIBRATE, {CALIBRATE_ALL});
+    // Calibrate holds BUSY for up to 3.5 ms per the datasheet. cmd_write_ already
+    // waits on the pin; the delay covers boards that leave BUSY unconnected.
+    delay(10);
   }
 
   // CalibrateImage(freq1, freq2) per SX1261/2 datasheet: the two bytes select the
@@ -937,6 +966,29 @@ void SX1262::setup() {
   // Keep the fast RX_DONE-only path by default. When adaptive long-stream hold
   // is active, restart_rx() will reconfigure this to include SYNC_WORD_VALID.
   this->configure_irq_params_();
+
+  // Device errors after a complete init.
+  //
+  // A snapshot already existed, but it lives in capture_rx_stream_() and fires
+  // on the first captured frame - i.e. never, in the one case worth diagnosing,
+  // where nothing is being received. Reading the register here costs one SPI
+  // transfer at boot and is the only evidence that the calibration above
+  // actually took: XOSC_START_ERR means the TCXO never started, PLL_CALIB_ERR
+  // means the recalibration itself failed. Both are silent otherwise.
+  {
+    uint8_t de[2]{};
+    this->cmd_read_(CMD_GET_DEVICE_ERRORS, {}, de, sizeof(de));
+    const uint16_t errors = u16be_(de);
+    if (errors & (DEV_ERR_XOSC_START | DEV_ERR_PLL_CALIB)) {
+      ESP_LOGE(TAG,
+               "Device errors after setup / bledy ukladu po inicjalizacji: 0x%04X%s%s. "
+               "Reference or PLL did not come up - receive sensitivity is degraded.",
+               errors, (errors & DEV_ERR_XOSC_START) ? " XOSC_START_ERR" : "",
+               (errors & DEV_ERR_PLL_CALIB) ? " PLL_CALIB_ERR" : "");
+    } else {
+      ESP_LOGI(TAG, "Device errors after setup / bledy ukladu po inicjalizacji: 0x%04X", errors);
+    }
+  }
 
   this->restart_rx();
   ESP_LOGV(TAG, "SX1262 setup done");
