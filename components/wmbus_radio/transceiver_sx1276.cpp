@@ -191,9 +191,23 @@ void SX1276::setup() {
   const uint16_t frd = ((uint64_t) freq_dev * (1 << 19)) / F_OSC;
   this->spi_write(0x04, {BYTE(frd, 1), BYTE(frd, 0)});
 
+  // RegBitrateFrac (0x5D) is left at zero. Semtech's own reference driver
+  // (LoRaMac-node, sx1276.c SX1276SetRxConfig) declares the register and never
+  // writes it: it programs RegBitrateMsb/Lsb from FXOSC/datarate and stops.
+  //
+  // The divider works out to an exact integer for T1/C1 - 32 MHz / 100 kbps is
+  // 320.0 - so the fractional byte was always zero there and the write was a
+  // no-op. S1 is the only mode where it is not: 32 MHz / 32.768 kcps is
+  // 976.5625, which put 9 into the register. That made it the one register
+  // whose value differed between the mode that reaches RX and the mode that
+  // parks in FSRX, and the one the manufacturer's driver never touches.
+  //
+  // Dropping the fraction costs 32e6/976 = 32786.9 instead of 32768 cps, an
+  // error of 0.058%. Over the 568 chips of an S-mode frame that is a third of
+  // one chip of drift, which the bit synchroniser absorbs without noticing.
   const uint32_t bitrate = (this->listen_mode_ == LISTEN_MODE_S1) ? 32768UL : 100000UL;
   uint32_t br = (F_OSC << 4) / bitrate;
-  this->spi_write(0x5D, (uint8_t) (br & 0x0F));
+  this->spi_write(0x5D, (uint8_t) 0x00);
   br >>= 4;
   this->spi_write(0x02, {BYTE(br, 1), BYTE(br, 0)});
 
