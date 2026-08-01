@@ -54,7 +54,8 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 // ---------------------------------------------------------------------------
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
 static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;
-static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (C1/S1)
+static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (C1)
+static constexpr uint8_t GFSK_RX_BW_156_2 = 0x1A;  // 156.2 kHz RX bandwidth (S1 sweep point)
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_8  = 0x04;  // detect after 8 preamble bits — more sensitive, tolerates noisy/weak preamble starts
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;  // detect after 16 preamble bits (previous default)
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
@@ -1128,30 +1129,31 @@ void SX1262::setup() {
 
   const uint32_t freq_dev = (this->listen_mode_ == LISTEN_MODE_C1) ? 45000UL : 50000UL;
   const uint32_t fdev = ((uint64_t) freq_dev << 25) / XTAL_FREQ;
-  // S1 is back on the wide 312 kHz window. Test, not a settled value.
+  // S1 sweep, third measurement point: 156.2 kHz. Test, not a settled value.
   //
-  // The bandwidth history and why it is worth re-running: 312 kHz was the
-  // inherited setting; 156.2 kHz was tried on 2026-07-30 and stopped S1
-  // reception entirely, which already showed that Carson's rule (133 kHz) and
-  // Semtech's sizing rule (143 kHz) both under-describe the occupied spectrum
-  // of a Manchester-coded BT=0.5 chip stream. 234.3 kHz then landed as a
-  // compromise, argued from noise: it admits about 1.25 dB less than 312 kHz.
+  // Measured with the capture-quality diagnostic, same transmitter, same second
+  // as an SX1276 decoding it, longest run of valid Manchester pairs out of the
+  // 680 an 85-byte telegram needs:
   //
-  // That argument is about sensitivity. It says nothing about distortion, and
-  // the measurements point the other way - 156 kHz dead, 234.3 kHz syncing on
-  // real S-mode frames but never once decoding them. A filter narrower than the
-  // signal does not only reject noise, it smears the chip edges, which is what
-  // a capture full of invalid Manchester pairs looks like.
+  //   312.0 kHz  ->  30 pairs   (random data would give about 11)
+  //   234.3 kHz  -> 191 pairs
+  //   156.2 kHz  -> this build
   //
-  // The decisive detail: the AN1200.53 capture fix (b38a582) landed 38 minutes
-  // AFTER the move to 234.3 kHz. Every wide-bandwidth test ran on a broken
-  // capture path and every fixed-capture test ran narrow, so 312 kHz has never
-  // been tried with the receive path in its current state.
+  // Widening made it six times worse, which killed the argument that a filter
+  // narrower than the signal was smearing chip edges. What is left is ordinary
+  // noise bandwidth, and the trend between the two measured points runs towards
+  // narrower.
   //
-  // Revert this if it changes nothing. C1 keeps 234.3 kHz either way - it has
-  // no such history and decodes fine.
+  // 156.2 kHz was tried once before, on 2026-07-30, and reported as stopping S1
+  // reception entirely - but that was measured before the AN1200.53 capture fix
+  // (c1a4c86 at 20:31, b38a582 at 22:40), when no bandwidth decoded anything.
+  // The same objection that justified re-testing 312 kHz applies here.
+  //
+  // C1 keeps 234.3 kHz throughout: it decodes normally and is not part of this.
   const uint8_t rx_bw =
-      (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3 : GFSK_RX_BW_312_0;
+      (this->listen_mode_ == LISTEN_MODE_S1) ? GFSK_RX_BW_156_2
+      : (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3
+                                               : GFSK_RX_BW_312_0;
 
   {
     char buf[96];
@@ -1159,7 +1161,7 @@ void SX1262::setup() {
              this->configured_frequency_hz_ / 1000000.0f,
              (unsigned long) (bitrate / 1000UL),
              (unsigned long) (freq_dev / 1000UL),
-             (rx_bw == GFSK_RX_BW_234_3) ? "234kHz" : "312kHz",
+             (rx_bw == GFSK_RX_BW_156_2) ? "156kHz" : (rx_bw == GFSK_RX_BW_234_3) ? "234kHz" : "312kHz",
              (this->listen_mode_ == LISTEN_MODE_S1) ? " Manchester/S-mode" : "");
     this->rf_params_str_ = buf;
   }

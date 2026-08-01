@@ -1,3 +1,41 @@
+# Test: S1 bandwidth sweep, third point at 156.2 kHz
+
+## EN
+
+### Changed
+- The S1 receive bandwidth moves from 312 kHz to 156.2 kHz. Third measurement point of a sweep, still a test. C1 keeps 234.3 kHz and is not part of this.
+
+### Measured
+Longest run of valid Manchester pairs in an SX1262 capture, taken on the same transmission an SX1276 decoded in the same second, out of the 680 pairs an 85-byte telegram needs (random data gives about 11):
+
+| RX bandwidth | longest valid run |
+|---|---|
+| 312.0 kHz | 30 pairs |
+| 234.3 kHz | 191 pairs |
+| 156.2 kHz | this build |
+
+- Widening to 312 kHz made recovery six times worse, which disposes of the argument that a filter narrower than the signal was smearing chip edges. What remains is ordinary noise bandwidth, and the trend between the two measured points runs towards narrower.
+- 156.2 kHz was tried once before, on 2026-07-30, and reported as stopping S1 reception entirely. That was measured before the AN1200.53 capture fix, when no bandwidth decoded anything - the same objection that justified re-testing 312 kHz.
+
+## PL
+
+### Zmieniono
+- Szerokość pasma odbioru dla S1 przechodzi z 312 kHz na 156,2 kHz. Trzeci punkt pomiarowy przemiatania, nadal test. C1 zostaje na 234,3 kHz i nie jest tym objęte.
+
+### Zmierzono
+Najdłuższa seria poprawnych par Manchester w przechwyceniu SX1262, na tej samej transmisji, którą SX1276 zdekodował w tej samej sekundzie, wobec 680 par potrzebnych na telegram 85-bajtowy (dane losowe dają około 11):
+
+| pasmo RX | najdłuższa poprawna seria |
+|---|---|
+| 312,0 kHz | 30 par |
+| 234,3 kHz | 191 par |
+| 156,2 kHz | ten build |
+
+- Poszerzenie do 312 kHz pogorszyło odzysk sześciokrotnie, co obala argument, że filtr węższy od sygnału rozmywał zbocza chipów. Zostaje zwykłe pasmo szumowe, a trend między dwoma zmierzonymi punktami biegnie w stronę węższego.
+- 156,2 kHz próbowano raz wcześniej, 2026-07-30, i zaraportowano jako całkowite zatrzymanie odbioru S1. Zmierzono to jednak przed poprawką przechwytywania AN1200.53, gdy żadne pasmo niczego nie dekodowało - to samo zastrzeżenie, które uzasadniło ponowny test 312 kHz.
+
+---
+
 # Test: S1 on SX1262 goes back to the 312 kHz receive bandwidth
 
 ## EN
