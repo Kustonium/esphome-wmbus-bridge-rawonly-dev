@@ -251,9 +251,41 @@ static size_t s1_raw_len_from_l_(uint8_t l_field) {
 }
 
 void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
-  // 512 chips = 64 raw bytes of search window. A frame starting later than that
-  // is not a start-alignment problem, it is a different capture entirely.
-  const size_t max_start_pair = 512;
+  // Longest unbroken run of valid Manchester pairs anywhere in the capture,
+  // reported first because it answers the coarser question on its own.
+  //
+  // Pair validity (a != b) does not depend on polarity, only on whether the
+  // chip grid is read on the even or the odd boundary - so two single passes
+  // cover every possibility. An 85-byte telegram is 680 consecutive valid
+  // pairs; noise breaks every few. A capture that holds the frame the SX1276
+  // decoded in the same second cannot have a longest run in the tens.
+  size_t best_run = 0, best_run_at = 0;
+  for (uint8_t parity = 0; parity < 2; parity++) {
+    size_t run = 0, run_start = 0;
+    for (size_t chip = parity; ; chip++) {
+      uint8_t v = 0;
+      if ((chip * 2U + 1U) >> 3 >= raw.size())
+        break;
+      if (s1_chip_pair_(raw, chip, false, v)) {
+        if (run == 0)
+          run_start = chip;
+        run++;
+        if (run > best_run) {
+          best_run = run;
+          best_run_at = run_start;
+        }
+      } else {
+        run = 0;
+      }
+    }
+  }
+  ESP_LOGI(TAG, "S1 capture quality: longest valid Manchester run %u pairs at chip %u (of %u pairs total)",
+           (unsigned) best_run, (unsigned) best_run_at, (unsigned) ((raw.size() * 8U) / 2U));
+
+  // Header search over EVERY chip position in the capture. The first version of
+  // this searched 512 positions, which is a quarter of a 512-byte buffer - so a
+  // frame starting past raw byte 128 would have been reported as absent.
+  const size_t max_start_pair = (raw.size() * 8U) / 2U;
 
   for (size_t start = 0; start < max_start_pair; start++) {
     for (uint8_t polarity = 0; polarity < 2; polarity++) {
@@ -293,7 +325,7 @@ void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
     }
   }
 
-  ESP_LOGI(TAG, "S1 frame start: no valid L+C in the first %u chips (both polarities), captured=%u B",
+  ESP_LOGI(TAG, "S1 frame start: no valid L+C at any of %u chip positions (both polarities), captured=%u B",
            (unsigned) max_start_pair, (unsigned) raw.size());
 }
 
