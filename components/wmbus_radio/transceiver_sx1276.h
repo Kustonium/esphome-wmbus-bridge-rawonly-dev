@@ -74,6 +74,12 @@ class SX1276 : public RadioTransceiver {
   // arming path; the T1/C1 path keeps its original timing. Returns false on
   // timeout, silently - warn_mode_timeout_() owns the reporting so the rate
   // limiting lives in one place.
+  // Whole FSK register bank as hex, once at boot under verbose diagnostics.
+  // Meant to be run in one listen mode and then the other, and the two logs
+  // diffed - reading the registers beats arguing from the setup sequence about
+  // which of them can possibly differ.
+  void dump_register_bank_();
+
   bool wait_mode_ready_(uint32_t timeout_us);
   void warn_mode_timeout_(const char *stage);
   int64_t mode_ready_warn_us_{0};

@@ -246,6 +246,44 @@ void SX1276::log_reg_status() {
     ESP_LOGE(TAG, "SX1276 not responding over SPI / SX1276 nie odpowiada po SPI. "
                   "Check VCC/GND/SCK/MOSI/MISO/NSS/RESET.");
   }
+
+  if (this->diag_verbose_)
+    this->dump_register_bank_();
+}
+
+// ---------------------------------------------------------------------------
+// dump_register_bank_: the whole FSK register bank, once, as hex.
+//
+// This exists because reasoning about which registers differ between two
+// listen modes turned out to be a poor substitute for reading them. The setup
+// sequence is a hundred lines of literals; deriving from it that "only the bit
+// rate and the sync length can differ" is an argument, and arguments have been
+// wrong repeatedly here. Dumping the bank in one mode and in the other and
+// diffing the two logs is not an argument.
+//
+// 0x00 is deliberately skipped: it is RegFifo, and reading it pops a byte off
+// the receive FIFO. Printed as "--" so the column alignment still matches the
+// datasheet's address grid.
+//
+// Runs from log_reg_status(), i.e. from the main task at boot, under verbose
+// diagnostics only. Five lines per boot.
+// ---------------------------------------------------------------------------
+void SX1276::dump_register_bank_() {
+  ESP_LOGI(TAG, "Register bank / bank rejestrow (FSK, 0x00-0x4F; 0x00 = RegFifo, not read):");
+  for (uint8_t base = 0x00; base < 0x50; base = (uint8_t) (base + 0x10)) {
+    char line[80];
+    int pos = snprintf(line, sizeof(line), "  %02X:", base);
+    for (uint8_t off = 0; off < 0x10; off++) {
+      const uint8_t addr = (uint8_t) (base + off);
+      if (addr == REG_FIFO) {
+        pos += snprintf(line + pos, sizeof(line) - pos, " --");
+        continue;
+      }
+      pos += snprintf(line + pos, sizeof(line) - pos, " %02X", this->spi_read(addr));
+    }
+    ESP_LOGI(TAG, "%s", line);
+  }
+  ESP_LOGI(TAG, "  5D: %02X  (RegBitrateFrac)", this->spi_read(0x5D));
 }
 
 // ---------------------------------------------------------------------------
