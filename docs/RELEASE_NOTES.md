@@ -1,3 +1,29 @@
+# Fix: SX1276 never reached RX on S1 and parked in FSRX
+
+## EN
+
+### Fixed
+- `restart_rx()` now waits for `ModeReady` after each mode change on the S1 path. It never waited: the driver wrote standby and then wrote RX a few microseconds later, while the standby transition was still in flight. `ModeReady` is cleared when the Mode bits change and set once the chip has actually arrived, so the second write landed on a chip that was not ready for it.
+- Measured on a LilyGO T3-S3 and confirmed on a clean build: with `listen_mode: s1` the chip parked in `FSRX` - synthesiser locked, `ModeReady` and `RxReady` both clear, receiver off - and stayed there across re-arms for as long as the node was up. Configuration was correct throughout: right frequency, right sync word, right bandwidth. Nothing was received and nothing said why. From outside it was indistinguishable from an empty band, and it was read as one for most of a day.
+- Why the identical sequence survives 100 kbps and not 32.768 kcps is not established. What is established is that the sequence was never correct.
+
+### Notes
+- The waits are on the S1 branch only. The T1/C1 path has the same write sequence, works without them, and is what runs on production nodes; adding SPI polling there would change the timing of a path with no defect to fix. If S1 turns out to need this for a reason that applies to every bit rate, unify then - with a measurement, not by symmetry.
+- A mode-transition timeout is reported at most once every 10 s, since `restart_rx()` runs every few seconds while waiting for a frame.
+
+## PL
+
+### Naprawiono
+- `restart_rx()` czeka teraz na `ModeReady` po każdej zmianie trybu na ścieżce S1. Nigdy nie czekał: sterownik zapisywał standby, a kilka mikrosekund później zapisywał RX, gdy przejście do standby było jeszcze w toku. `ModeReady` jest zerowane przy zmianie bitów trybu i ustawiane, gdy układ faktycznie dotrze na miejsce, więc drugi zapis trafiał w układ, który nie był na niego gotowy.
+- Zmierzone na LilyGO T3-S3 i potwierdzone na czystym buildzie: przy `listen_mode: s1` układ parkował w `FSRX` - syntezer zestrojony, `ModeReady` i `RxReady` wyzerowane, odbiornik wyłączony - i zostawał tam przez kolejne uzbrojenia tak długo, jak węzeł działał. Konfiguracja była przez cały czas poprawna: właściwa częstotliwość, właściwe słowo synchronizacji, właściwe pasmo. Nic nie było odbierane i nic nie mówiło dlaczego. Z zewnątrz było to nieodróżnialne od pustego pasma i przez większość dnia było za nie brane.
+- Dlaczego identyczna sekwencja przechodzi przy 100 kbps, a nie przy 32,768 kcps, nie zostało ustalone. Ustalone zostało, że sekwencja nigdy nie była poprawna.
+
+### Uwagi
+- Czekanie jest wyłącznie w gałęzi S1. Ścieżka T1/C1 ma tę samą sekwencję zapisów, działa bez tego i to ona chodzi na węzłach produkcyjnych; dołożenie tam odpytywania po SPI zmieniłoby timing ścieżki, w której nie ma czego naprawiać. Jeśli okaże się, że S1 potrzebuje tego z powodu wspólnego dla wszystkich prędkości, ujednolicimy wtedy - na podstawie pomiaru, nie symetrii.
+- Przekroczenie czasu przejścia trybu jest raportowane najwyżej raz na 10 s, bo `restart_rx()` biegnie co kilka sekund w oczekiwaniu na ramkę.
+
+---
+
 # Fix: `clear_device_errors_on_boot` did nothing on a node that received nothing
 
 ## EN

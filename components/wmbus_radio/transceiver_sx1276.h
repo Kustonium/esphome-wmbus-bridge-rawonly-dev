@@ -69,6 +69,14 @@ class SX1276 : public RadioTransceiver {
   void verify_rx_mode_();
   bool rx_mode_ok_{true};
   int64_t rx_mode_warn_us_{0};
+
+  // Block until ModeReady comes back after a mode change. Called only on the S1
+  // arming path; the T1/C1 path keeps its original timing. Returns false on
+  // timeout, silently - warn_mode_timeout_() owns the reporting so the rate
+  // limiting lives in one place.
+  bool wait_mode_ready_(uint32_t timeout_us);
+  void warn_mode_timeout_(const char *stage);
+  int64_t mode_ready_warn_us_{0};
 };
 
 }  // namespace wmbus_radio
