@@ -1102,17 +1102,30 @@ void SX1262::setup() {
 
   const uint32_t freq_dev = (this->listen_mode_ == LISTEN_MODE_C1) ? 45000UL : 50000UL;
   const uint32_t fdev = ((uint64_t) freq_dev << 25) / XTAL_FREQ;
-  // S1 uses the intermediate 234.3 kHz window. The original 312 kHz setting
-  // admits about 1.25 dB more integrated noise than 234.3 kHz, which matters
-  // for the observed -100..-103 dBm S-mode frames. The narrower 156.2 kHz
-  // setting was also tested on a Heltec V4 and stopped reception completely:
-  // the theoretical Carson width under-describes the occupied spectrum of the
-  // Manchester-coded, BT=0.5 signal. 234.3 kHz leaves substantially more
-  // transition-band margin without retaining the full 312 kHz noise penalty.
+  // S1 is back on the wide 312 kHz window. Test, not a settled value.
+  //
+  // The bandwidth history and why it is worth re-running: 312 kHz was the
+  // inherited setting; 156.2 kHz was tried on 2026-07-30 and stopped S1
+  // reception entirely, which already showed that Carson's rule (133 kHz) and
+  // Semtech's sizing rule (143 kHz) both under-describe the occupied spectrum
+  // of a Manchester-coded BT=0.5 chip stream. 234.3 kHz then landed as a
+  // compromise, argued from noise: it admits about 1.25 dB less than 312 kHz.
+  //
+  // That argument is about sensitivity. It says nothing about distortion, and
+  // the measurements point the other way - 156 kHz dead, 234.3 kHz syncing on
+  // real S-mode frames but never once decoding them. A filter narrower than the
+  // signal does not only reject noise, it smears the chip edges, which is what
+  // a capture full of invalid Manchester pairs looks like.
+  //
+  // The decisive detail: the AN1200.53 capture fix (b38a582) landed 38 minutes
+  // AFTER the move to 234.3 kHz. Every wide-bandwidth test ran on a broken
+  // capture path and every fixed-capture test ran narrow, so 312 kHz has never
+  // been tried with the receive path in its current state.
+  //
+  // Revert this if it changes nothing. C1 keeps 234.3 kHz either way - it has
+  // no such history and decodes fine.
   const uint8_t rx_bw =
-      (this->listen_mode_ == LISTEN_MODE_C1 || this->listen_mode_ == LISTEN_MODE_S1)
-          ? GFSK_RX_BW_234_3
-          : GFSK_RX_BW_312_0;
+      (this->listen_mode_ == LISTEN_MODE_C1) ? GFSK_RX_BW_234_3 : GFSK_RX_BW_312_0;
 
   {
     char buf[96];

@@ -1,3 +1,27 @@
+# Test: S1 on SX1262 goes back to the 312 kHz receive bandwidth
+
+## EN
+
+### Changed
+- The S1 receive bandwidth returns from 234.3 kHz to 312 kHz. This is a test, marked as one, to be reverted if it changes nothing. C1 keeps 234.3 kHz - it has no comparable history and decodes normally.
+- Why re-run a setting that was already replaced: the AN1200.53 capture fix landed 38 minutes after the move to 234.3 kHz. Every wide-bandwidth test therefore ran on a broken capture path, and every fixed-capture test ran narrow. 312 kHz has never been tried with the receive path in its current state.
+- Why the original argument for narrowing looks wrong: it was about noise, and 234.3 kHz does admit about 1.25 dB less than 312 kHz. But that is a sensitivity argument and says nothing about distortion. The measurements run the other way - 156.2 kHz stopped S1 reception outright, and 234.3 kHz syncs on real S-mode frames and has never once decoded one. Carson's rule gives 133 kHz for this signal and Semtech's sizing rule 143 kHz; a setting above both killed reception completely, so both under-describe the occupied spectrum of a Manchester-coded BT=0.5 chip stream. A filter narrower than the signal does not only reject noise, it smears the chip edges.
+
+### Notes
+- An earlier note in this file claimed S1 kept the wide 312 kHz bandwidth. That stopped being true on 2026-07-30 and the note was left stale for two days; it is corrected here.
+
+## PL
+
+### Zmieniono
+- Szerokość pasma odbioru dla S1 wraca z 234,3 kHz na 312 kHz. To jest test, oznaczony jako test, do cofnięcia jeśli nic nie zmieni. C1 zostaje na 234,3 kHz - nie ma porównywalnej historii i dekoduje normalnie.
+- Dlaczego powtarzać ustawienie, które już raz zastąpiono: poprawka przechwytywania AN1200.53 weszła 38 minut po zmianie na 234,3 kHz. Każdy test szerokiego pasma odbył się więc na zepsutej ścieżce przechwytywania, a każdy test naprawionej ścieżki odbył się na wąskim paśmie. 312 kHz nigdy nie było próbowane z torem odbiorczym w obecnym stanie.
+- Dlaczego pierwotny argument za zwężeniem wygląda na błędny: dotyczył szumu i faktycznie 234,3 kHz wpuszcza o ~1,25 dB mniej niż 312 kHz. Ale to argument o czułości i nie mówi nic o zniekształceniach. Pomiary układają się odwrotnie - 156,2 kHz zatrzymało odbiór S1 całkowicie, a 234,3 kHz łapie sync na realnych ramkach S-mode i nie zdekodowało ani jednej. Reguła Carsona daje dla tego sygnału 133 kHz, reguła Semtecha 143 kHz; ustawienie powyżej obu zabiło odbiór, więc obie zaniżają zajętość widma strumienia chipów Manchester z BT=0,5. Filtr węższy od sygnału nie tłumi tylko szumu, ale też rozmywa zbocza chipów.
+
+### Uwagi
+- Wcześniejsza notatka w tym pliku twierdziła, że S1 pozostaje na szerokim paśmie 312 kHz. Przestało to być prawdą 2026-07-30 i notatka wisiała nieaktualna przez dwa dni; zostaje tu sprostowana.
+
+---
+
 # Diagnostics: find where the S1 frame actually starts in a capture
 
 ## EN
