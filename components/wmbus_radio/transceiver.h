@@ -48,6 +48,19 @@ public:
   // Optional radio-specific debug dump. Used when RX waits time out.
   virtual void dump_debug_status(const char *reason) {}
 
+  // Verbose diagnostics, pushed down from the component before the receiver
+  // task starts.
+  //
+  // A driver's provenance snapshots (see RssiDiag) are one per receive path per
+  // boot by default, which is the right volume for a healthy node: it answers
+  // "where did this level come from" once and then stops narrating. It is the
+  // wrong volume when a node is receiving nothing and every capture is
+  // evidence - one sample cannot separate a real frame captured out of
+  // alignment from a detector firing on noise. With this on, drivers report
+  // every capture instead.
+  void set_diag_verbose(bool enabled) { this->diag_verbose_ = enabled; }
+  bool diag_verbose() const { return this->diag_verbose_; }
+
   // Optional register dump logged once at boot (called from component boot log).
   virtual void log_reg_status() {}
 
@@ -107,6 +120,7 @@ protected:
 
   ListenMode listen_mode_{LISTEN_MODE_BOTH};
   std::string rf_params_str_{};
+  bool diag_verbose_{false};
 
   virtual optional<uint8_t> read() = 0;
 

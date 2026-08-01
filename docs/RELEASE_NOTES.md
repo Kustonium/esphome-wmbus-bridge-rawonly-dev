@@ -1,3 +1,37 @@
+# Diagnostics: repeatable radio state instead of one snapshot per boot
+
+## EN
+
+### Added
+- `dump_debug_status()` is now implemented for SX1276 and SX1262. It was declared on the base transceiver and implemented only by the CC1101, so the two SX drivers inherited an empty method: their registers were readable exactly once, at boot, and never again. The component already calls this on every receive-wait timeout when diagnostics are verbose, so a silent node now reports its own state roughly once a minute.
+- SX1276 reports `RegOpMode` decoded to a mode name, `RegIrqFlags1/2`, RSSI, `RegRxConfig`, `RegRxBw`, `RegPreambleDetect`, the sync configuration and the live sync word, plus the DIO1 level. `preamble_detected` and `sync_matched` are restated in words, because the two bits that say whether anything is arriving are one bit each in the middle of a hex byte. A chip sitting in `FSRX` instead of `RX` - synthesiser locked, receiver off - now says so with a warning instead of looking configured.
+- SX1262 reports the `GetStatus` chip mode, latched IRQ status, device errors, `RegRxGain`, the live sync word, the stream pointers and the DIO1/BUSY levels, with the same restatement and the same warning when the chip is not in RX.
+- The verbose flag is pushed into the driver before the receiver task is created, so no frame is handled while the component and the driver disagree about how much to report.
+
+### Changed
+- The SX1262 RSSI provenance snapshot (`IRQ=... captured=... first[8]=...`) repeats on every capture when diagnostics are verbose, instead of once per receive path per boot. One sample is the right volume when frames are decoding; it is useless when nothing is, because a single `first[8]` cannot separate a real frame captured out of alignment from the detector firing on noise. That needs a series. Outside verbose mode the one-shot behaviour is unchanged.
+- A snapshot is dropped rather than overwritten if the previous one has not been drained yet. Writing into the slot while the main task copies out of it would produce a log line built from two different captures, which is worse than a missing line precisely because it still looks like data.
+
+### Notes
+- Both changes come from a day spent comparing three receivers with no repeatable register reads. Boot-time-only diagnostics answer "did the chip answer over SPI"; every question that matters when reception stops is about the current state.
+
+## PL
+
+### Dodano
+- `dump_debug_status()` jest teraz zaimplementowane dla SX1276 i SX1262. Metoda była zadeklarowana w klasie bazowej i zaimplementowana wyłącznie przez CC1101, więc oba sterowniki SX dziedziczyły pustą wersję: ich rejestry dało się odczytać dokładnie raz, przy starcie, i nigdy więcej. Komponent i tak woła ją przy każdym przeterminowaniu oczekiwania na ramkę, gdy diagnostyka jest gadatliwa, więc milczący węzeł raportuje teraz swój stan mniej więcej raz na minutę.
+- SX1276 raportuje `RegOpMode` rozwinięty do nazwy trybu, `RegIrqFlags1/2`, RSSI, `RegRxConfig`, `RegRxBw`, `RegPreambleDetect`, konfigurację synchronizacji i żywe słowo sync oraz poziom DIO1. `preamble_detected` i `sync_matched` są dodatkowo wypisane słowami, bo dwa bity mówiące, czy cokolwiek dociera, to po jednym bicie w środku bajtu w zapisie szesnastkowym. Układ stojący w `FSRX` zamiast `RX` - syntezer zestrojony, odbiornik wyłączony - mówi to teraz ostrzeżeniem, zamiast wyglądać na skonfigurowany.
+- SX1262 raportuje tryb układu z `GetStatus`, zatrzaśnięty status przerwań, błędy układu, `RegRxGain`, żywe słowo sync, wskaźniki strumienia oraz poziomy DIO1/BUSY, z tym samym powtórzeniem słowami i tym samym ostrzeżeniem, gdy układ nie jest w RX.
+- Flaga gadatliwej diagnostyki jest wpychana do sterownika przed utworzeniem zadania odbiorczego, więc żadna ramka nie jest obsłużona w chwili, gdy komponent i sterownik nie zgadzają się co do ilości raportowania.
+
+### Zmieniono
+- Snapshot pochodzenia RSSI w SX1262 (`IRQ=... captured=... first[8]=...`) powtarza się przy każdym przechwyceniu, gdy diagnostyka jest gadatliwa, zamiast raz na ścieżkę odbiorczą na boot. Jedna próbka to właściwa ilość, gdy ramki się dekodują; jest bezużyteczna, gdy żadna się nie dekoduje, bo pojedyncze `first[8]` nie odróżni realnej ramki przechwyconej bez wyrównania od detektora strzelającego w szum. Do tego potrzeba serii. Poza trybem gadatliwym zachowanie jednorazowe pozostaje bez zmian.
+- Snapshot jest porzucany, a nie nadpisywany, jeśli poprzedni nie został jeszcze odebrany. Zapis do slotu w chwili, gdy zadanie główne z niego kopiuje, dałby linię logu złożoną z dwóch różnych przechwyceń, co jest gorsze niż brak linii właśnie dlatego, że nadal wygląda jak dane.
+
+### Uwagi
+- Obie zmiany biorą się z dnia spędzonego na porównywaniu trzech odbiorników bez możliwości powtórnego odczytu rejestrów. Diagnostyka tylko przy starcie odpowiada na pytanie „czy układ odezwał się po SPI"; każde pytanie, które ma znaczenie, gdy odbiór ustaje, dotyczy stanu bieżącego.
+
+---
+
 # Fix: SX1262 was never recalibrated after the TCXO was enabled
 
 ## EN

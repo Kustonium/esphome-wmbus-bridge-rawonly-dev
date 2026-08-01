@@ -236,6 +236,11 @@ void Radio::setup() {
 
   ASSERT_SETUP(this->packet_queue_ = xQueueCreate(3, sizeof(Packet *)));
 
+  // Push verbose diagnostics into the driver before the receiver task exists,
+  // so no frame can be handled while the two disagree about how much to report.
+  if (this->radio != nullptr)
+    this->radio->set_diag_verbose(this->diag_verbose_);
+
   // This component uses its own FreeRTOS receiver task instead of ESPHome's
   // main loop task. Because of that, ESPHome's loop_task_stack_size YAML option
   // is not enough here.

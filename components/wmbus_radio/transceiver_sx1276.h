@@ -33,6 +33,7 @@ class SX1276 : public RadioTransceiver {
   bool consume_rx_abort_request() override;
   uint32_t take_fifo_overrun_count() override;
   void log_reg_status() override;
+  void dump_debug_status(const char *reason) override;
 
  protected:
   uint32_t configured_frequency_hz_{868950000UL};

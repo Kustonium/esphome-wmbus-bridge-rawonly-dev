@@ -63,6 +63,7 @@ class SX1262 : public RadioTransceiver {
   bool take_rssi_diag(RssiDiag &out) override;
   const char *get_name() override;
   void log_reg_status() override;
+  void dump_debug_status(const char *reason) override;
 
  protected:
   void wait_while_busy_();
@@ -73,6 +74,11 @@ class SX1262 : public RadioTransceiver {
   // Register helpers
   uint8_t read_register8_(uint16_t addr);
   uint16_t get_irq_status_();
+
+  // Raw SX126x status byte (GetStatus). Chip mode lives in bits 6:4 and is the
+  // SX126x answer to "is the receiver actually running": cmd_read_() discards
+  // this byte as protocol overhead, so it needs its own transaction.
+  uint8_t get_status_();
   void read_buffer_(uint8_t offset, uint8_t *out, size_t out_len);
 
   // Instantaneous RSSI. Only valid while the frame is still being transmitted;

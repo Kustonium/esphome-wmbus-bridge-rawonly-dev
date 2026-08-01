@@ -19,6 +19,34 @@ static constexpr uint8_t REG_FIFO_THRESH  = 0x35;
 static constexpr uint8_t REG_DIO_MAPPING1 = 0x40;
 static constexpr uint8_t REG_VERSION      = 0x42;
 
+// Read only by dump_debug_status(); the setup sequence writes them as literals
+// in datasheet order and the table above the setup() body is the key for those.
+static constexpr uint8_t REG_RX_CONFIG       = 0x0D;
+static constexpr uint8_t REG_RX_BW           = 0x12;
+static constexpr uint8_t REG_PREAMBLE_DETECT = 0x1F;
+static constexpr uint8_t REG_SYNC_CONFIG     = 0x27;
+static constexpr uint8_t REG_IRQ_FLAGS1      = 0x3E;
+
+// RegIrqFlags1 bits, FSK/OOK mode. Only the two that answer "is anything
+// arriving at all" are named; the rest are readiness flags printed as hex.
+static constexpr uint8_t FLAG1_PREAMBLE_DETECT = (1 << 1);
+static constexpr uint8_t FLAG1_SYNC_MATCH      = (1 << 0);
+
+// RegOpMode bits 2:0 in FSK/OOK mode. FSRX is the trap worth naming: the
+// synthesiser is locked to the receive frequency but the receiver itself is
+// off, so the chip looks configured and hears nothing.
+static const char *sx1276_mode_name_(uint8_t op_mode) {
+  switch (op_mode & 0x07) {
+    case 0x00: return "SLEEP";
+    case 0x01: return "STDBY";
+    case 0x02: return "FSTX";
+    case 0x03: return "TX";
+    case 0x04: return "FSRX";
+    case 0x05: return "RX";
+    default: return "?";
+  }
+}
+
 static constexpr uint8_t FLAG2_FIFO_EMPTY   = (1 << 6);
 static constexpr uint8_t FLAG2_FIFO_LEVEL   = (1 << 5);
 static constexpr uint8_t FLAG2_FIFO_OVERRUN = (1 << 4);
@@ -210,6 +238,56 @@ void SX1276::log_reg_status() {
       reg_rssi == 0x00 && reg_dio == 0x00 && reg_fifo_thresh == 0x00) {
     ESP_LOGE(TAG, "SX1276 not responding over SPI / SX1276 nie odpowiada po SPI. "
                   "Check VCC/GND/SCK/MOSI/MISO/NSS/RESET.");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// dump_debug_status: re-read the receive chain while it is running.
+//
+// log_reg_status() runs once at boot, which is enough to prove the chip answers
+// over SPI and nothing else. When a node stops receiving, the questions are all
+// about the current state - is the radio in RX or did it stop at FSRX, is the
+// preamble detector seeing anything, is the sync word still the one that was
+// programmed - and a boot-time snapshot cannot answer any of them.
+//
+// Called from Radio::receive_frame() on an interrupt timeout when diagnostics
+// are verbose, so this prints roughly once a minute on a silent node and never
+// on a busy one.
+// ---------------------------------------------------------------------------
+void SX1276::dump_debug_status(const char *reason) {
+  const uint8_t op_mode  = this->spi_read(REG_OP_MODE);
+  const uint8_t irq1     = this->spi_read(REG_IRQ_FLAGS1);
+  const uint8_t irq2     = this->spi_read(REG_IRQ_FLAGS2);
+  const uint8_t rssi     = this->spi_read(REG_RSSI_VALUE);
+  const uint8_t rx_cfg   = this->spi_read(REG_RX_CONFIG);
+  const uint8_t rx_bw    = this->spi_read(REG_RX_BW);
+  const uint8_t pre_det  = this->spi_read(REG_PREAMBLE_DETECT);
+  const uint8_t sync_cfg = this->spi_read(REG_SYNC_CONFIG);
+  const uint8_t sync1    = this->spi_read(0x28);
+  const uint8_t sync2    = this->spi_read(0x29);
+  const uint8_t sync3    = this->spi_read(0x2A);
+
+  const int irq_level = (this->irq_pin_ != nullptr) ? (int) this->irq_pin_->digital_read() : -1;
+
+  ESP_LOGI(TAG,
+           "DEBUG [%s]: OpMode=0x%02X (%s) IrqFlags1=0x%02X IrqFlags2=0x%02X RssiValue=0x%02X (%ddBm) "
+           "RxConfig=0x%02X RxBw=0x%02X PreambleDetect=0x%02X SyncConfig=0x%02X Sync=%02X%02X%02X DIO1=%d",
+           reason != nullptr ? reason : "?", op_mode, sx1276_mode_name_(op_mode), irq1, irq2, rssi,
+           -((int) rssi) / 2, rx_cfg, rx_bw, pre_det, sync_cfg, sync1, sync2, sync3, irq_level);
+
+  // The interesting part restated in words, because the two bits that say
+  // whether the air is empty are one bit each in the middle of a hex byte.
+  ESP_LOGI(TAG, "DEBUG [%s]: preamble_detected=%s sync_matched=%s receiver_running=%s",
+           reason != nullptr ? reason : "?",
+           (irq1 & FLAG1_PREAMBLE_DETECT) ? "yes" : "no",
+           (irq1 & FLAG1_SYNC_MATCH) ? "yes" : "no",
+           ((op_mode & 0x07) == 0x05) ? "yes" : "NO");
+
+  if ((op_mode & 0x07) != 0x05) {
+    ESP_LOGW(TAG,
+             "SX1276 is not in RX (mode=%s) / SX1276 nie jest w trybie RX. "
+             "Nothing can be received in this state.",
+             sx1276_mode_name_(op_mode));
   }
 }
 

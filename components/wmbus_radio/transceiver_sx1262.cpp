@@ -33,6 +33,7 @@ static constexpr uint8_t CMD_GET_DEVICE_ERRORS = 0x17;
 static constexpr uint8_t CMD_CLEAR_DEVICE_ERRORS = 0x07;
 static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
 static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
+static constexpr uint8_t CMD_GET_STATUS = 0xC0;
 static constexpr uint8_t CMD_CALIBRATE = 0x89;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
 static constexpr uint8_t CMD_WRITE_REGISTER = 0x0D;
@@ -405,8 +406,27 @@ void SX1262::record_rssi_diag_(RxPath path, uint8_t raw_sync, uint8_t raw_avg, i
            (int) inflight);
 
   const uint8_t slot = (uint8_t) path;
-  if (this->rssi_diag_reported_[slot])
-    return;
+
+  // Verbose mode reports every capture instead of the first one per path.
+  //
+  // One snapshot per boot is the right volume when frames are arriving: it
+  // answers "which register did this level come from" and then stops. It is
+  // useless when nothing is being decoded, because a single `first[8]` cannot
+  // separate a real frame captured out of alignment from the detector firing
+  // on noise - that needs a series.
+  //
+  // Back-pressure instead of overwriting: if the previous snapshot has not been
+  // drained by Radio::loop() yet, this one is dropped. The alternative is
+  // writing into a slot while the main task copies out of it, which yields a
+  // torn snapshot - fields from two different captures in one log line, which
+  // is worse than a missing line precisely because it still looks like data.
+  if (this->diag_verbose_) {
+    if (this->rssi_diag_pending_[slot])
+      return;
+  } else {
+    if (this->rssi_diag_reported_[slot])
+      return;
+  }
   // Claim the slot before filling it, so a second frame on this same path
   // cannot start another write into it.
   this->rssi_diag_reported_[slot] = true;
@@ -992,6 +1012,91 @@ void SX1262::setup() {
 
   this->restart_rx();
   ESP_LOGV(TAG, "SX1262 setup done");
+}
+
+// ---------------------------------------------------------------------------
+// get_status_: GetStatus (0xC0), one byte, no arguments.
+//
+// Every SX126x SPI transaction returns the status byte, and cmd_read_() throws
+// it away as protocol overhead - which is correct for every other command and
+// exactly wrong for this one, where that byte is the entire response.
+// ---------------------------------------------------------------------------
+uint8_t SX1262::get_status_() {
+  this->wait_while_busy_();
+  this->delegate_->begin_transaction();
+  this->delegate_->transfer(CMD_GET_STATUS);
+  const uint8_t status = this->delegate_->transfer(0x00);
+  this->delegate_->end_transaction();
+  this->wait_while_busy_();
+  return status;
+}
+
+// SX126x GetStatus, bits 6:4. FS is the analogue of the SX1276 trap: the
+// synthesiser is locked but the receiver is not running.
+static const char *sx126x_chip_mode_name_(uint8_t status) {
+  switch ((status >> 4) & 0x07) {
+    case 0x02: return "STBY_RC";
+    case 0x03: return "STBY_XOSC";
+    case 0x04: return "FS";
+    case 0x05: return "RX";
+    case 0x06: return "TX";
+    default: return "?";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// dump_debug_status: re-read the receive chain while it is running.
+//
+// log_reg_status() runs once at boot and proves the chip answers over SPI.
+// When a node stops receiving, every useful question is about the current
+// state - is the radio in RX or did it stop in FS, has any IRQ latched since
+// the last re-arm, did the sync word survive, is the boosted gain still set,
+// has the chip logged a device error since boot - and a boot snapshot answers
+// none of them.
+//
+// Called from Radio::receive_frame() on an interrupt timeout when diagnostics
+// are verbose: roughly once a minute on a silent node, never on a busy one.
+// ---------------------------------------------------------------------------
+void SX1262::dump_debug_status(const char *reason) {
+  const uint8_t status = this->get_status_();
+  const uint16_t irq = this->get_irq_status_();
+
+  uint8_t dev_err[2]{};
+  this->cmd_read_(CMD_GET_DEVICE_ERRORS, {}, dev_err, sizeof(dev_err));
+  const uint16_t errors = u16be_(dev_err);
+
+  const uint8_t reg_rx_gain = this->read_register8_(REG_RX_GAIN);
+  const uint8_t sync0 = this->read_register8_(REG_SYNC_WORD_0);
+  const uint8_t sync1 = this->read_register8_(REG_SYNC_WORD_0 + 1);
+  const uint8_t sync2 = this->read_register8_(REG_SYNC_WORD_0 + 2);
+  const uint8_t rx_ptr = this->read_register8_(REG_RX_ADDR_PTR);
+  const uint8_t pld_len = this->read_register8_(REG_RXTX_PAYLOAD_LEN);
+
+  const int irq_level = (this->irq_pin_ != nullptr) ? (int) this->irq_pin_->digital_read() : -1;
+  const int busy_level = (this->busy_pin_ != nullptr) ? (int) this->busy_pin_->digital_read() : -1;
+
+  ESP_LOGI(TAG,
+           "DEBUG [%s]: Status=0x%02X (%s) IrqStatus=0x%04X DeviceErrors=0x%04X RegRxGain=0x%02X "
+           "Sync=%02X%02X%02X RxAddrPtr=0x%02X RxTxPldLen=0x%02X DIO1=%d BUSY=%d",
+           reason != nullptr ? reason : "?", status, sx126x_chip_mode_name_(status), irq, errors,
+           reg_rx_gain, sync0, sync1, sync2, rx_ptr, pld_len, irq_level, busy_level);
+
+  const bool in_rx = ((status >> 4) & 0x07) == 0x05;
+  ESP_LOGI(TAG, "DEBUG [%s]: sync_word_valid_latched=%s receiver_running=%s",
+           reason != nullptr ? reason : "?",
+           (irq & IRQ_SYNC_WORD_VALID) ? "yes" : "no", in_rx ? "yes" : "NO");
+
+  if (!in_rx) {
+    ESP_LOGW(TAG,
+             "SX1262 is not in RX (mode=%s) / SX1262 nie jest w trybie RX. "
+             "Nothing can be received in this state.",
+             sx126x_chip_mode_name_(status));
+  }
+  if (errors & (DEV_ERR_XOSC_START | DEV_ERR_PLL_CALIB)) {
+    ESP_LOGE(TAG, "SX1262 device errors 0x%04X%s%s / bledy ukladu - receive sensitivity is degraded.",
+             errors, (errors & DEV_ERR_XOSC_START) ? " XOSC_START_ERR" : "",
+             (errors & DEV_ERR_PLL_CALIB) ? " PLL_CALIB_ERR" : "");
+  }
 }
 
 void SX1262::log_reg_status() {
