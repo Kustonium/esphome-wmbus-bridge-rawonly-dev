@@ -826,6 +826,11 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   // buffer is being re-read, and the frame may well be in there while we grind
   // it into duplicates. That distinction decides whether buffer_cap is a
   // symptom or the cause, and nothing else in the log answers it.
+  // Byte budget for this capture. Stays at 512 while a length is still
+  // possible; drops to 256 the moment the S1 header is known to be
+  // undecodable. See the S1 block in the loop for why that moment is knowable.
+  size_t capture_cap = 512;
+
   uint32_t poll_iterations = 0;
   uint32_t reads_with_data = 0;
   uint8_t max_avail = 0;
@@ -849,8 +854,8 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
       break;
     }
     // Hard cap (covers max WMBus T1 raw size comfortably)
-    if (copied >= 512) {
-      ESP_LOGD(TAG, "Long RX capture capped at 512 bytes");
+    if (copied >= capture_cap) {
+      ESP_LOGD(TAG, "Long RX capture capped at %u bytes", (unsigned) capture_cap);
       exit_reason = "buffer_cap";
       break;
     }
@@ -859,7 +864,7 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
     uint8_t avail = (uint8_t) (cur - state_index);  // uint8 wrap by design
 
     // Cap to remaining space
-    const size_t room = 512 - copied;
+    const size_t room = capture_cap - copied;
     if (avail > room) {
       avail = (uint8_t) room;
     }
@@ -895,8 +900,22 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
       last_change_ms = now;
 
       if (this->listen_mode_ == LISTEN_MODE_S1) {
-        if (s1_expected_raw_len == 0)
+        if (s1_expected_raw_len == 0) {
           s1_expected_raw_len = s1_expected_raw_len_(this->rx_buffer_);
+          // s1_expected_raw_len_() only ever reads raw bytes 0..3. Once it has
+          // seen them and produced nothing, it will keep producing nothing for
+          // the rest of this capture - those bytes do not change. The frame is
+          // already lost at that point and the only question left is how long
+          // to stay deaf gathering evidence about it.
+          //
+          // 512 bytes is 127 ms of that, measured. Half is enough to see what
+          // the stream looked like, and gives the receiver back 63 ms sooner.
+          // The full budget is kept whenever a length IS derivable, because a
+          // legitimate long S-mode frame needs it: L=150 works out to about
+          // 340 raw bytes, which a fixed 256-byte cap would truncate.
+          if (s1_expected_raw_len == 0 && this->rx_buffer_.size() >= 4)
+            capture_cap = 256;
+        }
         if (s1_expected_raw_len != 0 && copied >= s1_expected_raw_len) {
           this->rx_buffer_.resize(s1_expected_raw_len);
           copied = s1_expected_raw_len;

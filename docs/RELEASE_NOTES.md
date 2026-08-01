@@ -1,3 +1,29 @@
+# Change: halve the S1 capture budget once the header is known undecodable
+
+## EN
+
+### Changed
+- An S1 stream capture now stops at 256 raw bytes instead of 512 from the moment `s1_expected_raw_len_()` has looked at the header and produced nothing. The full 512-byte budget is kept whenever a length is derivable.
+- The moment is knowable: `s1_expected_raw_len_()` only ever reads raw bytes 0..3, and those do not change during a capture. Once it has seen them and failed, it will fail for the rest of that capture, so the frame is already lost and the only remaining question is how long to stay deaf gathering evidence about it.
+- 512 bytes is 127 ms, measured against an air rate of 244 us per raw byte. Half of that is still ample to see what the stream looked like, and hands the receiver back 63 ms sooner - which matters on a band where a second transmission can follow closely.
+
+### Notes
+- The cap is deliberately not lowered unconditionally. A legitimate long S-mode frame needs the full budget: an L-field of 150 works out to roughly 340 raw bytes, which a fixed 256-byte cap would truncate. Only captures that have already failed are shortened.
+- Measured alongside: at -82/-85 dBm the errors in a marginal capture begin in the C-field or later and the length is still derived; at -90/-95 dBm they are already in the L-field. Nothing can rescue the second case, and nothing should try - a substituted bit in L yields a wrong length rather than a recoverable one.
+
+## PL
+
+### Zmieniono
+- Przechwytywanie strumienia S1 zatrzymuje się teraz na 256 bajtach surowych zamiast 512 od chwili, gdy `s1_expected_raw_len_()` obejrzało nagłówek i nic z niego nie wyprowadziło. Pełny budżet 512 bajtów zostaje wszędzie tam, gdzie długość da się wyliczyć.
+- Tę chwilę da się rozpoznać: `s1_expected_raw_len_()` czyta wyłącznie surowe bajty 0..3, a te nie zmieniają się w trakcie przechwytywania. Gdy raz je zobaczy i zawiedzie, będzie zawodzić do końca tego przechwycenia - ramka jest już stracona, a jedyne pozostałe pytanie brzmi, jak długo pozostawać głuchym, zbierając o niej dowody.
+- 512 bajtów to 127 ms, zmierzone wobec tempa eteru 244 us na bajt surowy. Połowa nadal w zupełności wystarcza, żeby zobaczyć, jak wyglądał strumień, a oddaje odbiornik 63 ms wcześniej - co ma znaczenie w paśmie, gdzie druga transmisja może przyjść tuż po pierwszej.
+
+### Uwagi
+- Limit celowo nie jest obniżony bezwarunkowo. Prawidłowa długa ramka S-mode potrzebuje pełnego budżetu: pole L równe 150 daje około 340 bajtów surowych, które sztywny limit 256 bajtów by uciął. Skracane są wyłącznie przechwycenia już nieudane.
+- Zmierzone przy okazji: przy -82/-85 dBm błędy w przechwyceniu na granicy zaczynają się w polu C albo dalej i długość nadal się wylicza; przy -90/-95 dBm siedzą już w polu L. Tego drugiego przypadku nic nie uratuje i nic nie powinno próbować - podstawiony bit w L daje złą długość, a nie taką, którą da się odzyskać.
+
+---
+
 # Fix: one bad chip in the C-field threw away the whole S1 capture
 
 ## EN
