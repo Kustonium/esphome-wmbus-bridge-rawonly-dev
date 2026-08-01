@@ -282,11 +282,23 @@ void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
   ESP_LOGI(TAG, "S1 capture quality: longest valid Manchester run %u pairs at chip %u (of %u pairs total)",
            (unsigned) best_run, (unsigned) best_run_at, (unsigned) ((raw.size() * 8U) / 2U));
 
-  // Header search over EVERY chip position in the capture. The first version of
-  // this searched 512 positions, which is a quarter of a 512-byte buffer - so a
-  // frame starting past raw byte 128 would have been reported as absent.
-  const size_t max_start_pair = (raw.size() * 8U) / 2U;
+  // Header search over EVERY chip position in the capture.
+  //
+  // Reported as a LIST, not as the first hit. The test - L in a sane range and
+  // C in {0x44, 0x46} - passes on roughly 0.8% of positions by chance, so over
+  // 4096 positions about 30 false hits are expected and the first one carries
+  // no information. Measured 2026-08-01: the first hit was L=0x18 on polarity 1
+  // while the frame an SX1276 decoded in the same second was L=0x54 on
+  // polarity 0.
+  //
+  // Sorting by how clean the implied frame is puts a real header at the top,
+  // because a real frame decodes with few invalid pairs and a coincidence
+  // usually does not.
+  struct Hit { size_t chip; uint8_t polarity; uint8_t l; uint8_t c; uint16_t invalid; uint16_t checked; };
+  Hit hits[4]{};
+  size_t hit_count = 0;
 
+  const size_t max_start_pair = (raw.size() * 8U) / 2U;
   for (size_t start = 0; start < max_start_pair; start++) {
     for (uint8_t polarity = 0; polarity < 2; polarity++) {
       uint8_t hdr[2]{};
@@ -300,11 +312,7 @@ void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
       if (c_field != 0x44 && c_field != 0x46)
         continue;
 
-      // Found a plausible header. Count invalid pairs over the frame body only,
-      // which separates "the frame is clean, we just started in the wrong
-      // place" from "the frame itself came out corrupted".
-      const size_t raw_len = s1_raw_len_from_l_(l_field);
-      const size_t pairs = raw_len * 4U;  // raw bytes -> chips/2
+      const size_t pairs = s1_raw_len_from_l_(l_field) * 4U;
       size_t invalid = 0, checked = 0;
       for (size_t p = 0; p < pairs; p++) {
         uint8_t v = 0;
@@ -314,19 +322,37 @@ void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
         if (!s1_chip_pair_(raw, start + p, polarity != 0, v))
           invalid++;
       }
-
-      ESP_LOGI(TAG,
-               "S1 frame start: chip=%u (raw byte %u bit %u) polarity=%u L=0x%02X C=0x%02X "
-               "-> frame %uB, invalid pairs in frame %u/%u",
-               (unsigned) start, (unsigned) (start / 4U), (unsigned) ((start * 2U) % 8U),
-               (unsigned) polarity, l_field, c_field, (unsigned) frame_len,
-               (unsigned) invalid, (unsigned) checked);
-      return;
+      // Keep the four cleanest, measured as invalid pairs per checked pair.
+      const Hit h{start, polarity, l_field, c_field, (uint16_t) invalid, (uint16_t) checked};
+      size_t slot = hit_count < 4 ? hit_count : 4;
+      if (slot == 4) {
+        size_t worst = 0;
+        for (size_t i = 1; i < 4; i++)
+          if (hits[i].invalid * h.checked > hits[worst].invalid * h.checked)
+            worst = i;
+        if (hits[worst].invalid * (uint32_t) h.checked <= (uint32_t) h.invalid * hits[worst].checked)
+          continue;
+        slot = worst;
+      } else {
+        hit_count++;
+      }
+      hits[slot] = h;
     }
   }
 
-  ESP_LOGI(TAG, "S1 frame start: no valid L+C at any of %u chip positions (both polarities), captured=%u B",
-           (unsigned) max_start_pair, (unsigned) raw.size());
+  if (hit_count == 0) {
+    ESP_LOGI(TAG, "S1 frame start: no valid L+C at any of %u chip positions (both polarities), captured=%u B",
+             (unsigned) max_start_pair, (unsigned) raw.size());
+    return;
+  }
+  for (size_t i = 0; i < hit_count; i++) {
+    ESP_LOGI(TAG,
+             "S1 frame candidate %u/%u: chip=%u (raw byte %u) polarity=%u L=0x%02X C=0x%02X "
+             "-> frame %uB, invalid %u/%u",
+             (unsigned) (i + 1), (unsigned) hit_count, (unsigned) hits[i].chip,
+             (unsigned) (hits[i].chip / 4U), (unsigned) hits[i].polarity, hits[i].l, hits[i].c,
+             (unsigned) hits[i].l + 1U, (unsigned) hits[i].invalid, (unsigned) hits[i].checked);
+  }
 }
 
 // for the complete format-A frame including DLL CRC bytes.
