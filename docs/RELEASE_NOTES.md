@@ -1,3 +1,27 @@
+# Fix: a frame could be logged as "RSSI: 0dBm"
+
+## EN
+
+### Fixed
+- `sx126x_rssi_dbm_()` treated raw 0 as "register never written" and converted everything else. Raw 1 is -0.5 dBm, and integer division turns that into a clean `0 dBm` - a level no wM-Bus frame can arrive at, since the front end saturates around -5 dBm and a transmitter on the same desk at minimum power still lands tens of dB below. Observed on hardware: a correctly decoded frame reported as `RSSI: 0dBm`. The conversion now rejects the whole impossible top of the scale (raw below 20, i.e. above -10 dBm) and returns the not-measured sentinel instead.
+- The plausibility rule lives in the conversion, not at each call site. The three places that read a level - in-flight sampling, packet status on the FIFO path, packet status on the stream path - ask for a converted value and take the first one that is not the sentinel. They previously tested the raw byte for `!= 0`, which let an implausible sync reading shadow a usable average.
+- `Packet::rssi_` defaulted to 0. That is not a sentinel but a reading, and the same impossible one: a packet whose level was never set reported a perfect signal instead of admitting it had none. It now defaults to -127, which the statistics already know to exclude.
+
+### Notes
+- A fabricated number is worse than a missing one. This was found while comparing two receivers, where `RSSI: 0dBm` sat in the middle of a measurement session and had to be argued about before it could be dismissed.
+
+## PL
+
+### Naprawiono
+- `sx126x_rssi_dbm_()` traktował surowe 0 jako „rejestr nigdy nie zapisany" i przeliczał całą resztę. Surowe 1 to -0,5 dBm, a dzielenie całkowite zamienia to w czyste `0 dBm` - poziom, przy którym żadna ramka wM-Bus nie dociera, bo tor wejściowy nasyca się w okolicach -5 dBm, a nadajnik na tym samym biurku przy minimalnej mocy i tak leży dziesiątki dB niżej. Zaobserwowane na sprzęcie: poprawnie zdekodowana ramka zaraportowana jako `RSSI: 0dBm`. Przeliczenie odrzuca teraz całą niemożliwą górę skali (surowe poniżej 20, czyli powyżej -10 dBm) i zwraca sentinel „nie zmierzono".
+- Reguła wiarygodności mieszka w przeliczeniu, a nie w każdym miejscu wywołania. Trzy miejsca odczytujące poziom - próbka w locie, status pakietu na ścieżce FIFO i status pakietu na ścieżce strumieniowej - proszą o wartość przeliczoną i biorą pierwszą, która nie jest sentinelem. Wcześniej sprawdzały surowy bajt na `!= 0`, przez co niewiarygodny odczyt z synchronizacji przesłaniał użyteczną średnią.
+- `Packet::rssi_` miał domyślnie 0. To nie jest sentinel, tylko odczyt, i to ten sam niemożliwy: pakiet, któremu nigdy nie ustawiono poziomu, raportował idealny sygnał zamiast przyznać, że go nie ma. Domyślną wartością jest teraz -127, którą statystyki już umieją pomijać.
+
+### Uwagi
+- Zmyślona liczba jest gorsza niż brak liczby. Znalezione przy porównywaniu dwóch odbiorników, gdzie `RSSI: 0dBm` wylądowało w środku sesji pomiarowej i trzeba było je najpierw obalić, zanim dało się je odrzucić.
+
+---
+
 # Note: S1 on SX1262 keeps the wide 312 kHz receive bandwidth
 
 ## EN

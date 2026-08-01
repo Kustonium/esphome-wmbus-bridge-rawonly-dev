@@ -142,6 +142,20 @@ static constexpr int8_t RSSI_NOT_MEASURED = -127;
 // Raw 250..255 maps to -125; those levels are below thermal noise anyway.
 static constexpr int8_t RSSI_MIN_VALID = -125;
 
+// Ceiling for a plausible reading, expressed as the raw register value.
+//
+// Raw 0 has always been treated as "register never written", but the check
+// stopped there, and raw 1 converts to -0.5 dBm which integer division turns
+// into a clean 0 dBm. A wM-Bus frame at 0 dBm does not exist: the SX126x
+// front end saturates around -5 dBm, and even a transmitter on the same desk
+// at minimum power lands tens of dB below that. Observed in the field on
+// 2026-07-31 - a decoded frame logged as "RSSI: 0dBm" - which is worse than no
+// reading at all, because a fabricated number gets reasoned about.
+//
+// Raw 20 = -10 dBm. Anything above that is rejected as unmeasured rather than
+// reported; nothing legitimate is lost, since no real reception reaches it.
+static constexpr uint8_t RSSI_RAW_MIN_PLAUSIBLE = 20;
+
 // ---------------------------------------------------------------------------
 // SX1261/2 datasheet Rev 2.2: RSSI [dBm] = -RssiRaw / 2.
 //
@@ -154,6 +168,11 @@ static constexpr int8_t RSSI_MIN_VALID = -125;
 // check for it before calling this.
 // ---------------------------------------------------------------------------
 static inline int8_t sx126x_rssi_dbm_(uint8_t raw) {
+  // Reject the impossible end of the scale here rather than at each call site:
+  // every caller already understands the sentinel, and one of them getting the
+  // check wrong is how "RSSI: 0dBm" reached a decoded frame in the first place.
+  if (raw < RSSI_RAW_MIN_PLAUSIBLE)
+    return RSSI_NOT_MEASURED;
   const int dbm = -((int) raw) / 2;
   return (int8_t) (dbm < RSSI_MIN_VALID ? RSSI_MIN_VALID : dbm);
 }
@@ -323,8 +342,8 @@ void SX1262::read_buffer_(uint8_t offset, uint8_t *out, size_t out_len) {
 int8_t SX1262::read_rssi_inst_dbm_() {
   uint8_t rssi_raw = 0;
   this->cmd_read_(CMD_GET_RSSI_INST, {}, &rssi_raw, 1);
-  if (rssi_raw == 0)
-    return RSSI_NOT_MEASURED;
+  // sx126x_rssi_dbm_ rejects raw 0 (never written) and the whole impossible
+  // top of the scale, so no separate check is needed here.
   return sx126x_rssi_dbm_(rssi_raw);
 }
 
@@ -511,10 +530,16 @@ bool SX1262::load_rx_buffer_() {
   {
     uint8_t raw_sync = 0, raw_avg = 0;
     this->read_packet_status_rssi_(raw_sync, raw_avg);
-    if (raw_sync != 0) {
-      this->last_rssi_dbm_ = sx126x_rssi_dbm_(raw_sync);
-    } else if (raw_avg != 0) {
-      this->last_rssi_dbm_ = sx126x_rssi_dbm_(raw_avg);
+    // The converter returns the sentinel for anything that cannot be a real
+    // level, so each candidate is asked in turn and the first usable one wins.
+    // Testing the raw bytes for != 0 instead would let an implausible sync
+    // value shadow a perfectly good average.
+    const int8_t from_sync = sx126x_rssi_dbm_(raw_sync);
+    const int8_t from_avg = sx126x_rssi_dbm_(raw_avg);
+    if (from_sync != RSSI_NOT_MEASURED) {
+      this->last_rssi_dbm_ = from_sync;
+    } else if (from_avg != RSSI_NOT_MEASURED) {
+      this->last_rssi_dbm_ = from_avg;
     } else {
       this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
     }
@@ -686,12 +711,14 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   // ---------------------------------------------------------------------------
   uint8_t raw_sync = 0, raw_avg = 0;
   this->read_packet_status_rssi_(raw_sync, raw_avg);
+  const int8_t from_sync = sx126x_rssi_dbm_(raw_sync);
+  const int8_t from_avg = sx126x_rssi_dbm_(raw_avg);
   if (rssi_inflight != RSSI_NOT_MEASURED) {
     this->last_rssi_dbm_ = rssi_inflight;
-  } else if (raw_sync != 0) {
-    this->last_rssi_dbm_ = sx126x_rssi_dbm_(raw_sync);
-  } else if (raw_avg != 0) {
-    this->last_rssi_dbm_ = sx126x_rssi_dbm_(raw_avg);
+  } else if (from_sync != RSSI_NOT_MEASURED) {
+    this->last_rssi_dbm_ = from_sync;
+  } else if (from_avg != RSSI_NOT_MEASURED) {
+    this->last_rssi_dbm_ = from_avg;
   } else {
     this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
   }
