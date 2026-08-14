@@ -60,7 +60,9 @@ static constexpr uint8_t GFSK_PREAMBLE_DETECT_8  = 0x04;  // detect after 8 prea
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;  // detect after 16 preamble bits (previous default)
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
-// S1 matches the full 24-bit S-mode sync word (54 76 96); T1/C1 use 16 bits.
+// S1 test: match the native 18-bit EN 13757-4 sync word. The last register
+// byte is padded with the continuing 01 preamble pattern, as required by the
+// SX1261/2 datasheet for sync words that are not byte-aligned.
 //
 // Measured 2026-07-31, worth not repeating: shortening this to 16 bits was tried
 // to find out whether weak S-mode frames were failing to trigger SYNC_WORD_VALID
@@ -69,8 +71,9 @@ static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 // With 16 bits the detector did start firing, but on noise: captures ran to the
 // 512-byte cap with first bytes that decode to no valid L/C, while the SX1276
 // used as reference received nothing at all in the same minutes. The shorter
-// word buys false starts, not missed meters, so the full word stays.
-static constexpr uint8_t S1_SYNC_WORD_BITS = 24;
+// word bought false starts, not missed meters. This separate 18-bit experiment
+// keeps the complete standard sync and removes only the prepended preamble bits.
+static constexpr uint8_t S1_SYNC_WORD_BITS = 18;
 #define S1_SYNC_WORD_BITS_OR_DEFAULT(mode) \
   static_cast<uint8_t>((mode) == LISTEN_MODE_S1 ? S1_SYNC_WORD_BITS : 16)
 
@@ -122,6 +125,20 @@ static constexpr uint16_t REG_SYNC_WORD_0 = 0x06C0;
 static constexpr uint16_t REG_RX_GAIN = 0x08AC;
 static constexpr uint8_t RX_GAIN_POWER_SAVING = 0x94;
 static constexpr uint8_t RX_GAIN_BOOSTED = 0x96;
+
+// RSSI/AGC calibration registers (datasheet Rev 2.2, section 6.1.6). Their
+// boot values are logged for the Heltec V4 + GC1109 experiment; do not tune
+// them without a calibrated RF source.
+static constexpr uint16_t REG_AGC_RSSI_MEAS_CAL_H = 0x089C;
+static constexpr uint16_t REG_AGC_RSSI_MEAS_CAL_L = 0x089D;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_1_2 = 0x08F5;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_3_4 = 0x08F6;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_5_6 = 0x08F7;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_7_8 = 0x08F8;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_9_10 = 0x08F9;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_11_12 = 0x08FA;
+static constexpr uint16_t REG_AGC_GAIN_TUNE_13 = 0x08FB;
+static constexpr uint16_t REG_AGC_FIRST_POWER_THRESHOLD = 0x08B9;
 
 // Semtech AN1200.53 long-packet reception registers:
 //   REG_RX_ADDR_PTR      - current HW write pointer into the 256-byte circular buffer
@@ -752,9 +769,9 @@ void SX1262::set_sync_word_(uint8_t sync2) {
 }
 
 void SX1262::set_s1_sync_word_() {
-  // S-mode sync is 18 bits (0x7696) preceded here by 3 x "01" preamble bits,
-  // commonly programmed as 0x54 0x76 0x96 in packet radios.
-  this->write_register_(REG_SYNC_WORD_0, {0x54, 0x76, 0x96, 0x00, 0x00, 0x00, 0x00, 0x00});
+  // Native S-mode sync: 000111011010010110. Packed MSB-first it is
+  // 1D A5 8x; the six unused bits continue the 01 preamble pattern -> 0x95.
+  this->write_register_(REG_SYNC_WORD_0, {0x1D, 0xA5, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00});
 }
 
 bool SX1262::has_rx_done_() {
@@ -1459,6 +1476,16 @@ void SX1262::log_reg_status() {
   const uint8_t reg_sync0    = this->read_register8_(REG_SYNC_WORD_0);
   const uint8_t reg_sync1    = this->read_register8_(REG_SYNC_WORD_0 + 1);
   const uint8_t reg_sync2    = this->read_register8_(REG_SYNC_WORD_0 + 2);
+  const uint8_t agc_cal_h    = this->read_register8_(REG_AGC_RSSI_MEAS_CAL_H);
+  const uint8_t agc_cal_l    = this->read_register8_(REG_AGC_RSSI_MEAS_CAL_L);
+  const uint8_t agc_tune12   = this->read_register8_(REG_AGC_GAIN_TUNE_1_2);
+  const uint8_t agc_tune34   = this->read_register8_(REG_AGC_GAIN_TUNE_3_4);
+  const uint8_t agc_tune56   = this->read_register8_(REG_AGC_GAIN_TUNE_5_6);
+  const uint8_t agc_tune78   = this->read_register8_(REG_AGC_GAIN_TUNE_7_8);
+  const uint8_t agc_tune910  = this->read_register8_(REG_AGC_GAIN_TUNE_9_10);
+  const uint8_t agc_tune1112 = this->read_register8_(REG_AGC_GAIN_TUNE_11_12);
+  const uint8_t agc_tune13   = this->read_register8_(REG_AGC_GAIN_TUNE_13);
+  const uint8_t agc_first    = this->read_register8_(REG_AGC_FIRST_POWER_THRESHOLD);
 
   // sync_bits is printed because it is otherwise invisible from outside, and a
   // board running an unexpected value is exactly the kind of thing that gets
@@ -1466,6 +1493,12 @@ void SX1262::log_reg_status() {
   ESP_LOGI(TAG, "RegRxGain=0x%02X RegSyncWord[0]=0x%02X [1]=0x%02X [2]=0x%02X sync_bits=%u",
            reg_rx_gain, reg_sync0, reg_sync1, reg_sync2,
            (unsigned) S1_SYNC_WORD_BITS_OR_DEFAULT(this->listen_mode_));
+  ESP_LOGI(TAG,
+           "RSSI/AGC calibration snapshot: CalH=0x%02X CalL=0x%02X "
+           "Tune12=0x%02X Tune34=0x%02X Tune56=0x%02X Tune78=0x%02X "
+           "Tune910=0x%02X Tune1112=0x%02X Tune13=0x%02X FirstPow=0x%02X",
+           agc_cal_h, agc_cal_l, agc_tune12, agc_tune34, agc_tune56,
+           agc_tune78, agc_tune910, agc_tune1112, agc_tune13, agc_first);
 
   if (reg_rx_gain == 0x00 && reg_sync0 == 0x00 && reg_sync1 == 0x00 && reg_sync2 == 0x00) {
     ESP_LOGE(TAG, "SX1262 not responding over SPI / SX1262 nie odpowiada po SPI. "
