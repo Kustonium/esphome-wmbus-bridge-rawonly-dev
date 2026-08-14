@@ -1223,6 +1223,17 @@ void SX1262::setup() {
              (int) this->agc_external_gain_db_, (unsigned) old_cal, (unsigned) new_cal);
   }
 
+  // Raw, deliberately opt-in diagnostic knob. Semtech documents this AGC
+  // register and its calibration procedure, but not a portable dB conversion.
+  // Never touch it unless YAML explicitly requests a value.
+  if (this->agc_first_power_threshold_ >= 0) {
+    const uint8_t old_value = this->read_register8_(REG_AGC_FIRST_POWER_THRESHOLD);
+    const uint8_t new_value = uint8_t(this->agc_first_power_threshold_);
+    this->write_register_(REG_AGC_FIRST_POWER_THRESHOLD, {new_value});
+    ESP_LOGW(TAG, "EXPERIMENTAL AGC FirstPow override: 0x%02X -> 0x%02X",
+             old_value, new_value);
+  }
+
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
 
   // DIO2 RF switch
