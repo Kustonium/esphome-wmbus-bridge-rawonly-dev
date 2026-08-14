@@ -47,6 +47,7 @@ CONF_TARGET_METER_ID = "target_meter_id"
 CONF_TARGET_TOPIC = "target_topic"
 CONF_TARGET_LOG = "target_log"
 CONF_PUBLISH_RADIO_RAW = "publish_radio_raw"
+CONF_PUBLISH_RSSI = "publish_rssi"
 CONF_FORWARD_METERS = "forward_meters"
 
 # SX1262 board helpers
@@ -344,6 +345,9 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_TARGET_LOG, default=True): cv.boolean,
             # Internal/dev-only raw packet tap. Fixed MQTT topic: wmbus_bridge/raw.
             cv.Optional(CONF_PUBLISH_RADIO_RAW, default=False): cv.boolean,
+            # Publish the measured RSSI of each forwarded meter frame to
+            # wmbus/<topic_name>/rssi/<meter_id>. Disabled by default.
+            cv.Optional(CONF_PUBLISH_RSSI, default=False): cv.boolean,
             # Whitelist of meter IDs allowed on the RAW telegram topic. Accepts
             # either an explicit list, or `true` to reuse highlight_meters so the
             # same IDs are not written twice. Empty (default) forwards every
@@ -689,15 +693,18 @@ async def to_code(config):
     # ("ESP alive") and the ESP-flagged meter badge even when diagnostics are off.
     health_topic = f"wmbus/{topic_name}/health"
     meters_topic = f"wmbus/{topic_name}/meters"
+    rssi_topic = f"wmbus/{topic_name}/rssi"
 
     cg.add(var.set_diag_topic(diag_topic))
     cg.add(var.set_health_topic(health_topic))
     cg.add(var.set_meters_topic(meters_topic))
+    cg.add(var.set_rssi_topic(rssi_topic))
     cg.add(var.set_telegram_topic(telegram_topic))
     cg.add(var.set_target_meter_id_str(config.get(CONF_TARGET_METER_ID, "")))
     cg.add(var.set_target_topic(config.get(CONF_TARGET_TOPIC, "")))
     cg.add(var.set_target_log(config.get(CONF_TARGET_LOG, True)))
     cg.add(var.set_publish_radio_raw(config.get(CONF_PUBLISH_RADIO_RAW, False)))
+    cg.add(var.set_publish_rssi(config.get(CONF_PUBLISH_RSSI, False)))
 
     # forward_meters accepts an explicit list, or `true` meaning "reuse
     # highlight_meters" so the same IDs do not have to be written twice.

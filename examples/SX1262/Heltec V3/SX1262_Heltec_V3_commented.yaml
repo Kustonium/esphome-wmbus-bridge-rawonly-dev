@@ -113,6 +113,14 @@ wmbus_radio:
   #   wmbus/<topic_name>/diag/...
   # topic_name: "${devicename}"
 
+  # EN: Publish the last measured RSSI for each forwarded meter as a retained
+  #     integer at wmbus/<topic_name>/rssi/<meter_id>. Frames without a real
+  #     RSSI measurement are skipped. Disabled by default.
+  # PL: Publikuj ostatnie zmierzone RSSI każdego przekazanego licznika jako
+  #     zachowaną liczbę całkowitą na wmbus/<topic_name>/rssi/<meter_id>.
+  #     Ramki bez rzeczywistego pomiaru RSSI są pomijane. Domyślnie wyłączone.
+  # publish_rssi: true
+
 
   diagnostic_mode: normal
 
