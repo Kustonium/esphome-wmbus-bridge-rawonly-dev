@@ -244,6 +244,78 @@ static bool s1_decode_bytes_(const std::vector<uint8_t> &raw, size_t start_pair,
   return true;
 }
 
+// How the invalid pairs of one candidate frame spread over its CRC blocks.
+//
+// A total on its own ("38 invalid pairs") cannot say whether resolving erasures
+// against the CRC is worth building. An invalid Manchester pair is a *known*
+// error position, so a block holding k of them is 2^k substitutions to try, and
+// the blocks are checked independently: six erasures spread one per block are
+// six 2-try problems, the same six inside one block are 64 tries. Only the
+// distribution separates those, and it is not known which one real frames give.
+//
+// Format-A block layout, in decoded bytes: 10 data + 2 CRC, then 16 + 2 each,
+// the last block holding whatever is left + 2. Decoded bit i comes from pair i,
+// so decoded byte b spans pairs [b*8, b*8+8).
+//
+// Counted over the frame window only. `symbols_invalid` from the decode path is
+// counted over the whole capture, so at buffer_cap it is mostly the noise after
+// the frame - 246 B of noise contribute ~492 invalid pairs on their own, which
+// is how a ratio that looks like signal quality ends up describing the tail.
+static void s1_log_erasure_map_(const std::vector<uint8_t> &raw, size_t start_pair, bool polarity,
+                                uint8_t l_field, unsigned candidate) {
+  const size_t frame_len = (size_t) l_field + 1U;  // data bytes, L included, CRCs excluded
+
+  // An L-field of 255 gives 17 blocks; 18 is the ceiling, not an expected value.
+  uint16_t per_block[18]{};
+  size_t block_end[18]{};  // exclusive, in decoded bytes, CRCs included
+  size_t blocks = 0, decoded_bytes = 0, left = frame_len;
+  while (left > 0 && blocks < 18) {
+    const size_t data = (blocks == 0) ? 10U : 16U;
+    const size_t take = (left < data) ? left : data;
+    decoded_bytes += take + 2U;
+    left -= take;
+    block_end[blocks++] = decoded_bytes;
+  }
+
+  const size_t pairs = decoded_bytes * 8U;
+  size_t counted = 0, total = 0, block = 0;
+  uint16_t worst = 0;
+  for (size_t p = 0; p < pairs; p++) {
+    if (((start_pair + p) * 2U + 1U) >> 3 >= raw.size())
+      break;  // capture ended inside the frame
+    counted++;
+    const size_t byte = p / 8U;
+    while (block + 1U < blocks && byte >= block_end[block])
+      block++;
+    uint8_t v = 0;
+    if (!s1_chip_pair_(raw, start_pair + p, polarity, v)) {
+      per_block[block]++;
+      total++;
+      if (per_block[block] > worst)
+        worst = per_block[block];
+    }
+  }
+
+  char list[128];
+  size_t off = 0;
+  for (size_t i = 0; i < blocks && off + 8U < sizeof(list); i++) {
+    const int n = snprintf(list + off, sizeof(list) - off, "%s%u", i ? "," : "",
+                           (unsigned) per_block[i]);
+    if (n <= 0)
+      break;
+    off += (size_t) n;
+  }
+  list[sizeof(list) - 1] = '\0';
+
+  // The worst block sets the cost of the whole frame - blocks are resolved one
+  // at a time, so it is 2^worst substitutions, not 2^total.
+  ESP_LOGI(TAG,
+           "S1 erasure map %u: %u erasures in %u/%u frame pairs, per CRC block [%s], "
+           "worst block %u (2^%u tries)%s",
+           candidate, (unsigned) total, (unsigned) counted, (unsigned) pairs, list,
+           (unsigned) worst, (unsigned) worst, counted < pairs ? ", capture ended early" : "");
+}
+
 // Raw length of a complete format-A frame with DLL CRCs, from its L-field.
 static size_t s1_raw_len_from_l_(uint8_t l_field) {
   const size_t frame_len = (size_t) l_field + 1U;
@@ -353,6 +425,10 @@ void SX1262::log_s1_frame_start_(const std::vector<uint8_t> &raw) {
              (unsigned) (i + 1), (unsigned) hit_count, (unsigned) hits[i].chip,
              (unsigned) (hits[i].chip / 4U), (unsigned) hits[i].polarity, hits[i].l, hits[i].c,
              (unsigned) hits[i].l + 1U, (unsigned) hits[i].invalid, (unsigned) hits[i].checked);
+    // Per candidate, not for the top one only: the ranking is by invalid pairs
+    // per checked pair, and a coincidence over a short implied frame can still
+    // outrank the real header. Its erasure map is what gives it away.
+    s1_log_erasure_map_(raw, hits[i].chip, hits[i].polarity != 0, hits[i].l, (unsigned) (i + 1));
   }
 }
 

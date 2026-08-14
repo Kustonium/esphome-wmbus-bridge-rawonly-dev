@@ -1,3 +1,41 @@
+# Diagnostics: how the invalid pairs of an S1 frame spread over its CRC blocks
+
+## EN
+
+### Added
+- Under `diagnostic_verbose`, every S1 frame candidate the header search reports now also gets an erasure map: `S1 erasure map 1: 6 erasures in 776/776 frame pairs, per CRC block [1,1,1,1,1,1], worst block 1 (2^1 tries)`.
+
+### Why
+- An invalid Manchester pair (`00`/`11`) is a known error *position*, not an unknown bit. The decoder substitutes a zero and moves on, throwing that information away. Resolving one such position against the CRC means trying both values, and format A checks each block on its own — so the cost for a frame is 2^(worst block), never 2^(total). Six erasures spread one per block are six two-try problems; the same six inside one block are 64 tries. Which shape real receptions have is unknown, and the total that was already being logged cannot tell them apart. This measures it before anything is decided about the decoder.
+- Counted over the frame window only. `symbols_invalid` on the decode path is counted over the whole capture, so at the 512-byte cap it mostly describes the noise trailing the frame: 246 bytes of noise contribute roughly 492 invalid pairs by themselves.
+
+### Notes
+- Printed for every reported candidate, not for the top one alone. Candidates are ranked by invalid pairs per checked pair, so a coincidence over a short implied frame can outrank a real header; the erasure map is what separates them.
+- Verbose-only, and only on the SX1262 raw-capture path, which is a search over up to 512 chip offsets already. Nothing on a normal receive path changed.
+- The block walk was cross-checked against `s1_raw_len_from_l_` for every L-field value, and the bucketing exercised on synthetic Manchester captures with erasures at known byte positions: block boundaries, six clustered in one block, a frame starting away from chip 0, and a capture ending mid-frame.
+
+### Not verified
+- Nothing about decoding changed, and nothing here says erasure resolution would recover a frame. That is the open question this log line exists to answer. The expectation that it could be worth a few dB is arithmetic over substitution counts, not a measurement, and it collapses entirely if frames turn out to arrive either clean or with dozens of erasures and nothing in between.
+- Not yet run against a live capture.
+
+## PL
+
+### Dodano
+- Przy `diagnostic_verbose` każdy kandydat na ramkę S1 zgłoszony przez wyszukiwanie nagłówka dostaje teraz mapę erasure: `S1 erasure map 1: 6 erasures in 776/776 frame pairs, per CRC block [1,1,1,1,1,1], worst block 1 (2^1 tries)`.
+
+### Dlaczego
+- Niepoprawna para Manchester (`00`/`11`) to znana **pozycja** błędu, a nie nieznany bit. Dekoder podstawia zero i idzie dalej, wyrzucając tę informację. Rozstrzygnięcie takiej pozycji przeciw CRC oznacza sprawdzenie obu wartości, a format A sprawdza każdy blok osobno — koszt ramki to więc 2^(najgorszy blok), nigdy 2^(suma). Sześć erasure po jednym na blok to sześć problemów po dwie próby; te same sześć w jednym bloku to 64 próby. Nie wiadomo, którą postać mają realne odbiory, a logowana dotąd suma nie odróżnia jednej od drugiej. To jest pomiar przed decyzją o czymkolwiek w dekoderze.
+- Liczone wyłącznie w oknie ramki. `symbols_invalid` z toru dekodowania liczy się po całym przechwyceniu, więc przy limicie 512 bajtów opisuje głównie szum za ramką: same 246 bajtów szumu daje około 492 niepoprawnych par.
+
+### Uwagi
+- Wypisywane dla każdego zgłoszonego kandydata, nie tylko dla pierwszego. Kandydaci są szeregowani po liczbie niepoprawnych par na parę sprawdzoną, więc przypadkowe trafienie na krótkiej domniemanej ramce potrafi wyprzedzić prawdziwy nagłówek; mapa erasure jest tym, co je rozdziela.
+- Tylko w trybie verbose i tylko na torze surowego przechwytywania SX1262, który i tak jest przeszukiwaniem do 512 pozycji chipowych. W torze normalnego odbioru nic się nie zmienia.
+- Wyliczanie bloków zostało porównane z `s1_raw_len_from_l_` dla każdej wartości pola L, a przydział erasure do bloków przetestowany na syntetycznych przechwyceniach Manchester z błędami na znanych pozycjach: granice bloków, sześć skupionych w jednym bloku, ramka zaczynająca się nie od chipu 0 oraz przechwycenie urwane w środku ramki.
+
+### Czego nie zweryfikowano
+- Nic w dekodowaniu się nie zmieniło i nic tutaj nie twierdzi, że rozstrzyganie erasure odzyskałoby ramkę. To jest właśnie otwarte pytanie, na które ta linia logu ma odpowiedzieć. Oczekiwanie, że może to być warte kilka dB, jest arytmetyką na liczbie podstawień, nie pomiarem, i upada w całości, jeśli okaże się, że ramki przychodzą albo czyste, albo z kilkudziesięcioma erasure i nie ma nic pomiędzy.
+- Nie uruchomione jeszcze na żywym przechwyceniu.
+
 # Fix: a one-tick notify wait could expire before it had waited
 
 ## EN
