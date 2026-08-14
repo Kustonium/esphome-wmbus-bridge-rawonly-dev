@@ -1,3 +1,19 @@
+# Fix: recover marginal S1 frames from Manchester erasures
+
+## EN
+
+- S1 now retains invalid Manchester-pair positions. When ordinary Format-A CRC validation fails, it tries both bit values independently per CRC block and accepts only a unique CRC-valid assignment.
+- The search is capped at eight erasures per block (256 assignments). Larger, unsolved, or ambiguous blocks remain `dll_crc_failed`; T1 and C1 are unchanged.
+- Measured on the two real 85-byte captures from 2026-08-14: maps `[3,1,0,3,0,0]` and `[2,1,0,2,2,3]` were restored byte-for-byte to the transmitted frame in 16 and 12 CRC trials.
+- Host regressions include multi-block recovery, rejection above the cap, and both real RAW captures.
+
+## PL
+
+- S1 zachowuje teraz pozycje niepoprawnych par Manchester. Gdy zwykła walidacja CRC formatu A zawiedzie, sprawdza obie wartości bitu niezależnie w każdym bloku CRC i przyjmuje wyłącznie jednoznaczne rozwiązanie zgodne z CRC.
+- Wyszukiwanie ma limit ośmiu erasure na blok (256 podstawień). Większe, nierozwiązywalne albo niejednoznaczne bloki pozostają `dll_crc_failed`; T1 i C1 są bez zmian.
+- Pomiar na dwóch rzeczywistych 85-bajtowych przechwyceniach z 2026-08-14: mapy `[3,1,0,3,0,0]` i `[2,1,0,2,2,3]` zostały odtworzone bajt w bajt do nadanej ramki odpowiednio w 16 i 12 próbach CRC.
+- Regresje hosta obejmują korekcję przez wiele bloków, odrzucenie powyżej limitu i oba rzeczywiste RAW.
+
 # Diagnostics: how the invalid pairs of an S1 frame spread over its CRC blocks
 
 ## EN
