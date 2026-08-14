@@ -60,9 +60,7 @@ static constexpr uint8_t GFSK_PREAMBLE_DETECT_8  = 0x04;  // detect after 8 prea
 static constexpr uint8_t GFSK_PREAMBLE_DETECT_16 = 0x05;  // detect after 16 preamble bits (previous default)
 static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 
-// S1 test: match the native 18-bit EN 13757-4 sync word. The last register
-// byte is padded with the continuing 01 preamble pattern, as required by the
-// SX1261/2 datasheet for sync words that are not byte-aligned.
+// S1 matches the full 24-bit S-mode sync word (54 76 96); T1/C1 use 16 bits.
 //
 // Measured 2026-07-31, worth not repeating: shortening this to 16 bits was tried
 // to find out whether weak S-mode frames were failing to trigger SYNC_WORD_VALID
@@ -71,9 +69,10 @@ static constexpr uint8_t GFSK_ADDRESS_FILT_OFF = 0x00;
 // With 16 bits the detector did start firing, but on noise: captures ran to the
 // 512-byte cap with first bytes that decode to no valid L/C, while the SX1276
 // used as reference received nothing at all in the same minutes. The shorter
-// word bought false starts, not missed meters. This separate 18-bit experiment
-// keeps the complete standard sync and removes only the prepended preamble bits.
-static constexpr uint8_t S1_SYNC_WORD_BITS = 18;
+// word buys false starts, not missed meters. An 18-bit native-sync experiment
+// on 2026-08-14 behaved the same way: with no S1 transmitter it repeatedly
+// triggered on noise and filled the 256-byte capture buffer. Keep 24 bits.
+static constexpr uint8_t S1_SYNC_WORD_BITS = 24;
 #define S1_SYNC_WORD_BITS_OR_DEFAULT(mode) \
   static_cast<uint8_t>((mode) == LISTEN_MODE_S1 ? S1_SYNC_WORD_BITS : 16)
 
@@ -769,9 +768,9 @@ void SX1262::set_sync_word_(uint8_t sync2) {
 }
 
 void SX1262::set_s1_sync_word_() {
-  // Native S-mode sync: 000111011010010110. Packed MSB-first it is
-  // 1D A5 8x; the six unused bits continue the 01 preamble pattern -> 0x95.
-  this->write_register_(REG_SYNC_WORD_0, {0x1D, 0xA5, 0x95, 0x00, 0x00, 0x00, 0x00, 0x00});
+  // S-mode sync is 18 bits (0x7696) preceded here by 3 x "01" preamble bits,
+  // commonly programmed as 0x54 0x76 0x96 in packet radios.
+  this->write_register_(REG_SYNC_WORD_0, {0x54, 0x76, 0x96, 0x00, 0x00, 0x00, 0x00, 0x00});
 }
 
 bool SX1262::has_rx_done_() {
