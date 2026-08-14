@@ -1203,37 +1203,6 @@ void SX1262::setup() {
   this->write_register_(REG_RX_GAIN, {gain});
   ESP_LOGI(TAG, "RX gain / wzmocnienie RX: %s", (this->rx_gain_ == SX1262RxGain::POWER_SAVING) ? "POWER_SAVING" : "BOOSTED");
 
-  // Experimental compensation for gain ahead of the SX1262 input. The
-  // AgcRssiMeasCalH/L pair is a 13-bit global RSSI calibration value. SX126x
-  // RSSI uses 0.5 dB units, hence +17 dB from a GC1109 becomes +34 counts.
-  // Leave zero as the universal/default path; only an explicit YAML value
-  // writes these calibration registers.
-  if (this->agc_external_gain_db_ != 0) {
-    const uint8_t old_h = this->read_register8_(REG_AGC_RSSI_MEAS_CAL_H);
-    const uint8_t old_l = this->read_register8_(REG_AGC_RSSI_MEAS_CAL_L);
-    const uint16_t old_cal = (uint16_t(old_h & 0x1F) << 8) | old_l;
-    const int32_t compensation = int32_t(this->agc_external_gain_db_) * 2;
-    const uint16_t new_cal = uint16_t(std::max<int32_t>(0, std::min<int32_t>(0x1FFF, int32_t(old_cal) + compensation)));
-    const uint8_t new_h = uint8_t((old_h & 0xE0) | ((new_cal >> 8) & 0x1F));
-    const uint8_t new_l = uint8_t(new_cal & 0xFF);
-    this->write_register_(REG_AGC_RSSI_MEAS_CAL_H, {new_h});
-    this->write_register_(REG_AGC_RSSI_MEAS_CAL_L, {new_l});
-    ESP_LOGW(TAG,
-             "EXPERIMENTAL AGC external-gain compensation: %ddB, calibration 0x%04X -> 0x%04X",
-             (int) this->agc_external_gain_db_, (unsigned) old_cal, (unsigned) new_cal);
-  }
-
-  // Raw, deliberately opt-in diagnostic knob. Semtech documents this AGC
-  // register and its calibration procedure, but not a portable dB conversion.
-  // Never touch it unless YAML explicitly requests a value.
-  if (this->agc_first_power_threshold_ >= 0) {
-    const uint8_t old_value = this->read_register8_(REG_AGC_FIRST_POWER_THRESHOLD);
-    const uint8_t new_value = uint8_t(this->agc_first_power_threshold_);
-    this->write_register_(REG_AGC_FIRST_POWER_THRESHOLD, {new_value});
-    ESP_LOGW(TAG, "EXPERIMENTAL AGC FirstPow override: 0x%02X -> 0x%02X",
-             old_value, new_value);
-  }
-
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
 
   // DIO2 RF switch
