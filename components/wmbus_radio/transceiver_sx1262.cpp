@@ -1203,6 +1203,26 @@ void SX1262::setup() {
   this->write_register_(REG_RX_GAIN, {gain});
   ESP_LOGI(TAG, "RX gain / wzmocnienie RX: %s", (this->rx_gain_ == SX1262RxGain::POWER_SAVING) ? "POWER_SAVING" : "BOOSTED");
 
+  // Experimental compensation for gain ahead of the SX1262 input. The
+  // AgcRssiMeasCalH/L pair is a 13-bit global RSSI calibration value. SX126x
+  // RSSI uses 0.5 dB units, hence +17 dB from a GC1109 becomes +34 counts.
+  // Leave zero as the universal/default path; only an explicit YAML value
+  // writes these calibration registers.
+  if (this->agc_external_gain_db_ != 0) {
+    const uint8_t old_h = this->read_register8_(REG_AGC_RSSI_MEAS_CAL_H);
+    const uint8_t old_l = this->read_register8_(REG_AGC_RSSI_MEAS_CAL_L);
+    const uint16_t old_cal = (uint16_t(old_h & 0x1F) << 8) | old_l;
+    const uint16_t compensation = uint16_t(this->agc_external_gain_db_) * 2U;
+    const uint16_t new_cal = std::min<uint16_t>(0x1FFF, old_cal + compensation);
+    const uint8_t new_h = uint8_t((old_h & 0xE0) | ((new_cal >> 8) & 0x1F));
+    const uint8_t new_l = uint8_t(new_cal & 0xFF);
+    this->write_register_(REG_AGC_RSSI_MEAS_CAL_H, {new_h});
+    this->write_register_(REG_AGC_RSSI_MEAS_CAL_L, {new_l});
+    ESP_LOGW(TAG,
+             "EXPERIMENTAL AGC external-gain compensation: %udB, calibration 0x%04X -> 0x%04X",
+             (unsigned) this->agc_external_gain_db_, (unsigned) old_cal, (unsigned) new_cal);
+  }
+
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
 
   // DIO2 RF switch

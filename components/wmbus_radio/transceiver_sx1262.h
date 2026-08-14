@@ -22,6 +22,7 @@ class SX1262 : public RadioTransceiver {
 
   // RX gain (BOOSTED/POWER_SAVING)
   void set_rx_gain(SX1262RxGain gain) { this->rx_gain_ = gain; }
+  void set_agc_external_gain_db(uint8_t gain_db) { this->agc_external_gain_db_ = gain_db; }
 
   // SX1262 tuning / board helpers (set from YAML via __init__.py)
   void set_frequency_mhz(float frequency_mhz) {
@@ -128,6 +129,7 @@ class SX1262 : public RadioTransceiver {
   bool dio2_rf_switch_{true};
   bool has_tcxo_{false};
   SX1262RxGain rx_gain_{BOOSTED};
+  uint8_t agc_external_gain_db_{0};
   bool long_gfsk_packets_{false};
   bool clear_device_errors_on_boot_{false};
 

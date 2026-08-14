@@ -60,6 +60,7 @@ CONF_TCXO_PIN = "tcxo_pin"
 # RX gain option (datasheet: boosted / power_saving)
 CONF_RX_GAIN = "rx_gain"
 CONF_LONG_GFSK_PACKETS = "long_gfsk_packets"
+CONF_AGC_EXTERNAL_GAIN_DB = "agc_external_gain_db"
 
 # SX1262: clear latched device errors on boot (Semtech Get/ClearDeviceErrors)
 CONF_CLEAR_DEVICE_ERRORS_ON_BOOT = "clear_device_errors_on_boot"
@@ -240,6 +241,9 @@ BASE_CONFIG_SCHEMA = (
                 "boosted", "power_saving", lower=True
             ),
             cv.Optional(CONF_LONG_GFSK_PACKETS, default=False): cv.boolean,
+            # Experimental SX1262 RSSI/AGC calibration compensation for an
+            # external receive amplifier. Zero preserves the silicon defaults.
+            cv.Optional(CONF_AGC_EXTERNAL_GAIN_DB, default=0): cv.int_range(min=0, max=31),
 
             # SX1276-specific board helper (for boards such as LilyGO T3 V3.0 TCXO).
             cv.Optional(CONF_TCXO_PIN): pins.internal_gpio_output_pin_schema,
@@ -324,6 +328,9 @@ BASE_CONFIG_SCHEMA = (
 def _validate_radio_pins(config):
     radio_type = config[CONF_RADIO_TYPE].upper()
 
+    if radio_type != "SX1262" and config.get(CONF_AGC_EXTERNAL_GAIN_DB, 0) != 0:
+        raise cv.Invalid("agc_external_gain_db is only valid for radio_type: SX1262.")
+
     if CONF_TCXO_PIN in config and radio_type != "SX1276":
         raise cv.Invalid("tcxo_pin is only valid for radio_type: SX1276. For SX1262 use has_tcxo instead.")
 
@@ -406,6 +413,7 @@ async def to_code(config):
             )
         )
         cg.add(radio_var.set_long_gfsk_packets(config.get(CONF_LONG_GFSK_PACKETS, False)))
+        cg.add(radio_var.set_agc_external_gain_db(config.get(CONF_AGC_EXTERNAL_GAIN_DB, 0)))
 
         # Clear SX1262 device errors on boot (optional)
         cg.add(radio_var.set_clear_device_errors_on_boot(config.get(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, False)))
