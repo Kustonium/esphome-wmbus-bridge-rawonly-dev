@@ -243,7 +243,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_LONG_GFSK_PACKETS, default=False): cv.boolean,
             # Experimental SX1262 RSSI/AGC calibration compensation for an
             # external receive amplifier. Zero preserves the silicon defaults.
-            cv.Optional(CONF_AGC_EXTERNAL_GAIN_DB, default=0): cv.int_range(min=0, max=31),
+            cv.Optional(CONF_AGC_EXTERNAL_GAIN_DB, default=0): cv.int_range(min=-31, max=31),
 
             # SX1276-specific board helper (for boards such as LilyGO T3 V3.0 TCXO).
             cv.Optional(CONF_TCXO_PIN): pins.internal_gpio_output_pin_schema,
