@@ -1,3 +1,27 @@
+# Feature: opt-in per-meter RSSI, and examples that state their defaults
+
+## EN
+
+- New option `publish_rssi` (**default `false`**). With it on, the board publishes the level of each forwarded meter's last frame as a retained integer to `wmbus/<topic_name>/rssi/<meter_id>`. Nothing changes for anyone who leaves it off — the topic simply never appears.
+- Only frames with a real measurement are published. A frame the radio gave no level for is skipped rather than sent as a sentinel, so a consumer never has to guess whether `0`, `1` or `-127` means "no signal" or "no reading".
+- The value is the one the driver already latched for that frame (SX1276 at the first byte, SX1262/LR1121 at sync word, CC1101 on read). Nothing new is measured, and the level is not re-read after RX_DONE, which would report an empty channel.
+- `forward_meters` applies as it does to telegrams: a meter that is filtered out publishes no RSSI either.
+- Independent of `diagnostic_mode`. The `last_rssi` / `win_avg_rssi` fields inside the diagnostic payloads are unchanged and remain the tool for reading the board's RF picture.
+- Paired with the wMBus MQTT Bridge add-on, each receiving board produces its own signal-strength entity for the same meter, which is what makes two boards comparable.
+- All `*_commented.yaml` examples now annotate every optional setting with `# default: <value>`, and `tests/ci/check_example_defaults.py` (wired into CI) holds those annotations and the `Domyślnie` column of `CONFIG_REFERENCE_MINIMAL.md` to the schema. A default changed in `__init__.py` now fails the build instead of quietly outdating ten files.
+- `CONFIG_REFERENCE_MINIMAL.md` gained the sixteen options that had a schema default but no entry, plus a section on what per-meter RSSI does and does not tell you.
+
+## PL
+
+- Nowa opcja `publish_rssi` (**domyślnie `false`**). Po włączeniu płytka publikuje poziom ostatniej ramki każdego przekazywanego licznika jako zachowaną liczbę całkowitą na `wmbus/<topic_name>/rssi/<meter_id>`. Kto jej nie włączy, nie zobaczy żadnej zmiany — temat po prostu nie powstaje.
+- Publikowane są wyłącznie ramki z rzeczywistym pomiarem. Ramka, dla której radio nie oddało poziomu, jest pomijana zamiast wysyłana jako znacznik, więc odbiorca nie musi zgadywać, czy `0`, `1` albo `-127` znaczy „brak sygnału", czy „brak odczytu".
+- Wartość to ta, którą sterownik zatrzasnął dla tej ramki (SX1276 przy pierwszym bajcie, SX1262/LR1121 na sync-word, CC1101 przy odczycie). Nic nie jest liczone od nowa i poziom nie jest doczytywany po RX_DONE, bo wtedy mierzyłby pusty kanał.
+- `forward_meters` obowiązuje tak samo jak dla telegramów: odfiltrowany licznik nie ma też publikowanego RSSI.
+- Niezależne od `diagnostic_mode`. Pola `last_rssi` / `win_avg_rssi` w payloadach diagnostycznych zostają bez zmian i dalej służą do czytania obrazu RF płytki.
+- W parze z dodatkiem wMBus MQTT Bridge każda płytka odbiorcza daje własną encję siły sygnału dla tego samego licznika — i to jest sens tej opcji.
+- Wszystkie przykłady `*_commented.yaml` mają teraz przy każdej opcjonalnej pozycji adnotację `# default: <wartość>`, a `tests/ci/check_example_defaults.py` (wpięty w CI) pilnuje zgodności tych adnotacji oraz kolumny `Domyślnie` w `CONFIG_REFERENCE_MINIMAL.md` ze schematem. Zmiana defaultu w `__init__.py` wywala build zamiast po cichu unieważniać dziesięć plików.
+- `CONFIG_REFERENCE_MINIMAL.md` dostał szesnaście opcji, które miały default w schemacie, a nie miały wpisu, oraz sekcję o tym, co RSSI per licznik mówi, a czego nie.
+
 # Fix: recover marginal S1 frames from Manchester erasures
 
 ## EN

@@ -175,6 +175,18 @@ wmbus_radio:
   diagnostic_mode: normal
   # diagnostic_summary_interval: 60s  # default: 60s
 
+  # EN: Publish the last measured RSSI for each forwarded meter as a retained
+  #     integer at wmbus/<topic_name>/rssi/<meter_id>. Frames without a real
+  #     RSSI measurement are skipped, so no placeholder value is ever sent.
+  #     The wMBus MQTT Bridge add-on turns it into one signal-strength entity
+  #     per receiving board, which is how two boards can be compared.
+  # PL: Publikuj ostatnie zmierzone RSSI każdego przekazanego licznika jako
+  #     zachowaną liczbę całkowitą na wmbus/<topic_name>/rssi/<meter_id>.
+  #     Ramki bez rzeczywistego pomiaru są pomijane, więc żadna wartość
+  #     zastępcza nie jest wysyłana. Dodatek wMBus MQTT Bridge robi z tego
+  #     osobną encję siły sygnału dla każdej płytki, co pozwala je porównać.
+  # publish_rssi: true  # default: false
+
   # EN: Optional selected meters for meter_snapshot in diagnostic_mode: normal.
   # PL: Opcjonalne wyróżnione liczniki do meter_snapshot w diagnostic_mode: normal.
   # highlight_meters:  # default: []

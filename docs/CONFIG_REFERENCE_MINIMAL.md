@@ -11,6 +11,7 @@
 | `diagnostic_mode` | `off` | public | `off`, `low`, `normal`, `debug`, `dev` |
 | `highlight_meters` | puste | public | ID liczników do wyróżnienia i statystyk w `normal/debug`; **nie filtruje MQTT** |
 | `forward_meters` | puste | public | whitelista ID publikowanych na `wmbus/<topic_name>/telegram`; lista ID albo `true` = użyj `highlight_meters`; puste = wysyłaj wszystko |
+| `publish_rssi` | `false` | public | publikuj RSSI ostatniej ramki każdego licznika na `wmbus/<topic_name>/rssi/<meter_id>`; patrz sekcja niżej |
 | `receiver_task_stack_size` | `3072` | advanced | stos osobnego taska RX, zakres `2048..16384` |
 | `listen_mode_filter_after_parse` | `false` | experimental | agresywniejsze filtrowanie po parserze; testować po licznikach, nie po samym globalnym drop% |
 | `highlight_ansi` | `false` | public | kolorowanie ANSI wyróżnionych liczników w logu |
@@ -86,6 +87,7 @@ Preferuj `topic_name`.
 | `wmbus/<topic_name>/diag/boot` | raz po starcie | `retain=true`; boot idzie też jako kopia do root `diag` bez retain |
 | `wmbus/<topic_name>/diag/suggestion` | wykryta anomalia RF | sugestie diagnostyczne |
 | `wmbus/<topic_name>/diag/busy_ether_changed` | zmiana stanu busy-ether | SX1276 + `adaptive` |
+| `wmbus/<topic_name>/rssi/<meter_id>` | ramka z realnym pomiarem RSSI | tylko przy `publish_rssi: true`; `retain=true` |
 
 Legacy/manual override:
 
@@ -141,6 +143,38 @@ wmbus_radio:
 - Diagnostyka liczy dalej **cały** eter: summary i statystyki RSSI powstają przed
   publikacją, więc widoczność sąsiedztwa zostaje. Obcinany jest sam strumień RAW.
 - `target_meter_id` ma własny topic i **nie** podlega whiteliście.
+
+## RSSI per licznik / per-meter RSSI
+
+`publish_rssi` (domyślnie `false`) publikuje siłę sygnału **ostatniej ramki danego
+licznika**, osobno dla każdej płytki:
+
+```yaml
+wmbus_radio:
+  publish_rssi: true
+```
+
+```text
+wmbus/<topic_name>/rssi/<meter_id>    payload: -52
+```
+
+- Payload to sama liczba całkowita w dBm, bez JSON-a; `retain=true`.
+- Publikowane są wyłącznie ramki z **rzeczywistym pomiarem**. Gdy sterownik nie
+  zatrzasnął RSSI dla danej ramki, nie wysyłamy nic — żadnych sentineli w rodzaju
+  `0`, `1` czy `-127`, bo odbiorca nie ma jak odróżnić ich od odczytu.
+- Wartość pochodzi z pomiaru zrobionego przy odbiorze tej ramki (SX1276 przy
+  pierwszym bajcie, SX1262/LR1121 na sync-word, CC1101 przy odczycie) — nie jest
+  to średnia z okna ani pomiar szumu po odbiorze.
+- Whitelista `forward_meters` obowiązuje tak samo jak dla telegramów: co nie idzie
+  na `telegram`, nie ma też publikowanego RSSI.
+- Po stronie dodatku **wMBus MQTT Bridge** każda płytka daje własną encję
+  `signal_strength` dla tego samego licznika, więc dwa odbiorniki da się porównać.
+
+**Czego RSSI nie mówi.** Opisuje wyłącznie ramki, które **dotarły i się
+zdekodowały**. Licznik na granicy zasięgu, z którego przechodzi co dziesiąta
+ramka, pokaże „lepsze" RSSI niż stabilny sąsiad, bo do statystyki trafiają tylko
+jego najlepsze próby. Do pytania „czy ten licznik dochodzi" właściwym wskaźnikiem
+jest statystyka odbioru 15/60 min, nie RSSI.
 
 ## Advanced/dev-only
 
