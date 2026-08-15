@@ -372,7 +372,13 @@ static void test_packet_s1_erasures_are_recovered_per_crc_block() {
   // Three erasures in the first block and two in the final block. All replace
   // transmitted one bits with invalid 00 pairs, so the ordinary zero-
   // substitution decoder necessarily fails CRC before recovery runs.
-  auto first = one_bit_positions(encoded, 0, 12U * 8U, 3);
+  //
+  // The search starts after the L-field (bit 8), and that is a property of the
+  // feature, not a convenience: block-wise CRC recovery needs the frame length
+  // first, because the length is what says where the blocks end. Erase the
+  // L-field itself and the packet is dropped at s1_length_check before any
+  // recovery can run - there is nothing to recover into.
+  auto first = one_bit_positions(encoded, 8U, 12U * 8U, 3);
   auto final = one_bit_positions(encoded, 12U * 8U, encoded.size() * 8U, 2);
   for (size_t bit : first) make_manchester_erasure(raw, bit);
   for (size_t bit : final) make_manchester_erasure(raw, bit);
@@ -386,7 +392,9 @@ static void test_packet_s1_erasures_are_recovered_per_crc_block() {
 static void test_packet_s1_too_many_erasures_are_rejected() {
   const auto encoded = format_a_with_crc();
   auto raw = encode_s1_manchester(encoded);
-  auto first = one_bit_positions(encoded, 0, 12U * 8U, 9);
+  // Nine erasures in one block, one above the search cap of eight, and again
+  // past the L-field so the packet reaches the CRC stage at all.
+  auto first = one_bit_positions(encoded, 8U, 12U * 8U, 9);
   for (size_t bit : first) make_manchester_erasure(raw, bit);
 
   Packet packet = make_packet(raw, -89, LinkMode::S1);
