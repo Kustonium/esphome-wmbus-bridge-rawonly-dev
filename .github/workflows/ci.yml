@@ -23,6 +23,12 @@ jobs:
       - name: Python syntax check
         run: python -m py_compile components/wmbus_radio/__init__.py
 
+      # The commented options in the examples and the "Domyślnie" column of the
+      # reference tables are documentation of the schema; this holds them to it,
+      # so a changed default cannot leave ten example files quietly lying.
+      - name: Documented defaults match the schema
+        run: python tests/ci/check_example_defaults.py
+
       - name: Build host parser tests
         run: |
           mkdir -p build

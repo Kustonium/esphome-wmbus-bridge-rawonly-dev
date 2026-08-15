@@ -154,7 +154,7 @@ wmbus_radio:
 
   # EN: Conservative/stable mode. Set true only for targeted experiments.
   # PL: Tryb konserwatywny/stabilny. Ustaw true tylko do celowych testów.
-  listen_mode_filter_after_parse: false
+  # listen_mode_filter_after_parse: false  # default: false
 
   # EN: New automatic MQTT topic model.
   #     Generated topics:
@@ -173,11 +173,11 @@ wmbus_radio:
   # EN: Diagnostic preset. For normal use this gives summary + 15min summary + highlighted meter snapshots.
   # PL: Preset diagnostyczny. Dla normalnej pracy daje summary + summary 15 min + snapshot wyróżnionych liczników.
   diagnostic_mode: normal
-  diagnostic_summary_interval: 60s
+  # diagnostic_summary_interval: 60s  # default: 60s
 
   # EN: Optional selected meters for meter_snapshot in diagnostic_mode: normal.
   # PL: Opcjonalne wyróżnione liczniki do meter_snapshot w diagnostic_mode: normal.
-  # highlight_meters:
+  # highlight_meters:  # default: []
   #   - "12345678"
   #   - "87654321"
 
@@ -189,6 +189,6 @@ wmbus_radio:
   #     Reszta jest odrzucana na ESP, o co chodzi w gęstej zabudowie.
   #     Zamiast listy można dać `forward_meters: true` i użyć listy z highlight_meters.
   #     ID szesnastkowe w cudzysłowie, inaczej YAML zamieni 0x417F0666 na 1098843750.
-  # forward_meters:
+  # forward_meters:  # default: []
   #   - "00089907"
   #   - "0x417F0666"

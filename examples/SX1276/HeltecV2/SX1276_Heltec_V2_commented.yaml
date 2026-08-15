@@ -96,7 +96,7 @@ wmbus_radio:
   #     Przykład opcjonalnego nadpisania częstotliwości dla testów S1:
   #       frequency: 868.36
   listen_mode: t1
-  listen_mode_filter_after_parse: false
+  # listen_mode_filter_after_parse: false  # default: false
 
   # MQTT topics are generated automatically.
   # topic_name is optional; if omitted, esphome.name is used.
@@ -104,14 +104,14 @@ wmbus_radio:
   #   wmbus/<topic_name>/telegram
   #   wmbus/<topic_name>/diag/...
   # topic_name: "${devicename}"
-  sx1276_busy_ether_mode: adaptive
+  # sx1276_busy_ether_mode: adaptive  # default: adaptive
 
 
   diagnostic_mode: normal
-  diagnostic_summary_interval: 60s
+  # diagnostic_summary_interval: 60s  # default: 60s
 
   # Optional per-meter stats.
-  # highlight_meters:
+  # highlight_meters:  # default: []
   #   - "00089907"
 
   # EN: Optional whitelist — only these meters reach wmbus/<topic_name>/telegram.
@@ -122,7 +122,7 @@ wmbus_radio:
   #     Reszta jest odrzucana na ESP, o co chodzi w gęstej zabudowie.
   #     Zamiast listy można dać `forward_meters: true` i użyć listy z highlight_meters.
   #     ID szesnastkowe w cudzysłowie, inaczej YAML zamieni 0x417F0666 na 1098843750.
-  # forward_meters:
+  # forward_meters:  # default: []
   #   - "00089907"
   #   - "0x417F0666"
 

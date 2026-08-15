@@ -13,6 +13,11 @@
 | `forward_meters` | puste | public | whitelista ID publikowanych na `wmbus/<topic_name>/telegram`; lista ID albo `true` = użyj `highlight_meters`; puste = wysyłaj wszystko |
 | `receiver_task_stack_size` | `3072` | advanced | stos osobnego taska RX, zakres `2048..16384` |
 | `listen_mode_filter_after_parse` | `false` | experimental | agresywniejsze filtrowanie po parserze; testować po licznikach, nie po samym globalnym drop% |
+| `highlight_ansi` | `false` | public | kolorowanie ANSI wyróżnionych liczników w logu |
+| `highlight_tag` | `wmbus_user` | public | tag logu dla wyróżnionych liczników |
+| `highlight_prefix` | `"★ "` | public | prefiks linii logu wyróżnionego licznika |
+| `allow_untested_framework` | `false` | safety gate | wymagane do zbudowania na frameworku `arduino`; domyślnie kompilacja jest przerywana |
+| `mark_as_handled` | `false` | public | opcja wewnątrz `on_frame:`; oznacza ramkę jako obsłużoną |
 
 ## Listen modes and frequency / tryby nasłuchu i częstotliwość
 
@@ -45,8 +50,20 @@ Poprawny telegram S1 jest publikowany na `wmbus/<topic_name>/telegram` tak samo 
 | `rf_sw_pin` | `SX1262` | brak | board-specific | bramka wewnętrznego przełącznika RF modułu; wymagane na XIAO ESP32-S3 + Wio-SX1262 (`GPIO38`), inaczej czułość niższa o ~30 dB |
 | `sx1276_busy_ether_mode` | `SX1276` | `adaptive` | public | `normal`, `aggressive`, `adaptive` |
 | `tcxo_pin` | `SX1276` | brak | board-specific | opcjonalny pin TCXO enable; ustawiany HIGH przed inicjalizacją SX1276 |
+| `busy_pin` | `SX1262`, `LR1121` | wymagane | public | linia BUSY; bez niej sterownik nie odróżni „jeszcze nie gotowy" od „odpowiedział" |
+| `rf_switch` | `SX1262` | brak | board-specific | wymuszenie stanu przełącznika RF; ustawiaj tylko gdy dokumentacja płytki tego wymaga |
+| `clear_device_errors_on_boot` | `SX1262` | `false` | advanced | kasuj rejestr błędów układu przy starcie |
+| `publish_dev_err_after_clear` | `SX1262` | `false` | advanced | opublikuj stan błędów po skasowaniu (diagnostyka `clear_device_errors_on_boot`) |
 | `cc1101_allow_experimental` | `CC1101` | `false` | safety gate | wymagane do uruchomienia CC1101 |
 | `gdo0_pin`, `gdo2_pin` | `CC1101` | wymagane | public | dual IRQ; single-IRQ CC1101 nie jest wspierany |
+| `lr1121_allow_experimental` | `LR1121` | `false` | safety gate | wymagane do uruchomienia LR1121 |
+| `tcxo_voltage` | `LR1121` | `1.8v` | public | napięcie TCXO modułu |
+| `rx_bandwidth` | `LR1121` | `234300` | advanced | szerokość pasma RX w Hz |
+| `preamble_detector` | `LR1121` | `16` | advanced | długość detektora preambuły w bitach |
+| `payload_length` | `LR1121` | `128` | advanced | maksymalna długość payloadu; podnieś, gdy długie telegramy są ucinane |
+| `rx_boosted` | `LR1121` | `true` | advanced | +2 dB czułości kosztem ok. 2 mA |
+| `bitrate` | `LR1121` | `100000` | advanced | bitrate GFSK |
+| `deviation` | `LR1121` | `50000` | advanced | dewiacja GFSK |
 
 `tcxo_pin` dotyczy tylko SX1276. Dla SX1262 używaj `has_tcxo`.
 

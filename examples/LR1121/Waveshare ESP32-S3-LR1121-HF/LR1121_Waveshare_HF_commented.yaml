@@ -134,7 +134,7 @@ wmbus_radio:
 
   # both = alternate the C-mode sync bytes 3:1 in favour of Format A (0x3D)
   # while still catching Format B (0xCD). t1 pins it to 0x3D.
-  listen_mode: both
+  listen_mode: both  # pinned: the RF setup this board was validated with
 
   # ---------------------------------------------------------------------------
   # TCXO SUPPLY - THE OPEN QUESTION ON THIS BOARD
@@ -158,7 +158,7 @@ wmbus_radio:
   # PROCEDURE: boot with 1.8v and read the log. If HF_XOSC_START is absent, the
   # part is happy at 1.8 V and you are done. If it appears, change this to
   # "3.0v" and reflash. No meter needed, no multimeter needed.
-  tcxo_voltage: "1.8v"
+  tcxo_voltage: "1.8v"  # pinned: the RF setup this board was validated with
 
   # ---------------------------------------------------------------------------
   # RF PARAMETERS
@@ -173,18 +173,18 @@ wmbus_radio:
   frequency: 868.950
 
   # 100 kb/s chip rate, 50 kHz deviation -> modulation index 1.0.
-  bitrate: 100000
-  deviation: 50000
+  bitrate: 100000  # pinned: the RF setup this board was validated with
+  deviation: 50000  # pinned: the RF setup this board was validated with
 
   # Receiver bandwidth, double sideband. The signal needs 2*fdev + bitrate =
   # 200 kHz, so 234300 is the tightest usable step and lets in the least noise.
   # Widen to 312000 only if meters are missed in a way that looks like they sit
   # off channel - the spectrum, not the guess, should decide that.
-  rx_bandwidth: "234300"
+  rx_bandwidth: "234300"  # pinned: the RF setup this board was validated with
 
   # Preamble detector length in bits. Shorter catches weaker signals and fires
   # more often on noise; longer is the opposite. 16 is the compromise.
-  preamble_detector: "16"
+  preamble_detector: "16"  # pinned: the RF setup this board was validated with
 
   # Fixed capture length in bytes.
   #
@@ -193,9 +193,10 @@ wmbus_radio:
   # air. It captures a fixed run instead and the host trims the tail - which
   # suits this project's architecture, where decoding happens off the device
   # anyway. Raise this if long telegrams come out truncated.
-  payload_length: 128
+  payload_length: 128  # pinned: the RF setup this board was validated with
 
   # +2 dB sensitivity for about 2 mA. On USB power there is no reason to say no.
-  rx_boosted: true
+  rx_boosted: true  # pinned: the RF setup this board was validated with
 
   topic_name: wmbus
+
