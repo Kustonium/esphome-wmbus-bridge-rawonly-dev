@@ -84,6 +84,12 @@ static constexpr uint8_t RFSW_WIFI    = 0x00;
 static constexpr uint32_t IRQ_RX_DONE       = (1UL << 3);
 static constexpr uint32_t IRQ_TIMEOUT       = (1UL << 10);
 static constexpr uint32_t IRQ_FSK_LEN_ERROR = (1UL << 24);
+// Sync word detected. Not used to drive capture - the capture still starts on
+// RX_DONE. Enabled in S1 only, as a probe: it is the one bit that separates
+// "sync never matched" from "sync matched but the packet never completed", and
+// those two have completely different fixes. Kept out of T1/C1 so a proven
+// receive path is not disturbed by an extra interrupt source.
+static constexpr uint32_t IRQ_SYNC_WORD_VALID = (1UL << 2);
 static constexpr uint32_t IRQ_ALL           = 0xFFFFFFFFUL;
 
 // GetErrors bits. Bit 5 is the one that matters at bring-up: it is the chip
@@ -458,7 +464,9 @@ void LR1121::configure_gfsk_() {
 
   this->cmd_write_(OC_SET_RX_BOOSTED, {(uint8_t) (this->rx_boosted_ ? 0x01 : 0x00)});
 
-  const uint32_t mask = IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_FSK_LEN_ERROR;
+  uint32_t mask = IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_FSK_LEN_ERROR;
+  if (this->listen_mode_ == LISTEN_MODE_S1)
+    mask |= IRQ_SYNC_WORD_VALID;
   this->cmd_write_(OC_SET_DIO_IRQ_PARAMS, {(uint8_t) (mask >> 24), (uint8_t) (mask >> 16), (uint8_t) (mask >> 8),
                                            (uint8_t) (mask >> 0),
                                            0x00, 0x00, 0x00, 0x00});  // DIO2: nothing
@@ -526,8 +534,23 @@ bool LR1121::load_rx_buffer_() {
 
   const uint8_t payload_len = st[0];
   const uint8_t start_ptr = st[1];
-  if (payload_len == 0)
+  if (payload_len == 0) {
+    // In S1 the IRQ line also carries SYNC_WORD_VALID, so landing here means the
+    // sync word matched and no packet followed. That is the decisive observation
+    // for whether a SYNC_WORD_VALID-driven capture path is needed at all - say it
+    // once, and clear the latch so the line does not stay asserted.
+    if (this->listen_mode_ == LISTEN_MODE_S1) {
+      if (!this->s1_sync_seen_) {
+        this->s1_sync_seen_ = true;
+        ESP_LOGW(TAG, "S1: sync word matched but no packet completed. The modem and sync "
+                      "are right; RX_DONE is what does not arrive. This is the case that "
+                      "needs a SYNC_WORD_VALID-driven capture (see the SX1262 S1 path).");
+      }
+      this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_ALL >> 24), (uint8_t) (IRQ_ALL >> 16),
+                                      (uint8_t) (IRQ_ALL >> 8), (uint8_t) (IRQ_ALL >> 0)});
+    }
     return false;
+  }
 
   // Packet RSSI first: RssiSync is latched at sync-word detection and survives
   // the frame, whereas GetRssiInst after RX_DONE would measure the empty

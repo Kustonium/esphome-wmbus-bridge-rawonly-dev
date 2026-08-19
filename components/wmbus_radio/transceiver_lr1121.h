@@ -207,6 +207,10 @@ class LR1121 : public RadioTransceiver {
   // and so per-command waits stop re-logging the same thing forever.
   bool busy_line_suspect_{false};
 
+  // S1 probe: reported once, so a sync-without-packet condition is stated and
+  // then stops repeating for every detector trigger.
+  bool s1_sync_seen_{false};
+
   // One provenance snapshot per boot, same contract as the SX1262 driver:
   // written by the receiver task, drained by Radio::loop() on the main task.
   RssiDiag rssi_diag_{};
