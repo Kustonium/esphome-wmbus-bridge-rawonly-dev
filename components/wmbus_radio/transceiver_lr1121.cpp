@@ -191,12 +191,11 @@ bool LR1121::cmd_read_(uint16_t opcode, std::initializer_list<uint8_t> args, uin
   (void) this->wait_while_busy_();
 
   this->delegate_->begin_transaction();
-  // On real LR1121 hardware the response starts with two status bytes.  The
-  // original implementation discarded only one, shifting every result left:
-  // GetVersion treated status as hw and lost the firmware LSB, while
-  // GetErrors produced impossible values such as 0x1300 (only bits 0..7 are
-  // defined).  Clock both status bytes out before copying the payload.
-  (void) this->delegate_->transfer((uint8_t) 0x00);
+  // Semtech's lr11xx_hal_read clocks exactly one dummy/status byte before the
+  // response payload.  Discarding two shifts every result: on LR1121 hardware
+  // GetVersion then misleadingly reads type=0x01 even though the documented
+  // LR1121 type is 0x03, and GetErrors moves valid low-byte flags into the
+  // undefined high byte.
   (void) this->delegate_->transfer((uint8_t) 0x00);
   for (size_t i = 0; i < out_len; i++)
     out[i] = this->delegate_->transfer((uint8_t) 0x00);
@@ -503,9 +502,7 @@ bool LR1121::load_rx_buffer_() {
   this->cmd_write_buf_(OC_READ_BUFFER8, r, sizeof(r));
   (void) this->wait_while_busy_();  // advisory, not a gate
   this->delegate_->begin_transaction();
-  // Same two-byte response header as cmd_read_().  Keeping ReadBuffer8 in
-  // lockstep matters: a one-byte shift here corrupts every received telegram.
-  (void) this->delegate_->transfer((uint8_t) 0x00);
+  // Same single dummy/status byte as lr11xx_hal_read and cmd_read_().
   (void) this->delegate_->transfer((uint8_t) 0x00);
   for (size_t i = 0; i < this->rx_buffer_.size(); i++)
     this->rx_buffer_[i] = this->delegate_->transfer((uint8_t) 0x00);
