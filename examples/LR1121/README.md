@@ -5,16 +5,25 @@ written entirely from documentation, with no board on the desk. It has since
 decoded real telegrams on this exact hardware: BMT and NES meters, 17 good
 frames per minute, RSSI -57..-96 dBm, no truncations, `RF link looks stable`.
 
-Still young, though. It has not run for days, C1 and S1 are untested, and
-nobody has compared its yield against an SX1262 in the same position. Treat it
-as a working starting point, not as a supported configuration.
+C1 works as well - a Techem C1 A frame decoded alongside the T1 traffic, which
+exercises the 3:1 sync-word cycling. Weakest successful decode so far: **-100
+dBm**, against a datasheet-derived estimate of -106..-109 dBm for this bitrate,
+so the front end is behaving roughly as predicted.
+
+Still young, though. It has not run for days, S1 is untested, C-mode Format B
+has never been seen here, and nobody has compared its yield against an SX1262
+in the same position. Treat it as a working starting point, not as a supported
+configuration.
 
 **PL.** Sterownik powstał wyłącznie z dokumentacji, bez płytki na biurku. Od
 2026-08-19 odbiera prawdziwe telegramy na tym sprzęcie: liczniki BMT i NES,
 17 poprawnych ramek na minutę, RSSI -57..-96 dBm, bez obcięć.
 
-Ale to wciąż młode: nie chodziło dobami, C1 i S1 są niesprawdzone, nikt nie
-porównał uzysku z SX1262 w tym samym miejscu.
+C1 też działa — jedna ramka C1 A od Techema obok ruchu T1. Najsłabszy udany
+odbiór: **−100 dBm**.
+
+Ale to wciąż młode: nie chodziło dobami, S1 niesprawdzone, formatu B C-mode tu
+nie widziano, nikt nie porównał uzysku z SX1262 w tym samym miejscu.
 
 ## Board
 

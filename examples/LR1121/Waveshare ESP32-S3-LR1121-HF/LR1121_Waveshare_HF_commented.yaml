@@ -14,8 +14,9 @@
 # What that does and does not mean:
 #   * The RF chain works end to end - switch table, calibration, GFSK setup,
 #     RSSI, the fixed-length capture and the 3-of-6 host decode.
-#   * It has NOT run for days, has not been tested in C1 or S1, and no attempt
-#     has been made to compare its yield against an SX1262 in the same spot.
+#   * C1 works too: one C1 A frame decoded alongside the T1 traffic.
+#   * It has NOT run for days, S1 is untested, and no attempt has been made to
+#     compare its yield against an SX1262 in the same position.
 #
 # Two things that will still bite a newcomer: (1) tcxo_voltage and (2) which
 # antenna socket you plugged into. Both are covered below.
@@ -140,9 +141,10 @@ wmbus_radio:
   # both = alternate the C-mode sync bytes 3:1 in favour of Format A (0x3D)
   # while still catching Format B (0xCD). t1 pins it to 0x3D.
   #
-  # Shipped as `both` because that is the generally useful setting, but be aware
-  # of what has actually been measured: the 2026-08-19 receiving run on this
-  # board used `t1`. C1 reception on LR1121 is untested.
+  # MEASURED 2026-08-19 in `both`: T1 from BMT, NES and Techem, and one C1 A
+  # frame (Techem) - so the 3:1 sync-word cycling does catch C-mode on this
+  # chip. One frame is proof the path works, not a yield figure; C1 is rare at
+  # this location, and Format B (0xCD) has still never been seen here.
   #
   # s1 now sets the S-mode modem and sync word (32768 b/s, 0x54 0x76 0x96 at
   # 24 bits) on top of the 868.300 MHz that the mode already selected. That is
