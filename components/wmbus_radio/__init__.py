@@ -113,6 +113,10 @@ CONF_FREQUENCY = "frequency"
 # hardware. Gated the same way CC1101 is.
 CONF_LR1121_ALLOW_EXPERIMENTAL = "lr1121_allow_experimental"
 CONF_TCXO_VOLTAGE = "tcxo_voltage"
+# Second TCXO knob. HF_XOSC_START does not distinguish "wrong voltage" from
+# "did not settle in time", so both have to be reachable from YAML.
+# 300 RTC ticks at 32.768 kHz is ~9.2 ms, the vendor value.
+CONF_TCXO_STARTUP_TICKS = "tcxo_startup_ticks"
 CONF_RX_BANDWIDTH = "rx_bandwidth"
 CONF_PREAMBLE_DETECTOR = "preamble_detector"
 CONF_PAYLOAD_LENGTH = "payload_length"
@@ -154,6 +158,7 @@ LR1121_PREAMBLE_DETECTORS = {
 # into a wrong binary.
 BASE_CONFIG_DEFAULTS_LR1121 = {
     CONF_TCXO_VOLTAGE: "1.8v",
+    CONF_TCXO_STARTUP_TICKS: 300,
     CONF_RX_BANDWIDTH: "234300",
     CONF_PREAMBLE_DETECTOR: "16",
     CONF_PAYLOAD_LENGTH: 128,
@@ -310,6 +315,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_TCXO_VOLTAGE, default="1.8v"): cv.one_of(
                 *LR1121_TCXO_VOLTAGES, lower=True
             ),
+            cv.Optional(CONF_TCXO_STARTUP_TICKS, default=300): cv.int_range(min=1, max=16777215),
             cv.Optional(CONF_RX_BANDWIDTH, default="234300"): cv.one_of(
                 *LR1121_RX_BANDWIDTHS, lower=True
             ),
@@ -450,8 +456,8 @@ def _validate_radio_pins(config):
     else:
         if config.get(CONF_LR1121_ALLOW_EXPERIMENTAL, False):
             raise cv.Invalid("lr1121_allow_experimental is only valid for radio_type: LR1121.")
-        for key in (CONF_TCXO_VOLTAGE, CONF_RX_BANDWIDTH, CONF_PREAMBLE_DETECTOR, CONF_PAYLOAD_LENGTH,
-                    CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION):
+        for key in (CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS, CONF_RX_BANDWIDTH, CONF_PREAMBLE_DETECTOR,
+                    CONF_PAYLOAD_LENGTH, CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION):
             # Defaults are always present, so only an explicit non-default value
             # is worth rejecting. Silently ignoring it would be worse: the user
             # would think they had tuned something.
@@ -545,6 +551,7 @@ async def to_code(config):
         cg.add(radio_var.set_tcxo_voltage(
             getattr(LR1121TcxoVoltage, LR1121_TCXO_VOLTAGES[config[CONF_TCXO_VOLTAGE]])
         ))
+        cg.add(radio_var.set_tcxo_startup_ticks(config[CONF_TCXO_STARTUP_TICKS]))
         cg.add(radio_var.set_rx_bandwidth(
             getattr(LR1121RxBandwidth, LR1121_RX_BANDWIDTHS[config[CONF_RX_BANDWIDTH]])
         ))
