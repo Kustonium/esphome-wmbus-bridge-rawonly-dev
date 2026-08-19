@@ -62,10 +62,9 @@ Confirmed from the schematic netlist and from the vendor's own Meshtastic
    with no error anywhere — indistinguishable from dead hardware.
 2. **`tcxo_voltage`.** The vendor package states two different values for the
    same board (3.0 V in all thirteen C examples, 1.8 V in the bundled Meshtastic
-   variant) and neither is a measurement. The default here is the low one
-   because that failure is loud: the chip reports `HF_XOSC_START` in the boot
-   error log and the driver spells out what it means. Too high a voltage starts
-   the oscillator anyway, out of spec, silently.
+   variant). Hardware bring-up of the Waveshare HF board selected 3.0 V: at
+   1.8 V the chip reports `HF_XOSC_START`, while 3.0 V reaches the receive path.
+   The Waveshare example and component default therefore use 3.0 V.
 3. **Boot log.** The driver logs `hw/type/fw` from GetVersion and decodes the
    error word by name. If GetVersion answers all-zeros or all-ones, SPI or BUSY
    is mis-wired and nothing further will work.

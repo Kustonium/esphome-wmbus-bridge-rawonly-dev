@@ -70,5 +70,6 @@ wmbus_radio:
     number: GPIO38
     mode: input
   listen_mode: both
-  tcxo_voltage: "1.8v"
+  tcxo_voltage: "3.0v"
+  tcxo_startup_ticks: 3000
   diagnostic_mode: normal

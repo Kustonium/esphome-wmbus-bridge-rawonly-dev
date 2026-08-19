@@ -312,10 +312,10 @@ BASE_CONFIG_SCHEMA = (
             # them into the driver would repeat exactly the criticism this
             # project makes of hardcoded bandwidths elsewhere.
             cv.Optional(CONF_LR1121_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
-            cv.Optional(CONF_TCXO_VOLTAGE, default="1.8v"): cv.one_of(
+            cv.Optional(CONF_TCXO_VOLTAGE, default="3.0v"): cv.one_of(
                 *LR1121_TCXO_VOLTAGES, lower=True
             ),
-            cv.Optional(CONF_TCXO_STARTUP_TICKS, default=300): cv.int_range(min=1, max=16777215),
+            cv.Optional(CONF_TCXO_STARTUP_TICKS, default=3000): cv.int_range(min=1, max=16777215),
             cv.Optional(CONF_RX_BANDWIDTH, default="234300"): cv.one_of(
                 *LR1121_RX_BANDWIDTHS, lower=True
             ),

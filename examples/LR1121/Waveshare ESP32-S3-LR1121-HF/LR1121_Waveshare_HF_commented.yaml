@@ -155,10 +155,11 @@ wmbus_radio:
   #   too high -> it starts anyway, out of spec, silently, and you find out
   #               months later as frequency drift.
   #
-  # PROCEDURE: boot with 1.8v and read the log. If HF_XOSC_START is absent, the
-  # part is happy at 1.8 V and you are done. If it appears, change this to
-  # "3.0v" and reflash. No meter needed, no multimeter needed.
-  tcxo_voltage: "1.8v"  # pinned: the RF setup this board was validated with
+  # Hardware bring-up of this exact Waveshare HF board showed HF_XOSC_START at
+  # 1.8 V and a working receive path at 3.0 V. Keep the longer startup window:
+  # it is expressed in 32.768 kHz ticks, not milliseconds.
+  tcxo_voltage: "3.0v"  # validated on the Waveshare HF hardware
+  tcxo_startup_ticks: 3000  # ~91.6 ms; measured bring-up needs more than the generic default
 
   # ---------------------------------------------------------------------------
   # RF PARAMETERS
