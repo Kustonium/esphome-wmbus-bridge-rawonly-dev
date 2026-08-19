@@ -591,13 +591,14 @@ static void lr1121_log_errors_(uint16_t errors) {
 
   // The one worth spelling out, because the fix is a config line and the
   // symptom otherwise looks like dead hardware.
-  if (errors & ERR_HF_XOSC_START)
+  if (errors & ERR_HF_XOSC_START) {
     ESP_LOGW(TAG, "  HF_XOSC_START: latched while entering STDBY_XOSC. Read the stage line above "
                   "before acting on this.");
     ESP_LOGW(TAG, "   IMAGE and ALL clean + frames arriving = startup transient, ignore it: "
                   "measured on the Waveshare HF board at tcxo_voltage 3.0v, which receives fine.");
     ESP_LOGW(TAG, "   IMAGE or ALL also failing = the 32 MHz reference really is not running; "
                   "that is when tcxo_voltage / tcxo_startup_ticks are worth changing.");
+  }
 }
 
 void LR1121::log_reg_status() {
