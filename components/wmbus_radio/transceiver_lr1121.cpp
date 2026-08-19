@@ -347,13 +347,26 @@ void LR1121::setup() {
   // framed GetErrors proved the distinction: HF_XOSC_START was clear, but the
   // calibration ended with PLL_LOCK.  Enter XOSC explicitly after configuring
   // the TCXO and before launching either calibration.
+  this->cmd_write_(OC_CLEAR_ERRORS, {});
   this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+  const uint16_t errors_after_xosc = this->get_errors_();
 
   this->cmd_write_(OC_CLEAR_ERRORS, {});
   this->cmd_write_(OC_CALIBRATE_IMAGE, {CAL_IMG_FREQ1_863MHZ, CAL_IMG_FREQ2_870MHZ});
-  this->cmd_write_(OC_CALIBRATE, {CALIBRATE_ALL});
+  const uint16_t errors_after_image = this->get_errors_();
 
-  this->boot_errors_ = this->get_errors_();
+  this->cmd_write_(OC_CLEAR_ERRORS, {});
+  this->cmd_write_(OC_CALIBRATE, {CALIBRATE_ALL});
+  const uint16_t errors_after_calibrate = this->get_errors_();
+
+  // Keep the aggregate for the normal boot report, but expose the individual
+  // stages at INFO while this new board is being brought up.  PLL_LOCK is a
+  // sticky bit; without clearing between stages the final 0x0080 cannot tell
+  // whether entering XOSC, image calibration or the full calibration raised
+  // it.  Reading and clearing the diagnostic latch does not undo calibration.
+  this->boot_errors_ = errors_after_xosc | errors_after_image | errors_after_calibrate;
+  ESP_LOGI(TAG, "Calibration stages: XOSC=0x%04X IMAGE=0x%04X ALL=0x%04X", (unsigned) errors_after_xosc,
+           (unsigned) errors_after_image, (unsigned) errors_after_calibrate);
   this->cmd_write_(OC_CLEAR_ERRORS, {});
 
   this->configure_gfsk_();
