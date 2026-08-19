@@ -364,9 +364,10 @@ void LR1121::setup() {
   // sticky bit; without clearing between stages the final 0x0080 cannot tell
   // whether entering XOSC, image calibration or the full calibration raised
   // it.  Reading and clearing the diagnostic latch does not undo calibration.
+  this->errors_after_xosc_ = errors_after_xosc;
+  this->errors_after_image_ = errors_after_image;
+  this->errors_after_calibrate_ = errors_after_calibrate;
   this->boot_errors_ = errors_after_xosc | errors_after_image | errors_after_calibrate;
-  ESP_LOGI(TAG, "Calibration stages: XOSC=0x%04X IMAGE=0x%04X ALL=0x%04X", (unsigned) errors_after_xosc,
-           (unsigned) errors_after_image, (unsigned) errors_after_calibrate);
   this->cmd_write_(OC_CLEAR_ERRORS, {});
 
   this->configure_gfsk_();
@@ -588,6 +589,9 @@ void LR1121::log_reg_status() {
   ESP_LOGCONFIG(TAG, "  Chip: hw=0x%02X type=0x%02X fw=0x%04X", (unsigned) this->boot_hw_,
                 (unsigned) this->boot_type_, (unsigned) this->boot_fw_);
   ESP_LOGCONFIG(TAG, "  RF: %s", this->rf_params_str_.c_str());
+  ESP_LOGI(TAG, "  Calibration stages: XOSC=0x%04X IMAGE=0x%04X ALL=0x%04X",
+           (unsigned) this->errors_after_xosc_, (unsigned) this->errors_after_image_,
+           (unsigned) this->errors_after_calibrate_);
   lr1121_log_errors_(this->boot_errors_);
 }
 

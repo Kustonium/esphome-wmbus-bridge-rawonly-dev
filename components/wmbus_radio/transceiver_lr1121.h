@@ -197,6 +197,9 @@ class LR1121 : public RadioTransceiver {
   uint8_t boot_type_{0};
   uint16_t boot_fw_{0};
   uint16_t boot_errors_{0};
+  uint16_t errors_after_xosc_{0};
+  uint16_t errors_after_image_{0};
+  uint16_t errors_after_calibrate_{0};
   bool boot_ok_{false};
 
   // Set when BUSY never fell during boot. Kept so the state is reported once,
