@@ -662,6 +662,18 @@ static void lr1121_log_errors_(uint16_t errors) {
   }
 }
 
+// Receiver bandwidth in Hz for the exposed codes, so the sanity block can check
+// it against the signal instead of printing a hex code nobody can judge.
+static uint32_t lr1121_bw_hz_(uint8_t code) {
+  switch (code) {
+    case LR1121_BW_234300: return 234300;
+    case LR1121_BW_312000: return 312000;
+    case LR1121_BW_373600: return 373600;
+    case LR1121_BW_467000: return 467000;
+    default: return 0;
+  }
+}
+
 void LR1121::log_reg_status() {
   // INFO, not LOGCONFIG. This is the evidence that SPI and the chip answer at
   // all, and LOGCONFIG sits BELOW info in ESPHome's level order - so on a
@@ -670,6 +682,59 @@ void LR1121::log_reg_status() {
   ESP_LOGI(TAG, "  Chip: hw=0x%02X type=0x%02X fw=0x%04X", (unsigned) this->boot_hw_,
            (unsigned) this->boot_type_, (unsigned) this->boot_fw_);
   ESP_LOGCONFIG(TAG, "  RF: %s", this->rf_params_str_.c_str());
+
+  // YAML sanity, same idea as the SX1262 block in component.cpp: echo what was
+  // chosen and say what it means, at INFO, where it is actually visible. Kept in
+  // the driver because the driver already holds these values - the SX1262 path
+  // copies them into the component, which is plumbing this does not need.
+  ESP_LOGI(TAG, "LR1121 YAML sanity / sprawdzenie YAML LR1121:");
+
+  if (this->tcxo_voltage_ == LR1121_TCXO_3_0V) {
+    ESP_LOGI(TAG, "  tcxo_voltage: 3.0v -> measured working on the Waveshare HF board / "
+                  "zmierzone jako dzialajace na plytce Waveshare HF");
+  } else if (this->tcxo_voltage_ == LR1121_TCXO_1_8V) {
+    ESP_LOGW(TAG, "  tcxo_voltage: 1.8v -> RISK(!): the 32 MHz TCXO did not start at this "
+                  "setting on the Waveshare HF board / na tej plytce TCXO nie wystartowal "
+                  "przy tym ustawieniu");
+  } else {
+    ESP_LOGW(TAG, "  tcxo_voltage: code 0x%02X -> untested on this board; 3.0v is the "
+                  "measured one / nietestowane na tej plytce",
+             (unsigned) this->tcxo_voltage_);
+  }
+  ESP_LOGI(TAG, "  tcxo_startup_ticks: %u (~%u ms at 32.768 kHz)",
+           (unsigned) this->tcxo_startup_ticks_,
+           (unsigned) ((this->tcxo_startup_ticks_ * 1000UL) / 32768UL));
+
+  const uint32_t bw = lr1121_bw_hz_((uint8_t) this->rx_bandwidth_);
+  const uint32_t needed = 2UL * this->deviation_hz_ + this->bitrate_bps_;
+  if (bw >= needed) {
+    ESP_LOGI(TAG, "  rx_bandwidth: %u Hz -> covers 2*fdev+bitrate = %u Hz / pokrywa wymagane %u Hz",
+             (unsigned) bw, (unsigned) needed, (unsigned) needed);
+  } else {
+    ESP_LOGW(TAG, "  rx_bandwidth: %u Hz -> RISK(!): narrower than 2*fdev+bitrate = %u Hz, "
+                  "frames will be clipped / wezsze niz wymagane %u Hz",
+             (unsigned) bw, (unsigned) needed, (unsigned) needed);
+  }
+
+  if (this->payload_length_ >= 255) {
+    ESP_LOGI(TAG, "  payload_length: 255 -> full capture; host trims / pelne przechwycenie, "
+                  "host przycina");
+  } else {
+    ESP_LOGW(TAG, "  payload_length: %u -> RISK(!): frames longer than this are truncated; "
+                  "NES telegrams arrive as 245 raw bytes / dluzsze ramki beda ucinane, "
+                  "telegramy NES maja 245 bajtow surowych",
+             (unsigned) this->payload_length_);
+  }
+
+  ESP_LOGI(TAG, "  rx_boosted: %s%s", this->rx_boosted_ ? "true" : "false",
+           this->rx_boosted_ ? " -> +2 dB for ~2 mA / +2 dB kosztem ~2 mA"
+                             : " -> 2 dB of sensitivity left on the table / oddane 2 dB czulosci");
+
+  if (this->listen_mode_ == LISTEN_MODE_S1) {
+    ESP_LOGI(TAG, "  listen_mode: s1 -> 32768 b/s, sync 0x54 0x76 0x96 (24 bit), 868.300 MHz. "
+                  "Measured working; margin sensitivity unknown / zmierzone jako dzialajace, "
+                  "czulosc na granicy niezbadana");
+  }
 
   // The known-benign signature, measured on this board: the flag latches while
   // entering STDBY_XOSC, both calibrations that follow are clean, and reception
