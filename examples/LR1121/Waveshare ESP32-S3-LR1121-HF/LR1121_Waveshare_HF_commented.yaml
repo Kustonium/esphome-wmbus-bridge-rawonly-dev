@@ -114,6 +114,28 @@ ota:
 time:
   - platform: homeassistant
 
+# Device telemetry, same block the XIAO example carries. These become Home
+# Assistant entities, which is what makes them reach InfluxDB and Grafana - the
+# wmbus diagnostics themselves go out over MQTT topics instead
+# (wmbus/<topic_name>/diag/...), so the two feeds are separate on purpose.
+#
+# Note for InfluxDB: the measurement name comes from the entity's unit, so
+# Uptime lands in `s` and WiFi RSSI in `dBm`. The two text_sensors have no unit
+# and fall back to entity_id - fine for a status panel, useless for a graph.
+sensor:
+  - platform: uptime
+    name: "Uptime"
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "WiFi SSID"
+
 spi:
   clk_pin: GPIO40
   miso_pin: GPIO46

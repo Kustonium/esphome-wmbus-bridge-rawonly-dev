@@ -56,6 +56,20 @@ ota:
 time:
   - platform: homeassistant
 
+sensor:
+  - platform: uptime
+    name: "Uptime"
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "WiFi SSID"
+
 spi:
   clk_pin: GPIO40
   miso_pin: GPIO46
