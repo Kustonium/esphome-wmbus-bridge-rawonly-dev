@@ -341,6 +341,14 @@ void LR1121::setup() {
   // The Waveshare board fits Y1 for this.
   this->cmd_write_(OC_CFG_LFCLK, {(uint8_t) (LFCLK_XTAL | (1 << 2))});
 
+  // Calibrations that exercise the RF PLL need the 32 MHz reference running.
+  // SetTcxoMode only tells the chip how to power and start that reference; it
+  // does not itself leave standby RC.  The first hardware run with correctly
+  // framed GetErrors proved the distinction: HF_XOSC_START was clear, but the
+  // calibration ended with PLL_LOCK.  Enter XOSC explicitly after configuring
+  // the TCXO and before launching either calibration.
+  this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+
   this->cmd_write_(OC_CLEAR_ERRORS, {});
   this->cmd_write_(OC_CALIBRATE_IMAGE, {CAL_IMG_FREQ1_863MHZ, CAL_IMG_FREQ2_870MHZ});
   this->cmd_write_(OC_CALIBRATE, {CALIBRATE_ALL});
