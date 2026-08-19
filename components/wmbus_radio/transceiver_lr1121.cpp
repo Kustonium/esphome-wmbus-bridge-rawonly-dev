@@ -348,6 +348,12 @@ void LR1121::setup() {
   // the TCXO and before launching either calibration.
   this->cmd_write_(OC_CLEAR_ERRORS, {});
   this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+  // Give the reference the full startup window before judging it. The default
+  // per-command wait is 100 ms, while tcxo_startup_ticks is counted in 32.768
+  // kHz ticks - 3000 of them is ~91.6 ms, so the old margin was 8 ms on a board
+  // whose BUSY line is not fully trusted. Reading GetErrors mid-startup is a
+  // good way to latch a failure that is not one.
+  (void) this->wait_while_busy_(1000);
   const uint16_t errors_after_xosc = this->get_errors_();
 
   this->cmd_write_(OC_CLEAR_ERRORS, {});
@@ -586,8 +592,12 @@ static void lr1121_log_errors_(uint16_t errors) {
   // The one worth spelling out, because the fix is a config line and the
   // symptom otherwise looks like dead hardware.
   if (errors & ERR_HF_XOSC_START)
-    ESP_LOGW(TAG, "  HF_XOSC_START: the 32 MHz TCXO did not start. Try the other tcxo_voltage "
-                  "(1.8v / 3.0v) - the vendor package states both and neither is measured.");
+    ESP_LOGW(TAG, "  HF_XOSC_START: latched while entering STDBY_XOSC. Read the stage line above "
+                  "before acting on this.");
+    ESP_LOGW(TAG, "   IMAGE and ALL clean + frames arriving = startup transient, ignore it: "
+                  "measured on the Waveshare HF board at tcxo_voltage 3.0v, which receives fine.");
+    ESP_LOGW(TAG, "   IMAGE or ALL also failing = the 32 MHz reference really is not running; "
+                  "that is when tcxo_voltage / tcxo_startup_ticks are worth changing.");
 }
 
 void LR1121::log_reg_status() {

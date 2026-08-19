@@ -1,16 +1,20 @@
-# LR1121 — experimental, never run on hardware
+# LR1121 — receiving since 2026-08-19
 
-**EN.** Every other radio in this repository was tuned against real meters. This
-one has not been powered on even once. The driver
-(`components/wmbus_radio/transceiver_lr1121.{h,cpp}`) was written from
-documentation, and the YAML here describes a board that was still in the post
-when it was authored. Treat it as a starting point for someone with the board in
-hand, not as support.
+**EN.** The driver (`components/wmbus_radio/transceiver_lr1121.{h,cpp}`) was
+written entirely from documentation, with no board on the desk. It has since
+decoded real telegrams on this exact hardware: BMT and NES meters, 17 good
+frames per minute, RSSI -57..-96 dBm, no truncations, `RF link looks stable`.
 
-**PL.** Każde inne radio w tym repozytorium było strojone na prawdziwych
-licznikach. To nie zostało ani razu włączone. Sterownik powstał z dokumentacji,
-a przykładowy YAML opisuje płytkę, która w chwili pisania była jeszcze w drodze.
-To punkt startowy dla kogoś, kto ma płytkę w ręku — nie wsparcie.
+Still young, though. It has not run for days, C1 and S1 are untested, and
+nobody has compared its yield against an SX1262 in the same position. Treat it
+as a working starting point, not as a supported configuration.
+
+**PL.** Sterownik powstał wyłącznie z dokumentacji, bez płytki na biurku. Od
+2026-08-19 odbiera prawdziwe telegramy na tym sprzęcie: liczniki BMT i NES,
+17 poprawnych ramek na minutę, RSSI -57..-96 dBm, bez obcięć.
+
+Ale to wciąż młode: nie chodziło dobami, C1 i S1 są niesprawdzone, nikt nie
+porównał uzysku z SX1262 w tym samym miejscu.
 
 ## Board
 

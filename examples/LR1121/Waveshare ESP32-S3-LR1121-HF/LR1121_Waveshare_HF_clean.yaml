@@ -2,9 +2,10 @@
 #
 # Waveshare ESP32-S3-LR1121-HF (SKU 34011) - wM-Bus T1/C1 receiver.
 #
-# EXPERIMENTAL: this radio has never been run against hardware. Read
+# Receiving real meters as of 2026-08-19 (BMT + NES, T1). Read
 # LR1121_Waveshare_HF_commented.yaml first - especially the tcxo_voltage note
-# and the warning about which antenna socket is the sub-GHz one.
+# (HF_XOSC_START in the boot log is expected and harmless here) and the warning
+# about which antenna socket is the sub-GHz one.
 
 substitutions:
   devicename: wmbus-lr1121
