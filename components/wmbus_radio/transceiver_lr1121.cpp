@@ -479,9 +479,11 @@ void LR1121::configure_gfsk_() {
   this->rf_params_str_ = buf;
 
   if (this->listen_mode_ == LISTEN_MODE_S1) {
-    ESP_LOGW(TAG, "S1: modem and sync word only. Capture still starts on RX_DONE, not on "
-                  "SYNC_WORD_VALID as the SX1262 S1 path does, and there is no S-mode length "
-                  "handling. Untested against a real S1 transmitter - report what you see.");
+    ESP_LOGI(TAG, "S1: modem 32768 b/s, sync 0x54 0x76 0x96 (24 bit). Capture starts on "
+                  "RX_DONE against the fixed length and the host trims - measured working "
+                  "2026-08-19, Format A, 85 B decoded from a 255 B capture at -59 dBm. "
+                  "Sensitivity at the margin is NOT established; that needs a weak real "
+                  "transmitter, not a bench generator.");
   }
 }
 

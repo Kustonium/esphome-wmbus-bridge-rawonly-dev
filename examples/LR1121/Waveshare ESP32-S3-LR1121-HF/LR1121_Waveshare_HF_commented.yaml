@@ -168,11 +168,19 @@ wmbus_radio:
   # chip. One frame is proof the path works, not a yield figure; C1 is rare at
   # this location, and Format B (0xCD) has still never been seen here.
   #
-  # s1 now sets the S-mode modem and sync word (32768 b/s, 0x54 0x76 0x96 at
-  # 24 bits) on top of the 868.300 MHz that the mode already selected. That is
-  # the whole of it: capture still starts on RX_DONE rather than
-  # SYNC_WORD_VALID, and there is no S-mode length handling, so treat S1 here
-  # as untested. SX1276 and SX1262 have the complete path.
+  # s1 WORKS, measured 2026-08-19 against a bench transmitter: Format A frame,
+  # 85 bytes decoded out of a 255-byte capture, RSSI -59 dBm, three sent and
+  # three received. The mode sets 32768 b/s and sync 0x54 0x76 0x96 (24 bits)
+  # on top of the 868.300 MHz that listen_mode already selects.
+  #
+  # No streaming capture was needed: RX_DONE fires against the fixed length and
+  # the host trims, exactly as it does for T1. The SX1262 S1 path uses
+  # SYNC_WORD_VALID because it needs to know when to stop a stream - this driver
+  # does not stream, so it does not need to know.
+  #
+  # What is NOT established: sensitivity at the margin. The bench signal was
+  # strong. A weak real S1 transmitter is a different test - see
+  # docs/S1_HELTEC_V4_TEST_2026-08-14_PL.md.
   listen_mode: both  # pinned: kept explicit while this radio is new
 
   # ---------------------------------------------------------------------------
