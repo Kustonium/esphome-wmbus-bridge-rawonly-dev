@@ -143,6 +143,11 @@ wmbus_radio:
   # Shipped as `both` because that is the generally useful setting, but be aware
   # of what has actually been measured: the 2026-08-19 receiving run on this
   # board used `t1`. C1 reception on LR1121 is untested.
+  #
+  # s1 is REJECTED for this radio, on purpose. S-mode needs 32768 b/s and the
+  # sync word 0x54 0x76 0x96, neither of which this driver sets - it would tune
+  # 868.300 MHz and then listen for a T-mode preamble that never comes. Use an
+  # SX1276 or SX1262 for S1 until that path is written.
   listen_mode: both  # pinned: kept explicit while this radio is new
 
   # ---------------------------------------------------------------------------
