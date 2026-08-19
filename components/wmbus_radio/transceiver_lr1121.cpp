@@ -116,29 +116,42 @@ static constexpr uint8_t RX_CONTINUOUS[3] = {0xFF, 0xFF, 0xFF};
 
 static constexpr int8_t RSSI_NOT_MEASURED = -127;
 
-// How long to wait for BUSY to fall. Generous: the longest legitimate wait is
-// the TCXO start-up (~9.2 ms at the default 300 ticks) plus calibration.
-static constexpr uint32_t BUSY_TIMEOUT_MS = 100;
+// Per-command BUSY timeout lives in the header as a default argument (100 ms).
+// The post-reset wait is separate and much longer - see setup(). The first
+// version of this driver used one short timeout for both and failed the whole
+// component before it ever spoke to the chip.
 
 // ---------------------------------------------------------------------------
 // SPI plumbing
 // ---------------------------------------------------------------------------
 
-bool LR1121::wait_while_busy_() {
+bool LR1121::wait_while_busy_(uint32_t timeout_ms) {
   if (this->busy_pin_ == nullptr)
     return true;
   const uint32_t start = millis();
   while (this->busy_pin_->digital_read()) {
-    if ((uint32_t) (millis() - start) > BUSY_TIMEOUT_MS)
+    if ((uint32_t) (millis() - start) > timeout_ms)
       return false;
+    delay(1);  // yield; a tight spin here starves the idle task
   }
   return true;
 }
 
+void LR1121::wake_pulse_() {
+  // One real byte, so the delegate definitely asserts and releases CS.
+  this->delegate_->begin_transaction();
+  (void) this->delegate_->transfer((uint8_t) 0x00);
+  this->delegate_->end_transaction();
+  delay(2);
+}
+
 void LR1121::cmd_write_buf_(uint16_t opcode, const uint8_t *args, size_t len) {
-  if (!this->wait_while_busy_()) {
-    ESP_LOGW(TAG, "BUSY stuck high before command 0x%04X", opcode);
-    return;
+  if (!this->wait_while_busy_() && !this->busy_line_suspect_) {
+    // Warn once, then carry on. Refusing to talk because BUSY looks stuck is
+    // how a bad BUSY reading turns into a silent radio that cannot even be
+    // interrogated.
+    ESP_LOGW(TAG, "BUSY stuck high before command 0x%04X - sending anyway", opcode);
+    this->busy_line_suspect_ = true;
   }
   this->delegate_->begin_transaction();
   this->delegate_->transfer((uint8_t) (opcode >> 8));
@@ -172,10 +185,10 @@ bool LR1121::cmd_read_(uint16_t opcode, std::initializer_list<uint8_t> args, uin
   }
   this->cmd_write_buf_(opcode, buf, n);
 
-  if (!this->wait_while_busy_()) {
-    ESP_LOGW(TAG, "BUSY stuck high after command 0x%04X", opcode);
-    return false;
-  }
+  // Not fatal for the same reason as above: read the answer regardless and let
+  // the caller judge it. A sane GetVersion arriving while BUSY reads high is
+  // the single most useful diagnostic this driver can produce.
+  (void) this->wait_while_busy_();
 
   this->delegate_->begin_transaction();
   (void) this->delegate_->transfer((uint8_t) 0x00);  // status byte, discarded
@@ -217,8 +230,7 @@ uint32_t LR1121::get_irq_status_() {
   // Sending 0x0100 as a command here instead would look right and return
   // rubbish, because the first transaction would be interpreted as a command
   // and the answer would be one frame late.
-  if (!this->wait_while_busy_())
-    return 0;
+  (void) this->wait_while_busy_();  // advisory, not a gate - see wait_while_busy_
   uint8_t r[6]{};
   this->delegate_->begin_transaction();
   for (size_t i = 0; i < sizeof(r); i++)
@@ -270,14 +282,40 @@ void LR1121::setup() {
   this->common_setup();
   this->reset();
 
-  // Wake-up pulse on NSS. The vendor HAL does this after reset and it costs
-  // nothing; a chip already awake ignores it.
-  this->delegate_->begin_transaction();
-  this->delegate_->end_transaction();
-  delay(1);
+  // Wake-up pulse, then a generous wait. Two separate reasons for the length:
+  // the chip loads its firmware out of NVM after NRESET is released, and the
+  // vendor HAL allows seconds for BUSY on every single command - not the tens
+  // of milliseconds a TCXO start would suggest. 100 ms was simply too short.
+  this->wake_pulse_();
+  bool busy_ok = this->wait_while_busy_(1000);
+  if (!busy_ok) {
+    // Second attempt with another NSS edge: a chip that came up in sleep needs
+    // the pulse, and one pulse may land before it is listening.
+    this->wake_pulse_();
+    busy_ok = this->wait_while_busy_(1000);
+  }
 
-  if (!this->wait_while_busy_()) {
-    ESP_LOGE(TAG, "BUSY never fell after reset - check wiring (BUSY, NSS, power)");
+  // Ask the chip who it is EVEN IF BUSY still looks stuck. This is the whole
+  // point: the answer separates "no chip / no SPI" from "chip fine, BUSY line
+  // lying", and those two have completely different fixes.
+  this->boot_ok_ = this->get_version_(this->boot_hw_, this->boot_type_, this->boot_fw_);
+
+  if (!busy_ok) {
+    this->busy_line_suspect_ = true;
+    ESP_LOGW(TAG, "BUSY did not fall within 2 s after reset (pin reads %d)",
+             this->busy_pin_ != nullptr ? (int) this->busy_pin_->digital_read() : -1);
+    if (this->boot_ok_) {
+      ESP_LOGW(TAG, "...but GetVersion answered hw=0x%02X type=0x%02X fw=0x%04X.",
+               (unsigned) this->boot_hw_, (unsigned) this->boot_type_, (unsigned) this->boot_fw_);
+      ESP_LOGW(TAG, "   The chip is alive and talking - suspect the BUSY line itself "
+                    "(wrong busy_pin, floating input, board revision), not the radio.");
+    } else {
+      ESP_LOGE(TAG, "...and GetVersion returned nothing sane. SPI, power or reset wiring.");
+    }
+  }
+
+  if (!this->boot_ok_) {
+    ESP_LOGE(TAG, "No sane answer to GetVersion - check SPI (CLK/MOSI/MISO/CS) and reset_pin");
     this->mark_failed();
     return;
   }
@@ -303,13 +341,6 @@ void LR1121::setup() {
 
   this->boot_errors_ = this->get_errors_();
   this->cmd_write_(OC_CLEAR_ERRORS, {});
-
-  this->boot_ok_ = this->get_version_(this->boot_hw_, this->boot_type_, this->boot_fw_);
-  if (!this->boot_ok_) {
-    ESP_LOGE(TAG, "No sane answer to GetVersion - SPI or BUSY wiring is wrong");
-    this->mark_failed();
-    return;
-  }
 
   this->configure_gfsk_();
   this->restart_rx();
@@ -442,8 +473,7 @@ bool LR1121::load_rx_buffer_() {
   this->rx_buffer_.assign(payload_len, 0);
   uint8_t r[2] = {start_ptr, payload_len};
   this->cmd_write_buf_(OC_READ_BUFFER8, r, sizeof(r));
-  if (!this->wait_while_busy_())
-    return false;
+  (void) this->wait_while_busy_();  // advisory, not a gate
   this->delegate_->begin_transaction();
   (void) this->delegate_->transfer((uint8_t) 0x00);  // status byte
   for (size_t i = 0; i < this->rx_buffer_.size(); i++)

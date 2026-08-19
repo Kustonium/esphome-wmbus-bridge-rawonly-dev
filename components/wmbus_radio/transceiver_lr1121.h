@@ -133,10 +133,21 @@ class LR1121 : public RadioTransceiver {
   // --- SPI plumbing --------------------------------------------------------
 
   // Blocks until BUSY falls, or gives up after a bounded wait. Returns false on
-  // timeout so callers can log rather than hang: on this chip a BUSY that never
-  // falls means either the TCXO did not start or SPI is not connected, and both
-  // deserve a message instead of a watchdog reboot.
-  bool wait_while_busy_();
+  // timeout so callers can log rather than hang.
+  //
+  // A false here is NOT treated as fatal, and that is deliberate. There are two
+  // very different worlds behind "BUSY stayed high": the chip is dead, or the
+  // BUSY line is not telling us the truth (wrong pin, floating input, board
+  // revision). They are told apart by asking the chip something over SPI
+  // anyway - which only works if a stuck BUSY does not gag the driver first.
+  bool wait_while_busy_(uint32_t timeout_ms = 100);
+
+  // NSS pulse. The vendor HAL wakes the chip by driving CS low for ~1 ms and
+  // releasing it, and calls this immediately after reset. ESPHome owns the CS
+  // pin through the SPI delegate, so the pulse is produced by performing a real
+  // one-byte transaction: an empty begin/end pair is not guaranteed to move CS
+  // at all, which is exactly the bug this replaces.
+  void wake_pulse_();
 
   void cmd_write_(uint16_t opcode, std::initializer_list<uint8_t> args);
   void cmd_write_buf_(uint16_t opcode, const uint8_t *args, size_t len);
@@ -187,6 +198,10 @@ class LR1121 : public RadioTransceiver {
   uint16_t boot_fw_{0};
   uint16_t boot_errors_{0};
   bool boot_ok_{false};
+
+  // Set when BUSY never fell during boot. Kept so the state is reported once,
+  // and so per-command waits stop re-logging the same thing forever.
+  bool busy_line_suspect_{false};
 
   // One provenance snapshot per boot, same contract as the SX1262 driver:
   // written by the receiver task, drained by Radio::loop() on the main task.
