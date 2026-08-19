@@ -200,7 +200,6 @@ class LR1121 : public RadioTransceiver {
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};
-  bool calibrate_busy_timeout_{false};
   bool boot_ok_{false};
 
   // Set when BUSY never fell during boot. Kept so the state is reported once,

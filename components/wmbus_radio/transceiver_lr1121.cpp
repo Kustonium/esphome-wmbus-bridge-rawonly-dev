@@ -356,14 +356,15 @@ void LR1121::setup() {
 
   this->cmd_write_(OC_CLEAR_ERRORS, {});
   this->cmd_write_(OC_CALIBRATE, {CALIBRATE_ALL});
-  // Calibrate(0x3F) is the longest system command.  The ordinary 100 ms
-  // command wait is intentionally short for runtime traffic, but is not long
-  // enough here: reading GetErrors while BUSY is still high returns response
-  // framing bytes (observed as the impossible value 0x1300).  Semtech's HAL
-  // permits up to 10 s before the next command, so honor that bound and never
-  // clock GetErrors while calibration is still running.
-  const bool calibrate_ready = this->wait_while_busy_(10000);
-  const uint16_t errors_after_calibrate = calibrate_ready ? this->get_errors_() : 0;
+  // Calibrate(0x3F) is the longest system command.  On this board the BUSY
+  // input has already proved unreliable while SPI itself works (GetVersion,
+  // RSSI and RX FIFO all answer), so BUSY must remain advisory rather than
+  // becoming a fatal gate again.  Give calibration the same one-second window
+  // used by the vendor HAL, then read its result.  This avoids the premature
+  // 100 ms GetErrors that produced the impossible value 0x1300 without
+  // disabling a working receiver when GPIO41 stays asserted.
+  (void) this->wait_while_busy_(1000);
+  const uint16_t errors_after_calibrate = this->get_errors_();
 
   // Keep the aggregate for the normal boot report, but expose the individual
   // stages at INFO while this new board is being brought up.  PLL_LOCK is a
@@ -373,15 +374,7 @@ void LR1121::setup() {
   this->errors_after_xosc_ = errors_after_xosc;
   this->errors_after_image_ = errors_after_image;
   this->errors_after_calibrate_ = errors_after_calibrate;
-  this->calibrate_busy_timeout_ = !calibrate_ready;
   this->boot_errors_ = errors_after_xosc | errors_after_image | errors_after_calibrate;
-  if (!calibrate_ready) {
-    // The chip still owns the SPI command engine.  Do not compound the fault
-    // by sending ClearErrors or radio configuration while BUSY is asserted.
-    this->log_reg_status();
-    this->mark_failed();
-    return;
-  }
   this->cmd_write_(OC_CLEAR_ERRORS, {});
 
   this->configure_gfsk_();
@@ -604,8 +597,6 @@ void LR1121::log_reg_status() {
   ESP_LOGI(TAG, "  Calibration stages: XOSC=0x%04X IMAGE=0x%04X ALL=0x%04X",
            (unsigned) this->errors_after_xosc_, (unsigned) this->errors_after_image_,
            (unsigned) this->errors_after_calibrate_);
-  if (this->calibrate_busy_timeout_)
-    ESP_LOGE(TAG, "  Calibrate(0x3F): BUSY did not fall within 10 s; GetErrors was not sent");
   lr1121_log_errors_(this->boot_errors_);
 }
 
