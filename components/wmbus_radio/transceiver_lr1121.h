@@ -176,7 +176,7 @@ class LR1121 : public RadioTransceiver {
   uint32_t deviation_hz_{50000UL};
   LR1121RxBandwidth rx_bandwidth_{LR1121_BW_234300};
   LR1121PreambleDetector preamble_detector_{LR1121_PREAMBLE_MIN_16B};
-  uint8_t payload_length_{128};
+  uint8_t payload_length_{255};
   bool rx_boosted_{true};
   LR1121TcxoVoltage tcxo_voltage_{LR1121_TCXO_3_0V};
   uint32_t tcxo_startup_ticks_{3000};  // ~91.6 ms at 32.768 kHz

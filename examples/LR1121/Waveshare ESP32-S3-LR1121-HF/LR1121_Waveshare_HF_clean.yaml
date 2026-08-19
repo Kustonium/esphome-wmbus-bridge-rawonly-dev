@@ -72,4 +72,5 @@ wmbus_radio:
   listen_mode: both
   tcxo_voltage: "3.0v"
   tcxo_startup_ticks: 3000
+  payload_length: 255
   diagnostic_mode: normal

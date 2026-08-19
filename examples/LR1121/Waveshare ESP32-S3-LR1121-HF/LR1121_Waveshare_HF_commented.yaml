@@ -161,6 +161,14 @@ wmbus_radio:
   tcxo_voltage: "3.0v"  # validated on the Waveshare HF hardware
   tcxo_startup_ticks: 3000  # ~91.6 ms; measured bring-up needs more than the generic default
 
+  # T1 is fixed-length at the packet engine because its L-field is 3-of-6
+  # encoded and cannot be used by the radio as an on-air length byte. Capture
+  # the maximum single-packet length (255 bytes) and let the host trim it. A
+  # real L=0x4C meter needs about 134 encoded bytes, so the former value 128
+  # truncated valid telegrams. Frames exceeding 255 encoded bytes will require
+  # a streaming FIFO path analogous to the SX1262 long-frame receiver.
+  payload_length: 255
+
   # ---------------------------------------------------------------------------
   # RF PARAMETERS
   # ---------------------------------------------------------------------------

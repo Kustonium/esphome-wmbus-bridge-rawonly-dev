@@ -62,7 +62,7 @@ Poprawny telegram S1 jest publikowany na `wmbus/<topic_name>/telegram` tak samo 
 | `tcxo_startup_ticks` | `LR1121` | `3000` | advanced | czas rozruchu TCXO w taktach 32,768 kHz (~91,6 ms) |
 | `rx_bandwidth` | `LR1121` | `234300` | advanced | szerokość pasma RX w Hz |
 | `preamble_detector` | `LR1121` | `16` | advanced | długość detektora preambuły w bitach |
-| `payload_length` | `LR1121` | `128` | advanced | maksymalna długość payloadu; podnieś, gdy długie telegramy są ucinane |
+| `payload_length` | `LR1121` | `255` | advanced | długość stałego przechwycenia T1; host przycina telegram według zdekodowanego L-field |
 | `rx_boosted` | `LR1121` | `true` | advanced | +2 dB czułości kosztem ok. 2 mA |
 | `bitrate` | `LR1121` | `100000` | advanced | bitrate GFSK |
 | `deviation` | `LR1121` | `50000` | advanced | dewiacja GFSK |

@@ -343,8 +343,8 @@ void Radio::loop() {
                (unsigned) rssi_diag.raw_avg, (int) rssi_diag.inflight, (int) rssi_diag.result);
       if (rssi_diag.trigger_irq != 0 || rssi_diag.captured != 0) {
         ESP_LOGI(TAG,
-                 "SX1262 stream snapshot: IRQ=0x%04X captured=%u exit=%s first[%u]=%02X%02X%02X%02X%02X%02X%02X%02X",
-                 (unsigned) rssi_diag.trigger_irq, (unsigned) rssi_diag.captured,
+                 "%s RX snapshot: IRQ=0x%04X captured=%u exit=%s first[%u]=%02X%02X%02X%02X%02X%02X%02X%02X",
+                 this->radio->get_name(), (unsigned) rssi_diag.trigger_irq, (unsigned) rssi_diag.captured,
                  rssi_diag.exit_reason, (unsigned) rssi_diag.first_len,
                  (unsigned) rssi_diag.first_bytes[0], (unsigned) rssi_diag.first_bytes[1],
                  (unsigned) rssi_diag.first_bytes[2], (unsigned) rssi_diag.first_bytes[3],

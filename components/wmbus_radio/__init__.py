@@ -322,7 +322,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_PREAMBLE_DETECTOR, default="16"): cv.one_of(
                 *LR1121_PREAMBLE_DETECTORS, lower=True
             ),
-            cv.Optional(CONF_PAYLOAD_LENGTH, default=128): cv.int_range(min=16, max=255),
+            cv.Optional(CONF_PAYLOAD_LENGTH, default=255): cv.int_range(min=16, max=255),
             cv.Optional(CONF_RX_BOOSTED, default=True): cv.boolean,
             cv.Optional(CONF_BITRATE, default=100000): cv.int_range(min=600, max=300000),
             cv.Optional(CONF_DEVIATION, default=50000): cv.int_range(min=1000, max=200000),
