@@ -15,8 +15,11 @@
 #   * The RF chain works end to end - switch table, calibration, GFSK setup,
 #     RSSI, the fixed-length capture and the 3-of-6 host decode.
 #   * C1 works too: one C1 A frame decoded alongside the T1 traffic.
-#   * It has NOT run for days, S1 is untested, and no attempt has been made to
-#     compare its yield against an SX1262 in the same position.
+#   * S1 works as well - 85 bytes decoded from a bench transmitter, no streaming
+#     capture needed. Details at listen_mode below.
+#   * It has NOT run for days, S1 sensitivity at the margin is unmeasured, and
+#     no attempt has been made to compare its yield against an SX1262 in the
+#     same position.
 #
 # Two things that will still bite a newcomer: (1) tcxo_voltage and (2) which
 # antenna socket you plugged into. Both are covered below.
