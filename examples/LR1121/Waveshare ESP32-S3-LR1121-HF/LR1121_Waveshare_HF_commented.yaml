@@ -143,7 +143,7 @@ wmbus_radio:
   # Shipped as `both` because that is the generally useful setting, but be aware
   # of what has actually been measured: the 2026-08-19 receiving run on this
   # board used `t1`. C1 reception on LR1121 is untested.
-  listen_mode: both
+  listen_mode: both  # pinned: kept explicit while this radio is new
 
   # ---------------------------------------------------------------------------
   # TCXO SUPPLY - THE OPEN QUESTION ON THIS BOARD
@@ -156,13 +156,15 @@ wmbus_radio:
   # about a different board entirely. The schematic labels Y2 only as
   # "SMD TCXO 32 MHz (2.0x1.6)".
   #
-  # The default here is the LOW value, because the failure modes are not
-  # symmetric:
-  #   too low  -> the oscillator does not start. The chip says so:
-  #               HF_XOSC_START appears in the boot error log. Loud, harmless,
-  #               fixable by changing this line.
+  # The driver originally defaulted to the LOW value, because the failure modes
+  # are not symmetric:
+  #   too low  -> the oscillator does not start, and the chip says so with
+  #               HF_XOSC_START. Loud, harmless, fixable by editing one line.
   #   too high -> it starts anyway, out of spec, silently, and you find out
   #               months later as frequency drift.
+  # That ordering is what identified 3.0 V as the working value in a single
+  # boot, without a multimeter. The default is now 3.0 V because it is measured;
+  # the reasoning is kept because it is how the answer was reached.
   #
   # MEASURED on this board, 2026-08-19: at 3.0 V the receiver decodes real BMT
   # and NES telegrams (17 good frames per minute, RSSI -57..-96 dBm). At 1.8 V
