@@ -144,10 +144,11 @@ wmbus_radio:
   # of what has actually been measured: the 2026-08-19 receiving run on this
   # board used `t1`. C1 reception on LR1121 is untested.
   #
-  # s1 is REJECTED for this radio, on purpose. S-mode needs 32768 b/s and the
-  # sync word 0x54 0x76 0x96, neither of which this driver sets - it would tune
-  # 868.300 MHz and then listen for a T-mode preamble that never comes. Use an
-  # SX1276 or SX1262 for S1 until that path is written.
+  # s1 now sets the S-mode modem and sync word (32768 b/s, 0x54 0x76 0x96 at
+  # 24 bits) on top of the 868.300 MHz that the mode already selected. That is
+  # the whole of it: capture still starts on RX_DONE rather than
+  # SYNC_WORD_VALID, and there is no S-mode length handling, so treat S1 here
+  # as untested. SX1276 and SX1262 have the complete path.
   listen_mode: both  # pinned: kept explicit while this radio is new
 
   # ---------------------------------------------------------------------------

@@ -158,6 +158,7 @@ class LR1121 : public RadioTransceiver {
   uint16_t get_errors_();
   uint32_t get_irq_status_();
   void set_sync_word_(uint8_t sync2);
+  void set_s1_sync_word_();
   void configure_gfsk_();
   bool load_rx_buffer_();
 

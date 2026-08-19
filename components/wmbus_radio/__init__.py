@@ -459,24 +459,6 @@ def _validate_radio_pins(config):
                 "LR1121 requires busy_pin. Every command on this chip is framed by the BUSY handshake; "
                 "without that line the driver cannot tell 'not ready' from 'answered'."
             )
-        if config.get(CONF_LISTEN_MODE) == "s1":
-            # S-mode is not a variant of T1 with a different frequency, and the
-            # LR1121 driver currently only knows T1/C1. Accepting s1 would tune
-            # 868.300 MHz - because the frequency default is mode-aware - while
-            # still running 100 kb/s and the T-mode sync word 0x54 0x3D, so the
-            # receiver would sit on the right channel and be structurally unable
-            # to see a telegram. Silent, and indistinguishable from bad reception.
-            #
-            # What S1 needs, from the working SX1262 implementation: bitrate
-            # 32768 instead of 100000, sync word 0x54 0x76 0x96 at 24 bits
-            # instead of 16, capture started on SYNC_WORD_VALID rather than
-            # RX_DONE, and S-mode length handling on the host side.
-            raise cv.Invalid(
-                "listen_mode: s1 is not implemented for radio_type: LR1121 - only t1, c1 and both are. "
-                "S-mode uses a different bitrate and sync word, so the receiver would be tuned correctly "
-                "and still deaf. Use an SX1276 or SX1262 for S1. / "
-                "listen_mode: s1 nie jest zaimplementowany dla LR1121 - dostepne sa t1, c1 i both."
-            )
     else:
         if config.get(CONF_LR1121_ALLOW_EXPERIMENTAL, False):
             raise cv.Invalid("lr1121_allow_experimental is only valid for radio_type: LR1121.")

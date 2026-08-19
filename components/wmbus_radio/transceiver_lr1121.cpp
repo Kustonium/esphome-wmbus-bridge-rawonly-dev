@@ -244,6 +244,15 @@ uint32_t LR1121::get_irq_status_() {
   return ((uint32_t) r[2] << 24) | ((uint32_t) r[3] << 16) | ((uint32_t) r[4] << 8) | (uint32_t) r[5];
 }
 
+// S-mode sync, same bytes the SX1276 and SX1262 drivers program: the 18-bit
+// S-mode sync 0x7696 preceded by three "01" preamble bits, which packet radios
+// express as 0x54 0x76 0x96. Twenty-four bits, not sixteen - configure_gfsk_()
+// sizes the field from the listen mode for exactly this reason.
+void LR1121::set_s1_sync_word_() {
+  const uint8_t sw[8] = {0x54, 0x76, 0x96, 0, 0, 0, 0, 0};
+  this->cmd_write_buf_(OC_SET_GFSK_SYNC_WORD, sw, sizeof(sw));
+}
+
 void LR1121::set_sync_word_(uint8_t sync2) {
   // Sync word register is always eight bytes; wM-Bus uses the first two and the
   // remainder is ignored because sync_word_len_in_bits is set to 16.
@@ -416,10 +425,18 @@ void LR1121::configure_gfsk_() {
   // rots.
   this->cmd_write_(OC_SET_RSSI_CALIBRATION, {0x22, 0x32, 0x43, 0x45, 0x64, 0x55, 0x66, 0x76, 0x06, 0x00, 0x00});
 
-  this->cmd_write_(OC_SET_MODULATION_PARAM, {(uint8_t) (this->bitrate_bps_ >> 24),
-                                             (uint8_t) (this->bitrate_bps_ >> 16),
-                                             (uint8_t) (this->bitrate_bps_ >> 8),
-                                             (uint8_t) (this->bitrate_bps_ >> 0),
+  // S-mode runs at 32768 b/s, not 100000. The bitrate is a YAML option, so an
+  // explicit value always wins; this only supplies the right default when the
+  // user picked listen_mode: s1 and left the T-mode number alone. The effective
+  // value is printed on the RF line below, so the substitution is never silent.
+  uint32_t bitrate = this->bitrate_bps_;
+  if (this->listen_mode_ == LISTEN_MODE_S1 && bitrate == 100000UL)
+    bitrate = 32768UL;
+
+  this->cmd_write_(OC_SET_MODULATION_PARAM, {(uint8_t) (bitrate >> 24),
+                                             (uint8_t) (bitrate >> 16),
+                                             (uint8_t) (bitrate >> 8),
+                                             (uint8_t) (bitrate >> 0),
                                              GFSK_PULSE_SHAPE_OFF,
                                              (uint8_t) this->rx_bandwidth_,
                                              (uint8_t) (this->deviation_hz_ >> 24),
@@ -432,7 +449,7 @@ void LR1121::configure_gfsk_() {
   // not because it does anything here.
   this->cmd_write_(OC_SET_PKT_PARAM, {0x00, 32,
                                       (uint8_t) this->preamble_detector_,
-                                      16,  // sync word length in BITS
+                                      (uint8_t) (this->listen_mode_ == LISTEN_MODE_S1 ? 24 : 16),
                                       GFSK_ADDR_FILTER_DISABLE,
                                       GFSK_PKT_FIX_LEN,
                                       this->payload_length_,
@@ -448,10 +465,16 @@ void LR1121::configure_gfsk_() {
 
   char buf[96];
   snprintf(buf, sizeof(buf), "%.3f MHz, %u bps, fdev %u Hz, BW 0x%02X, len %u, boost %s",
-           this->configured_frequency_hz_ / 1000000.0f, (unsigned) this->bitrate_bps_,
+           this->configured_frequency_hz_ / 1000000.0f, (unsigned) bitrate,
            (unsigned) this->deviation_hz_, (unsigned) this->rx_bandwidth_, (unsigned) this->payload_length_,
            this->rx_boosted_ ? "on" : "off");
   this->rf_params_str_ = buf;
+
+  if (this->listen_mode_ == LISTEN_MODE_S1) {
+    ESP_LOGW(TAG, "S1: modem and sync word only. Capture still starts on RX_DONE, not on "
+                  "SYNC_WORD_VALID as the SX1262 S1 path does, and there is no S-mode length "
+                  "handling. Untested against a real S1 transmitter - report what you see.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -463,6 +486,19 @@ void LR1121::restart_rx() {
   // C-mode exists in two format variants that differ only in the second sync
   // byte (A = 0x3D, B = 0xCD). Listening on one of them silently drops the
   // other, so `both` and `c1` rotate 3:1 in favour of A.
+  if (this->listen_mode_ == LISTEN_MODE_S1) {
+    this->set_s1_sync_word_();
+    this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_ALL >> 24), (uint8_t) (IRQ_ALL >> 16),
+                                    (uint8_t) (IRQ_ALL >> 8), (uint8_t) (IRQ_ALL >> 0)});
+    this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+    this->cmd_write_buf_(OC_SET_RX, RX_CONTINUOUS, sizeof(RX_CONTINUOUS));
+    this->rx_loaded_ = false;
+    this->rx_idx_ = 0;
+    this->rx_len_ = 0;
+    this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
+    return;
+  }
+
   uint8_t sync2;
   if (this->listen_mode_ == LISTEN_MODE_T1) {
     sync2 = 0x3D;
