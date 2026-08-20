@@ -7,6 +7,8 @@
 
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+#include "esp_system.h"
+#include "esp_timer.h"
 
 #include <cstring>
 #include <algorithm>
@@ -178,6 +180,10 @@ static inline uint8_t rssi_abort_bucket_(int rssi_dbm) {
 }
 
 void Radio::setup() {
+  // One random identifier per boot separates sequence-number domains. It is
+  // metadata only; no radio setting or packet path depends on its value.
+  this->rx_boot_id_ = esp_random();
+  if (this->rx_boot_id_ == 0) this->rx_boot_id_ = 1;
   for (const auto &warning : this->config_warnings_) {
     ESP_LOGW(TAG, "Config warning / ostrzezenie konfiguracji: %s", warning.c_str());
   }
@@ -210,6 +216,7 @@ void Radio::setup() {
 
   if (!this->telegram_topic_.empty()) {
     ESP_LOGI(TAG, "Frame RAW forwarding topic / topic publikacji RAW: %s", this->telegram_topic_.c_str());
+    ESP_LOGI(TAG, "Frame RX metadata topic / topic metadanych RX: %s", this->rx_topic_.c_str());
   }
 
   if (!this->forward_meter_ids_.empty() || !this->forward_meter_raw_ids_.empty()) {
@@ -1002,7 +1009,12 @@ void Radio::receive_frame() {
     return;
   }
 
+  // This is the receiver-task wake time immediately after the radio IRQ. It is
+  // intentionally not called an on-air start or RX_DONE timestamp: different
+  // transceivers signal at different receive stages.
+  const uint64_t rx_task_wakeup_us = (uint64_t) esp_timer_get_time();
   auto packet = std::make_unique<Packet>();
+  packet->set_rx_task_wakeup_us(rx_task_wakeup_us);
 
   auto queue_packet = [this](std::unique_ptr<Packet> &pkt) -> bool {
     pkt->set_rssi(this->radio->get_rssi());

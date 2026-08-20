@@ -707,11 +707,13 @@ async def to_code(config):
     health_topic = f"wmbus/{topic_name}/health"
     meters_topic = f"wmbus/{topic_name}/meters"
     rssi_topic = f"wmbus/{topic_name}/rssi"
+    rx_topic = f"wmbus/{topic_name}/rx"
 
     cg.add(var.set_diag_topic(diag_topic))
     cg.add(var.set_health_topic(health_topic))
     cg.add(var.set_meters_topic(meters_topic))
     cg.add(var.set_rssi_topic(rssi_topic))
+    cg.add(var.set_rx_topic(rx_topic))
     cg.add(var.set_telegram_topic(telegram_topic))
     cg.add(var.set_target_meter_id_str(config.get(CONF_TARGET_METER_ID, "")))
     cg.add(var.set_target_topic(config.get(CONF_TARGET_TOPIC, "")))

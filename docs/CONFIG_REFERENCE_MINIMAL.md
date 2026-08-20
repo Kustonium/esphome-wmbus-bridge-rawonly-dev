@@ -80,6 +80,8 @@ Preferuj `topic_name`.
 | Topik | Skąd się bierze | Uwagi |
 |---|---|---|
 | `wmbus/<topic_name>/telegram` | każda poprawna ramka (lub tylko `forward_meters`) | główny output dla bridge/wmbusmeters |
+| `wmbus/<topic_name>/rx` | ta sama poprawna ramka co na `telegram` | strukturalne metadane odbioru; QoS 1, bez retain |
+| `wmbus/<topic_name>/rx` | ta sama poprawna ramka co na `telegram` | strukturalne metadane odbioru; QoS 1, bez retain |
 | `wmbus/<topic_name>/diag` | drop/rx_path eventy + kopia boot event | root diag, bez retain |
 | `wmbus/<topic_name>/diag/summary` | co `diagnostic_summary_interval` | globalne summary |
 | `wmbus/<topic_name>/diag/summary_15min` | co 15 min | `normal`+ |
@@ -89,6 +91,58 @@ Preferuj `topic_name`.
 | `wmbus/<topic_name>/diag/suggestion` | wykryta anomalia RF | sugestie diagnostyczne |
 | `wmbus/<topic_name>/diag/busy_ether_changed` | zmiana stanu busy-ether | SX1276 + `adaptive` |
 | `wmbus/<topic_name>/rssi/<meter_id>` | ramka z realnym pomiarem RSSI | tylko przy `publish_rssi: true`; `retain=true` |
+
+### Structured RX metadata / strukturalne metadane RX
+
+Każdemu telegramowi dopuszczonemu przez `forward_meters` towarzyszy komunikat
+JSON na `wmbus/<topic_name>/rx`. Nie zastępuje on HEX-a na `telegram` i nie
+zawiera zdekodowanej wartości licznika. ESP nadal wyłącznie odbiera i
+kwalifikuje ramkę RF; zapis do bazy pozostaje zadaniem backendu.
+
+Payload schematu 1 zawiera:
+
+- `boot_id` — identyfikator bieżącego uruchomienia ESP;
+- `seq` — wspólny dla źródła, rosnący numer poprawnej ramki;
+- `rx_task_wakeup_us` — czas `esp_timer` od uruchomienia, pobrany gdy task RX
+  obudził się po IRQ; nie jest to znacznik początku transmisji ani dokładnego
+  zdarzenia `RX_DONE`;
+- `meter_id`, `mode` (`T1`, `C1` albo `S1`) i `rssi_dbm` (`null`, gdy sterownik
+  nie dostarczył rzeczywistego pomiaru);
+- `frame_crc32` — IEEE CRC32 końcowych, znormalizowanych bajtów ramki, które są
+  publikowane jako HEX;
+- `frame_length` — liczba tych bajtów.
+
+`/rx` jest publikowany z QoS 1 i `retain=false`. `seq` zwiększa się także dla
+poprawnych ramek odebranych podczas braku połączenia MQTT, więc następny
+opublikowany komunikat może ujawnić lukę. Luka wskazuje brak zdarzeń na
+ścieżce ESP→broker→subskrybent, ale sama nie rozstrzyga, na którym odcinku
+powstała. Zmiana `boot_id` rozpoczyna nową domenę numeracji.
+
+### Structured RX metadata / strukturalne metadane RX
+
+Każdemu telegramowi dopuszczonemu przez `forward_meters` towarzyszy komunikat
+JSON na `wmbus/<topic_name>/rx`. Nie zastępuje on HEX-a na `telegram` i nie
+zawiera zdekodowanej wartości licznika. ESP nadal wyłącznie odbiera i
+kwalifikuje ramkę RF; zapis do bazy pozostaje zadaniem backendu.
+
+Payload schematu 1 zawiera:
+
+- `boot_id` — identyfikator bieżącego uruchomienia ESP;
+- `seq` — wspólny dla źródła, rosnący numer poprawnej ramki;
+- `rx_task_wakeup_us` — czas `esp_timer` od uruchomienia, pobrany gdy task RX
+  obudził się po IRQ; nie jest to znacznik początku transmisji ani dokładnego
+  zdarzenia `RX_DONE`;
+- `meter_id`, `mode` (`T1`, `C1` albo `S1`) i `rssi_dbm` (`null`, gdy sterownik
+  nie dostarczył rzeczywistego pomiaru);
+- `frame_crc32` — IEEE CRC32 końcowych, znormalizowanych bajtów ramki, które są
+  publikowane jako HEX;
+- `frame_length` — liczba tych bajtów.
+
+`/rx` jest publikowany z QoS 1 i `retain=false`. `seq` zwiększa się także dla
+poprawnych ramek odebranych podczas braku połączenia MQTT, więc następny
+opublikowany komunikat może ujawnić lukę. Luka wskazuje brak zdarzeń na
+ścieżce ESP→broker→subskrybent, ale sama nie rozstrzyga, na którym odcinku
+powstała. Zmiana `boot_id` rozpoczyna nową domenę numeracji.
 
 Legacy/manual override:
 
