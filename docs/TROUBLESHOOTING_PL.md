@@ -353,3 +353,32 @@ bajtów surowych, więc wartością roboczą jest `255`.
 
 Przy S1 pamiętaj, że kolejność radiów jest inna niż przy T1: układem sprawdzonym
 przy progu szumu S1 jest `SX1276`. Patrz [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md).
+
+## 17. Płytka restartuje się co 15 minut
+
+Objaw: odbiór działa, po czym cyklicznie ustaje i rusza od nowa. Czas pracy nigdy
+nie przekracza kwadransa, a liczniki zerowane przy starcie pokazują absurdy.
+
+Przyczyna, jeśli YAML ma samo `api:`, a płytka publikuje przez MQTT: ESPHome
+przyjmuje domyślnie `api.reboot_timeout: 15min`, a ten licznik restartuje
+urządzenie, gdy nie jest podłączony żaden *klient* Native API. Samodzielny
+odbiornik MQTT zwykle takiego klienta nie ma, więc restartuje się w kółko.
+
+Poprawka — każdy przykład w tym repo już ją zawiera:
+
+```yaml
+api:
+  reboot_timeout: 0s
+```
+
+`api:` zostaje, więc Native API i `time: platform: homeassistant` nadal działają;
+wyłączony jest wyłącznie watchdog.
+
+Jak to potwierdzić, zamiast zakładać: przy włączonym temacie metadanych odczytaj
+`boot_id` i `seq` z `wmbus/<topic_name>/rx`. Restartująca się płytka pokazuje nowy
+`boot_id` mniej więcej co 900 s; zdrowa trzyma jeden `boot_id`, a `seq` rośnie
+przez granice 15 i 30 minut. Zmierzone tutaj 2026-08-20/21: 51 różnych `boot_id`
+na płytkę w ciągu nocy przed zmianą, jeden `boot_id` przez 14,1 h po niej.
+
+`mqtt.reboot_timeout` to inny mechanizm, reagujący na utratę brokera. Nie zmieniaj
+go przy okazji tej poprawki.

@@ -353,3 +353,33 @@ bytes, so `255` is the working value.
 
 For S1 specifically, remember the ranking is different from T1: `SX1276` is the
 radio proven at the S1 noise floor. See [`CHIP_SELECTION.md`](CHIP_SELECTION.md).
+
+## 17. The board reboots every 15 minutes
+
+Symptom: reception works, then stops and starts again on a regular cycle. Uptime
+never passes a quarter of an hour, and counters that reset at boot look absurd.
+
+Cause, if the YAML has a bare `api:` and the board publishes over MQTT: ESPHome
+defaults to `api.reboot_timeout: 15min`, and that timer restarts the device when
+no Native API *client* is connected. A standalone MQTT receiver normally has no
+such client, so it restarts forever.
+
+Fix — every example in this repo now ships it:
+
+```yaml
+api:
+  reboot_timeout: 0s
+```
+
+`api:` stays, so Native API and `time: platform: homeassistant` keep working;
+only the watchdog is disabled.
+
+How to confirm rather than assume: with the RX metadata topic enabled, read
+`boot_id` and `seq` from `wmbus/<topic_name>/rx`. A board that is restarting
+shows a new `boot_id` roughly every 900 s; a healthy one keeps one `boot_id`
+while `seq` rises across the 15- and 30-minute marks. Measured here on
+2026-08-20/21: 51 distinct `boot_id` per board in one night before the change,
+one `boot_id` over 14.1 h after it.
+
+`mqtt.reboot_timeout` is a different mechanism that reacts to losing the broker.
+Do not change it as part of this fix.

@@ -1,3 +1,19 @@
+# Fix: examples no longer reboot a standalone MQTT receiver every 15 minutes
+
+## EN
+
+- Every example YAML that pairs `mqtt:` with `api:` now sets `api.reboot_timeout: 0s`, with a comment explaining why. ESPHome's default is `15min`, and that timer restarts the board whenever no Native API *client* is connected - which is the normal state of a receiver that only publishes to MQTT.
+- Measured, not deduced: the `/rx` metadata for the night of 2026-08-20/21 showed **51 distinct `boot_id` per board, median 900 s apart**, while Home Assistant had no ESPHome device added. After the change the same boards ran **14.1 h on one `boot_id`** with `seq` rising continuously.
+- `api:` is kept, so Native API and `time: platform: homeassistant` still work; only the watchdog is off. `mqtt.reboot_timeout` is a separate mechanism for broker loss and is deliberately left alone.
+- `TROUBLESHOOTING{,_PL}.md` gained a section for the symptom, including how to confirm it from `boot_id` and `seq` instead of guessing from telegram counts.
+
+## PL
+
+- Każdy przykład YAML łączący `mqtt:` z `api:` ustawia teraz `api.reboot_timeout: 0s` wraz z komentarzem wyjaśniającym powód. Domyślną wartością ESPHome jest `15min`, a ten licznik restartuje płytkę zawsze, gdy nie jest podłączony żaden *klient* Native API - czyli w normalnym stanie odbiornika publikującego wyłącznie do MQTT.
+- Zmierzone, nie wywnioskowane: metadane `/rx` z nocy 2026-08-20/21 pokazały **51 różnych `boot_id` na płytkę, mediana odstępu 900 s**, przy braku jakiegokolwiek urządzenia ESPHome dodanego w Home Assistant. Po zmianie te same płytki przepracowały **14,1 h na jednym `boot_id`**, a `seq` rósł bez przerwy.
+- `api:` zostaje, więc Native API i `time: platform: homeassistant` nadal działają; wyłączony jest tylko watchdog. `mqtt.reboot_timeout` to osobny mechanizm na utratę brokera i celowo nie jest ruszany.
+- `TROUBLESHOOTING{,_PL}.md` dostały sekcję o tym objawie, razem ze sposobem potwierdzenia go przez `boot_id` i `seq`, zamiast zgadywania z liczby telegramów.
+
 # Docs: the fourth radio, and the S1 answer, are now in the documentation
 
 ## EN
