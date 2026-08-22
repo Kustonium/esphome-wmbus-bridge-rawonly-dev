@@ -6,24 +6,36 @@ decoded real telegrams on this exact hardware: BMT and NES meters, 17 good
 frames per minute, RSSI -57..-96 dBm, no truncations, `RF link looks stable`.
 
 C1 works as well - a Techem C1 A frame decoded alongside the T1 traffic, which
-exercises the 3:1 sync-word cycling. Weakest successful decode so far: **-100
-dBm**, against a datasheet-derived estimate of -106..-109 dBm for this bitrate,
-so the front end is behaving roughly as predicted.
+exercises the 3:1 sync-word cycling. S1 receives too, verified on 2026-08-19
+against a workshop transmitter.
 
-Still young, though. It has not run for days, S1 is untested, C-mode Format B
-has never been seen here, and nobody has compared its yield against an SX1262
-in the same position. Treat it as a working starting point, not as a supported
+Weakest successful decode so far: **-114 dBm**, measured over a 14.1 h run on
+2026-08-21 and read from the `/api/esp-rx` export rather than off a log screen.
+That run also produced 1401 frames at -105 dBm or below. The datasheet-derived
+estimate for this bitrate was -106..-109 dBm, so the front end is doing slightly
+better than predicted, not worse.
+
+Still young, though. It has not run for weeks, C-mode Format B has never been
+seen here, and nobody has compared its yield against an SX1262 in the same
+position - which is the only comparison that would separate the chip from where
+it happens to stand. Treat it as a working starting point, not as a supported
 configuration.
 
 **PL.** Sterownik powstał wyłącznie z dokumentacji, bez płytki na biurku. Od
 2026-08-19 odbiera prawdziwe telegramy na tym sprzęcie: liczniki BMT i NES,
 17 poprawnych ramek na minutę, RSSI -57..-96 dBm, bez obcięć.
 
-C1 też działa — jedna ramka C1 A od Techema obok ruchu T1. Najsłabszy udany
-odbiór: **−100 dBm**.
+C1 też działa — jedna ramka C1 A od Techema obok ruchu T1. S1 również odbiera,
+sprawdzone 2026-08-19 na nadajniku warsztatowym.
 
-Ale to wciąż młode: nie chodziło dobami, S1 niesprawdzone, formatu B C-mode tu
-nie widziano, nikt nie porównał uzysku z SX1262 w tym samym miejscu.
+Najsłabszy udany odbiór: **−114 dBm**, zmierzone w biegu 14,1 h dnia 2026-08-21
+i odczytane z eksportu `/api/esp-rx`, a nie z ekranu logu. W tym samym biegu było
+1401 ramek na poziomie −105 dBm i niżej — czyli lepiej niż oszacowanie
+−106…−109 dBm z datasheetu.
+
+Ale to wciąż młode: nie chodziło tygodniami, formatu B C-mode tu nie widziano,
+nikt nie porównał uzysku z SX1262 w tym samym miejscu — a tylko takie porównanie
+oddziela układ od miejsca, w którym stoi.
 
 ## Board
 
