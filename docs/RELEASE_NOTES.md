@@ -1,3 +1,19 @@
+# Docs: SX1262 examples with a TCXO now clear the device-error register
+
+## EN
+
+- All eight `SX1262` examples (Heltec V3, V4, V4-R8, XIAO) set `clear_device_errors_on_boot: true` and `publish_dev_err_after_clear: true` instead of listing them as optional extras. Every one of those boards declares `has_tcxo: true`, and on a TCXO board `XOSC_START_ERR` is set on every power-up as a matter of course: the chip tries its own crystal before DIO3 has been told to power the TCXO, and DIO3 is configured after reset.
+- Left off, the flag is therefore always set and carries no information. Cleared once the reference is up - which is what the datasheet expects - it becomes a diagnostic: a flag that stays cleared was a power-on artefact, a flag that comes back after a clean clear is a reference that genuinely is not starting.
+- `publish_dev_err_after_clear` sends the re-read state to MQTT. That is the only way to see it on a node receiving nothing, which is precisely the case where the error register is the last thing left to read - the situation the 2026-08-01 fix was about.
+- Defaults in the schema are unchanged (`false` for both). This is a change to what the examples recommend, not to component behaviour.
+
+## PL
+
+- Wszystkie osiem przykładów `SX1262` (Heltec V3, V4, V4-R8, XIAO) ustawia `clear_device_errors_on_boot: true` oraz `publish_dev_err_after_clear: true`, zamiast wymieniać je jako opcjonalny dodatek. Każda z tych płytek deklaruje `has_tcxo: true`, a na płytce z TCXO `XOSC_START_ERR` zapala się przy każdym starcie w sposób normalny: układ próbuje uruchomić własny kwarc, zanim DIO3 dostanie polecenie zasilenia TCXO, a DIO3 konfiguruje się dopiero po resecie.
+- Bez skasowania flaga jest więc zawsze zapalona i nie niesie żadnej informacji. Skasowana po ustawieniu referencji - czego oczekuje datasheet - staje się diagnostyką: flaga, która zostaje skasowana, była artefaktem startu; flaga, która wraca po czystym skasowaniu, to referencja, która naprawdę nie startuje.
+- `publish_dev_err_after_clear` wysyła ponownie odczytany stan na MQTT. To jedyny sposób, żeby zobaczyć go na węźle, który nic nie odbiera - a właśnie tam rejestr błędów jest ostatnią rzeczą do odczytania; dokładnie o tym była poprawka z 2026-08-01.
+- Domyślne w schemacie bez zmian (`false` dla obu). To zmiana tego, co zalecają przykłady, a nie zachowania komponentu.
+
 # Fix: examples no longer reboot a standalone MQTT receiver every 15 minutes
 
 ## EN
