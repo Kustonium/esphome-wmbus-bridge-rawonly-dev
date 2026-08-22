@@ -329,3 +329,27 @@ MQTT unavailable / MQTT niedostepny: skip telegram publish ... radio reception c
 TLS, certyfikaty, fingerprinty i szczegóły zdalnego brokera należą do standardowej sekcji `mqtt:` ESPHome. Nie konfiguruje się ich w `wmbus_radio`.
 
 Jeżeli lokalne linie `Have data` są widoczne, ale backend nic nie odbiera, najpierw debuguj MQTT. Jeżeli nie ma linii `Have data`, najpierw debuguj radio i konfigurację płytki.
+
+## 16. Płytka LR1121 wygląda na martwą albo S1 jest gorsze, niż powinno
+
+Trzy usterki na tej płytce dają ciszę bez żadnego błędu, więc sprawdź je, zanim
+zaczniesz podejrzewać sterownik:
+
+- **Złe gniazdo u.FL.** Płytka Waveshare HF ma ich kilka: front end WiFi ESP32,
+  port 2,4 GHz LR1121 i tor sub-GHz przez przełącznik RF. Tylko ten ostatni
+  odbiera wM-Bus.
+- **Brak logu na konsoli.** Na płytce nie ma mostka USB-UART — USB-C idzie wprost
+  do natywnych pinów USB ESP32-S3. `logger:` wymaga
+  `hardware_uart: USB_SERIAL_JTAG`.
+- **`tcxo_voltage: 1.8v`.** Układ zgłasza wtedy `HF_XOSC_START` i nie dochodzi do
+  odbioru. Użyj `3.0v` — ta wartość jest zmierzona na tej płytce.
+
+Sam `HF_XOSC_START` w logu startowym **nie jest** usterką. Zatrzaskuje się przy
+wejściu w `STDBY_XOSC`; jeżeli linie kalibracji po nim pokazują
+`XOSC=0x0020 IMAGE=0x0000 ALL=0x0000`, radio jest sprawne i sterownik to napisze.
+
+Ramki przychodzą, ale są ucięte: podnieś `payload_length` — ramki NES mają 245
+bajtów surowych, więc wartością roboczą jest `255`.
+
+Przy S1 pamiętaj, że kolejność radiów jest inna niż przy T1: układem sprawdzonym
+przy progu szumu S1 jest `SX1276`. Patrz [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md).

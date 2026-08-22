@@ -8,7 +8,7 @@ The component publishes only telegrams that passed the internal wM-Bus frame che
 
 ```text
 radio IRQ
-  -> read PHY bytes from SX1262/SX1276
+  -> read PHY bytes from CC1101/SX1276/SX1262/LR1121
   -> build a packet candidate
   -> detect link mode hint: T1, C1 or forced S1
   -> calculate expected candidate length

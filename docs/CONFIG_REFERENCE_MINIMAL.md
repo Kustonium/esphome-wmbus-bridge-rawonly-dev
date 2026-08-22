@@ -4,7 +4,7 @@
 
 | Opcja | Domyślnie | Status | Opis PL / EN |
 |---|---:|---|---|
-| `radio_type` | wymagane | public | `SX1262`, `SX1276`, `CC1101` |
+| `radio_type` | wymagane | public | `SX1262`, `SX1276`, `CC1101`, `LR1121` |
 | `topic_name` | `esphome.name` | public | nazwa bazowa topiców: `wmbus/<topic_name>/...`; bez `/`, spacji, `+`, `#` |
 | `listen_mode` | `both` | public | `t1`, `c1`, `both` = T1/C1 only, `s1` = experimental S1 only |
 | `frequency` | mode default | public | optional override; T1/C1/both default `868.950 MHz`, S1 default `868.300 MHz` |
@@ -239,6 +239,7 @@ jest statystyka odbioru 15/60 min, nie RSSI.
 | `target_topic` | `""` | advanced | topic dla `target_meter_id` |
 | `target_log` | `true` | advanced | logowanie trafień target meter |
 | `publish_radio_raw` | `false` | dev-only | surowy tap radiowy na stałym topicu `wmbus_bridge/raw`; nie mylić z normalnym telegramem |
+| `diagnostic_publish_suggestion` | z presetu `diagnostic_mode` | advanced | publikuj zdarzenia `suggestion` (podpowiedzi diagnostyczne), dławione do jednej na godzinę na kod; jawne `true`/`false` nadpisuje preset |
 
 ## Deprecated diagnostic aliases / stare aliasy
 
