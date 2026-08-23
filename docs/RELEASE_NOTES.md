@@ -1,3 +1,27 @@
+# Change: `sx1276_busy_ether_mode` now defaults to `normal`
+
+## EN
+
+- **The default changes from `adaptive` to `normal`.** `adaptive` and `aggressive` do not tune the receiver: they abort weak starts so the radio can keep up when it is overrunning. If it is not overrunning, that sensitivity is spent for nothing.
+- Measured on a dense apartment block, 2026-08-23, with all four boards **in one physical spot**: under `adaptive` **no frame weaker than −84 dBm got through at all** and the board heard **27** meters; under `normal` frames arrived down to **−97 dBm** and it heard **53**. Normalised against the three control boards in the same window, their meter counts did not move (44→45, 33→33, 27→24) while the SX1276 went 27→53.
+- The mechanism matches the code: the abort threshold in `should_abort_t1_probe_start_()` is clamped to `[-96, -86]` and `adaptive` adds +4 dB, which pins it to the clamp. The result is a hard sensitivity floor, not a gradual trade.
+- Throughout that day `fifo_overrun`, `truncated`, `payload_read_failed` and `irq_timeout` were **zero** - the receiver was never overrunning, so the protection was buying nothing.
+- **New diagnostic suggestion `CONSIDER_BUSY_ETHER_ADAPTIVE`**: the component now proposes `adaptive` only when overload is *measured* (`fifo_overrun > 0` or `truncated > 0`) together with real losses (`drop_pct >= 10`). A high `false_start_like` alone is explicitly not a reason - it counts noise triggers, and it sat near 60/min all day with zero overruns.
+- `CHIP_SELECTION{,_PL}.md` and `TROUBLESHOOTING{,_PL}.md` §8 rewritten around that rule, including a warning that `drop_pct` improves by itself under `adaptive` because the frames it would have counted are no longer attempted. Judge the mode by per-meter counts instead.
+- SX1276 examples no longer set `adaptive` actively; the commented ones annotate `# default: normal`.
+- **Caveat, stated in the docs as well:** one board, one building, one evening. The mechanism is understood; the size of the effect elsewhere is not.
+
+## PL
+
+- **Domyślna zmienia się z `adaptive` na `normal`.** `adaptive` i `aggressive` nie stroją odbiornika: przerywają słabe starty, żeby radio nadążyło, gdy się przeciąża. Jeśli się nie przeciąża, ta czułość jest wydawana na nic.
+- Zmierzone w gęstej zabudowie 2026-08-23, przy czterech płytkach **w jednym punkcie**: przy `adaptive` **żadna ramka słabsza niż −84 dBm nie przeszła w ogóle**, a płytka słyszała **27** liczników; przy `normal` ramki docierały do **−97 dBm**, a liczników było **53**. Po znormalizowaniu wobec trzech płytek kontrolnych z tego samego okna: u nich liczba liczników nie drgnęła (44→45, 33→33, 27→24), u SX1276 wzrosła 27→53.
+- Mechanizm zgadza się z kodem: próg w `should_abort_t1_probe_start_()` jest zaciśnięty klamrą do `[-96, -86]`, a `adaptive` dokłada +4 dB, co dopycha go do tej klamry. Efektem jest twarda podłoga czułości, a nie płynny kompromis.
+- Przez cały ten dzień `fifo_overrun`, `truncated`, `payload_read_failed` i `irq_timeout` wynosiły **zero** — odbiornik się nie przeciążał, więc ochrona nie kupowała niczego.
+- **Nowa sugestia diagnostyczna `CONSIDER_BUSY_ETHER_ADAPTIVE`**: komponent proponuje `adaptive` dopiero przy *zmierzonym* przeciążeniu (`fifo_overrun > 0` albo `truncated > 0`) razem z realnymi stratami (`drop_pct >= 10`). Sam wysoki `false_start_like` jawnie nie jest powodem — liczy wyzwolenia na szumie i przez cały dzień wynosił około 60/min przy zerowych przeciążeniach.
+- `CHIP_SELECTION{,_PL}.md` oraz `TROUBLESHOOTING{,_PL}.md` §8 przepisane wokół tej zasady, razem z ostrzeżeniem, że `drop_pct` poprawia się sam przy `adaptive`, bo ramki, które policzyłby jako odrzucone, nie są już próbowane. Tryb oceniać po liczbach per licznik.
+- Przykłady SX1276 nie ustawiają już `adaptive` aktywnie; w wersjach z komentarzami adnotacja to `# default: normal`.
+- **Zastrzeżenie, powtórzone też w dokumentacji:** jedna płytka, jeden budynek, jeden wieczór. Mechanizm jest zrozumiały, skala efektu gdzie indziej — nie.
+
 # Feature: `/rx` metadata carries the reception time
 
 ## EN
