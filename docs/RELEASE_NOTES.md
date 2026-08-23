@@ -1,3 +1,23 @@
+# Feature: the boot log now states the whole configuration, and says what you changed
+
+## EN
+
+- Every radio now logs a **configuration report** at boot: each effective option on its own line, grouped into `[core] [pins] [<radio>] [output] [diagnostics]`, and marked `(default)`, `(CHANGED, default: X)`, `(set)` or `(required)`. Previously the log carried a handful of hand-picked checks, so any option outside that list was invisible and a misconfigured board still looked healthy.
+- The report is generated at **compile time from the schema**, not restated in the driver, so a default in the log can never drift away from the default the component uses. Only options that apply to the selected radio are printed.
+- **`rf_sw_pin` is now reported for SX1262.** Its absence is the same class of silent failure as `has_tcxo: false`: the radio initializes, the log looks healthy, and a XIAO ESP32-S3 + Wio-SX1262 runs roughly 30 dB deaf because the module never opens its antenna path. It is stated in both directions, so "not configured" is a positive statement rather than a missing line.
+- **CC1101 had no sanity block at all** and now has one: the experimental gate plus `gdo0_pin`/`gdo2_pin`, so dual-IRQ wiring is confirmed instead of inferred.
+- Coverage before this change was uneven — SX1276 logged one check, SX1262 four, LR1121 six, CC1101 none.
+- Documented in `DIAGNOSTIC{,_PL}.md` with the marker table and the per-radio list.
+
+## PL
+
+- Każde radio wypisuje teraz przy starcie **raport konfiguracji**: każda efektywna opcja w osobnej linii, pogrupowane w `[core] [pins] [<radio>] [output] [diagnostics]`, z oznaczeniem `(default)`, `(CHANGED, default: X)`, `(set)` albo `(required)`. Wcześniej log niósł kilka ręcznie wybranych kontroli, więc cokolwiek poza tą listą było niewidoczne, a źle skonfigurowana płytka i tak wyglądała zdrowo.
+- Raport powstaje **przy kompilacji, ze schematu**, a nie jest powtarzany w sterowniku — więc domyślna w logu nie może rozjechać się z domyślną, której komponent faktycznie używa. Wypisywane są wyłącznie opcje dotyczące wybranego radia.
+- **`rf_sw_pin` jest teraz raportowany dla SX1262.** Jego brak to ta sama klasa cichej usterki co `has_tcxo: false`: radio się inicjalizuje, log wygląda zdrowo, a XIAO ESP32-S3 + Wio-SX1262 pracuje z czułością niższą o jakieś 30 dB, bo moduł nigdy nie otwiera toru antenowego. Stan jest podawany w obie strony, więc „nie skonfigurowany" jest stwierdzeniem, a nie brakującą linią.
+- **CC1101 nie miał bloku sanity w ogóle** i teraz go ma: bramka eksperymentalna oraz `gdo0_pin`/`gdo2_pin`, żeby okablowanie dwóch przerwań było potwierdzone, a nie domniemane.
+- Pokrycie przed tą zmianą było nierówne — SX1276 logował jedną kontrolę, SX1262 cztery, LR1121 sześć, CC1101 ani jednej.
+- Opisane w `DIAGNOSTIC{,_PL}.md` razem z tabelą znaczników i listą per radio.
+
 # Docs: SX1262 examples with a TCXO now clear the device-error register
 
 ## EN
