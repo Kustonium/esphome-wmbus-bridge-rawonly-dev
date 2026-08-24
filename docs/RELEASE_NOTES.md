@@ -1,3 +1,22 @@
+# Feature: `/diag/config` retained configuration snapshot
+
+## EN
+
+- One JSON payload published retained on `wmbus/<topic_name>/diag/config` after the first MQTT connect, refreshed once per boot.
+- Shape: `{"radio":"SX1276","lines":["  listen_mode: t1 (CHANGED, default: c1)", ...]}` - the exact same lines the boot log prints, marker included, so a reader can compare panel and log without translation.
+- Marker vocabulary: `(default)`, `(CHANGED, default: X)`, `(set)` for fields without a default, `(required)`, and `(mode default: X)` for `frequency` when unset. The add-on's diagnostics panel parses the trailing marker for the badge color and prints the rest verbatim.
+- Retained so a reader opening the panel long after boot still sees the configuration the board came up with. Not chunked - the whole snapshot fits in one MQTT publish for the current schema.
+- Why: the boot log already carried every effective setting with default/changed markers, but only over the serial or `esphome logs` transport. Publishing the same text makes it visible from the add-on without asking for the YAML.
+
+## PL
+
+- Jeden JSON publikowany z `retain=true` na `wmbus/<topic_name>/diag/config` po pierwszym połączeniu z brokerem, odświeżany raz na boot.
+- Kształt: `{"radio":"SX1276","lines":["  listen_mode: t1 (CHANGED, default: c1)", ...]}` — dokładnie te same linie, które płytka drukuje w boot logu, razem z markerem, więc czytelnik może porównać panel i log bez tłumaczenia.
+- Słownik markerów: `(default)`, `(CHANGED, default: X)`, `(set)` dla pól bez domyślnej wartości, `(required)` i `(mode default: X)` dla `frequency`, gdy nie ustawione. Panel diagnostyczny dodatku parsuje końcowy marker na kolor odznaki i drukuje resztę dosłownie.
+- Retained, żeby czytelnik otwierający panel długo po starcie widział tę konfigurację, z którą płytka wystartowała. Bez chunkowania — cały snapshot mieści się w jednym publish przy aktualnym schemacie.
+- Po co: boot log od dawna niósł każde efektywne ustawienie z markerem default/CHANGED, ale tylko po transporcie szeregowym lub `esphome logs`. Publikacja tego samego tekstu robi to widocznym z dodatku bez pytania o YAML.
+
+
 # Change: `sx1276_busy_ether_mode` now defaults to `normal`
 
 ## EN
