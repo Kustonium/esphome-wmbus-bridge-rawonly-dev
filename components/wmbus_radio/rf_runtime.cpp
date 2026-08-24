@@ -47,6 +47,23 @@ uint32_t Radio::current_false_start_like_() const {
          this->diag_rx_path_.raw_drain_skipped_weak;
 }
 
+// False starts the ETHER caused, excluding the ones this component chose to
+// cause itself. current_false_start_like_() sums both and stays the number
+// diagnostics report - honest for a human reading counters, but wrong as a
+// control input: weak_start_aborted and probe_start_aborted are incremented by
+// the abort paths below, so feeding them back into the trigger let the
+// mechanism cite its own output as proof it must keep running. Once active it
+// re-extended its own 5-minute hold every window and never returned to passive.
+uint32_t Radio::external_false_start_like_() const {
+  // preamble_read_failed: the radio could not read a preamble - the ether.
+  // payload_size_unknown: the length field did not parse - the telegram.
+  // Deliberately NOT raw_drain_skipped_weak: it is incremented when
+  // should_attempt_raw_drain_() declines, and that function calls both abort
+  // helpers - so it is our own decision wearing an ether-noise costume.
+  return this->diag_rx_path_.preamble_read_failed +
+         this->diag_rx_path_.payload_size_unknown;
+}
+
 bool Radio::sx1276_busy_ether_aggressive_now_() const {
   if (!radio_supports_weak_partial_start_abort_(this->radio)) return false;
   if (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::NORMAL) return false;
@@ -58,7 +75,10 @@ bool Radio::sx1276_busy_ether_aggressive_now_() const {
 
 bool Radio::sx1276_busy_ether_severe_now_() const {
   if (!radio_supports_weak_partial_start_abort_(this->radio)) return false;
-  const uint32_t false_start_like = this->current_false_start_like_();
+  // Escalation must not be driven by our own aborts - see
+  // external_false_start_like_(). NORMAL returns false below either way, so
+  // this changes ADAPTIVE and AGGRESSIVE only.
+  const uint32_t false_start_like = this->external_false_start_like_();
   const uint32_t drop_pct_window = (this->diag_total_ > 0 && this->diag_total_ > this->diag_ok_)
       ? (((this->diag_total_ - this->diag_ok_) * 100U) / this->diag_total_) : 0U;
   const uint32_t t1_sym_invalid_pct = (this->diag_t1_symbols_total_ > 0)
@@ -89,7 +109,10 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
   if (!radio_supports_weak_partial_start_abort_(this->radio)) return;
 
   const char *chip = (this->radio != nullptr) ? this->radio->get_name() : "unknown";
-  const uint32_t fsl = this->current_false_start_like_();
+  // Control input: ether-caused only. The reported total stays available as
+  // fsl_total so a reader can still see how much of the noise we produced.
+  const uint32_t fsl = this->external_false_start_like_();
+  const uint32_t fsl_total = this->current_false_start_like_();
   const uint32_t drop_pct = (this->diag_total_ > 0 && this->diag_total_ > this->diag_ok_)
       ? (((this->diag_total_ - this->diag_ok_) * 100U) / this->diag_total_) : 0U;
   const uint32_t t1_sym_inv_pct = (this->diag_t1_symbols_total_ > 0)
@@ -100,7 +123,13 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
       // fsl alone is not enough — high fsl with low drop_pct means RF background noise
       // that does not actually harm reception. Require drop_pct >= 10 to confirm real collisions.
       (fsl >= 80 && drop_pct >= 10) ||
-      (this->diag_rx_path_.preamble_read_failed >= 25 && this->diag_rx_path_.probe_start_aborted >= 20 && drop_pct >= 10) ||
+      // REMOVED: (preamble_read_failed >= 25 && probe_start_aborted >= 20 && drop_pct >= 10).
+      // probe_start_aborted is our own counter, so the clause let the mechanism
+      // vote for itself. Dropping just that conjunct would leave
+      // preamble_read_failed >= 25 && drop_pct >= 10 - a strictly hairier trigger
+      // than the fsl clause above, since preamble_read_failed is fsl's dominant
+      // term. Inventing a replacement threshold without data would be a guess, so
+      // the clause goes; the fsl clause already covers the same territory.
       (drop_pct >= 20 && fsl >= 30) ||
       (t1_sym_inv_pct >= 5 && fsl >= 20 && drop_pct >= 10);
 
@@ -116,9 +145,9 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
     this->busy_ether_active_until_ms_ = now_ms + 300000; // 5-minute hold
     if (!was_active) {
       ESP_LOGW(TAG, "BusyEther [ADAPTIVE]: noisy window detected / wykryto zaszumione okno — activating / aktywacja na 5 min "
-               "(fsl=%" PRIu32 " drop_pct=%" PRIu32 " t1_sym_inv_pct=%" PRIu32
+               "(fsl_ext=%" PRIu32 " fsl_total=%" PRIu32 " drop_pct=%" PRIu32 " t1_sym_inv_pct=%" PRIu32
                " preamble_fail=%" PRIu32 " probe_abort=%" PRIu32 " fifo_overrun=%" PRIu32 ")",
-               fsl, drop_pct, t1_sym_inv_pct,
+               fsl, fsl_total, drop_pct, t1_sym_inv_pct,
                this->diag_rx_path_.preamble_read_failed,
                this->diag_rx_path_.probe_start_aborted,
                this->diag_rx_path_.fifo_overrun);
@@ -126,32 +155,32 @@ void Radio::evaluate_busy_ether_adaptive_(uint32_t now_ms) {
       if (!this->diag_topic_.empty()) {
         auto *mqtt = esphome::mqtt::global_mqtt_client;
         if (mqtt != nullptr && mqtt->is_connected()) {
-          char ev[256];
+          char ev[320];
           snprintf(ev, sizeof(ev),
                    "{\"event\":\"busy_ether_changed\",\"chip\":\"%s\","
                    "\"state\":\"adaptive_active\","
-                   "\"fsl\":%" PRIu32 ",\"drop_pct\":%" PRIu32 "}",
-                   chip, fsl, drop_pct);
+                   "\"fsl\":%" PRIu32 ",\"fsl_ext\":%" PRIu32 ",\"drop_pct\":%" PRIu32 "}",
+                   chip, fsl_total, fsl, drop_pct);
           mqtt->publish(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false);
         }
       }
       this->busy_ether_was_active_ = true;
     } else {
-      ESP_LOGI(TAG, "BusyEther [ADAPTIVE]: hold extended / przedluzono hold (fsl=%" PRIu32 " drop_pct=%" PRIu32 ")", fsl, drop_pct);
+      ESP_LOGI(TAG, "BusyEther [ADAPTIVE]: hold extended / przedluzono hold (fsl_ext=%" PRIu32 " fsl_total=%" PRIu32 " drop_pct=%" PRIu32 ")", fsl, fsl_total, drop_pct);
     }
   } else if (was_active && !is_active_now) {
     // Hold has expired and no new trigger — transition to passive.
-    ESP_LOGI(TAG, "BusyEther [ADAPTIVE]: hold expired / hold wygasl, returning to passive mode / powrot do trybu pasywnego (fsl=%" PRIu32 " drop_pct=%" PRIu32 ")", fsl, drop_pct);
+    ESP_LOGI(TAG, "BusyEther [ADAPTIVE]: hold expired / hold wygasl, returning to passive mode / powrot do trybu pasywnego (fsl_ext=%" PRIu32 " fsl_total=%" PRIu32 " drop_pct=%" PRIu32 ")", fsl, fsl_total, drop_pct);
     // Publish busy_ether_changed event: active -> passive
     if (!this->diag_topic_.empty()) {
       auto *mqtt = esphome::mqtt::global_mqtt_client;
       if (mqtt != nullptr && mqtt->is_connected()) {
-        char ev[256];
+        char ev[320];
         snprintf(ev, sizeof(ev),
                  "{\"event\":\"busy_ether_changed\",\"chip\":\"%s\","
                  "\"state\":\"adaptive_passive\","
-                 "\"fsl\":%" PRIu32 ",\"drop_pct\":%" PRIu32 "}",
-                 chip, fsl, drop_pct);
+                 "\"fsl\":%" PRIu32 ",\"fsl_ext\":%" PRIu32 ",\"drop_pct\":%" PRIu32 "}",
+                 chip, fsl_total, fsl, drop_pct);
         mqtt->publish(this->diag_topic_ + "/busy_ether_changed", std::string(ev), static_cast<uint8_t>(0), false);
       }
     }
@@ -191,7 +220,15 @@ bool Radio::should_abort_t1_probe_start_(int rssi_dbm) const {
   if (rssi_dbm <= -126 || rssi_dbm >= 0) return false;
 
   const uint32_t false_start_like = this->current_false_start_like_();
-  if (this->sx1276_busy_ether_mode_ == SX1276BusyEtherMode::NORMAL &&
+  // The per-window grace belongs to every mode that is not actively
+  // suppressing, not just NORMAL. Counters reset each summary window, so this
+  // lets weak frames in at the start of a window; they then feed
+  // recent_ok_rssi_avg_ and hold the threshold below down. ADAPTIVE-passive
+  // was denied that grace and aborted from the first frame, so "passive" was
+  // never equivalent to NORMAL - and without the weak samples the average
+  // ratcheted up into the -86 clamp and stayed there.
+  // NORMAL is unchanged: aggressive_now() is false for it, same as before.
+  if (!this->sx1276_busy_ether_aggressive_now_() &&
       false_start_like < 20 && this->diag_rx_path_.fifo_overrun == 0) return false;
 
   int32_t recent_ok = this->recent_ok_rssi_valid_ ? this->recent_ok_rssi_avg_ : -80;

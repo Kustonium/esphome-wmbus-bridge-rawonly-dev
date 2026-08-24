@@ -404,6 +404,7 @@ protected:
   bool meter_is_highlighted_(uint32_t meter_id, uint32_t meter_id_raw) const;
   void collect_radio_rx_diag_();
   uint32_t current_false_start_like_() const;
+  uint32_t external_false_start_like_() const;
   bool sx1276_busy_ether_aggressive_now_() const;
   bool sx1276_busy_ether_severe_now_() const;
   bool should_abort_weak_partial_start_(int rssi_dbm, size_t bytes_read, bool is_c_mode) const;
