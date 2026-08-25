@@ -14,6 +14,8 @@
 | `publish_rssi` | `false` | public | publikuj RSSI ostatniej ramki każdego licznika na `wmbus/<topic_name>/rssi/<meter_id>`; patrz sekcja niżej |
 | `receiver_task_stack_size` | `3072` | advanced | stos osobnego taska RX, zakres `2048..16384` |
 | `listen_mode_filter_after_parse` | `false` | experimental | agresywniejsze filtrowanie po parserze; testować po licznikach, nie po samym globalnym drop% |
+| `use_noise_floor_threshold` | `false` | experimental | próg przerywania słabych startów liczony od ZMIERZONEJ podłogi szumu zamiast od średniej udanych odbiorów; pomiar (`noise_floor_dbm`) działa zawsze, ta opcja tylko go używa |
+| `noise_floor_margin_db` | `6` | experimental | ile dB nad podłogą szumu musi być start, żeby próbować (0–30); działa tylko przy `use_noise_floor_threshold: true` |
 | `highlight_ansi` | `false` | public | kolorowanie ANSI wyróżnionych liczników w logu |
 | `highlight_tag` | `wmbus_user` | public | tag logu dla wyróżnionych liczników |
 | `highlight_prefix` | `"★ "` | public | prefiks linii logu wyróżnionego licznika |

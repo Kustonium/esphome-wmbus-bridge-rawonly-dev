@@ -195,15 +195,26 @@ bool Radio::should_abort_weak_partial_start_(int rssi_dbm, size_t bytes_read, bo
   if (rssi_dbm <= -126 || rssi_dbm >= 0) return false;
 
   const uint32_t false_start_like = this->current_false_start_like_();
-  int32_t recent_ok = this->recent_ok_rssi_valid_ ? this->recent_ok_rssi_avg_ : -80;
-  int32_t threshold = recent_ok - 10;
+  // Floor-relative threshold, when the YAML asks for it. The legacy path below
+  // derives the threshold from recent_ok_rssi_avg_, an average over SUCCESSFUL
+  // receptions - so aborting weak frames raises it, raising the threshold,
+  // aborting more. The noise floor has no such loop, and it is portable: a FEM
+  // board reads about 10 dB hotter than the same chip without one (measured on
+  // the bench 2026-08-25), so an absolute dBm threshold means something
+  // different on each, while "N dB above the floor" does not.
+  int32_t floor_dbm = 0;
+  const bool use_floor = this->use_noise_floor_threshold_ && this->noise_floor_dbm_(&floor_dbm);
+  const int32_t recent_ok = this->recent_ok_rssi_valid_ ? this->recent_ok_rssi_avg_ : -80;
+  int32_t threshold = use_floor ? (floor_dbm + this->noise_floor_margin_db_) : (recent_ok - 10);
   if (false_start_like >= 40 || this->diag_rx_path_.fifo_overrun > 0) threshold += 2;
   if (false_start_like >= 100) threshold += 2;
   if (this->sx1276_busy_ether_aggressive_now_()) threshold += 3;
   if (this->sx1276_busy_ether_severe_now_()) threshold += 2;
   // Clamp upper bound at -88 dBm: wMBus meters in a building routinely transmit at
   // -80..-90 dBm. The previous -78 limit killed distant-but-valid meters even without severe.
-  threshold = std::clamp<int32_t>(threshold, -96, -88);
+  // See the note in should_abort_t1_probe_start_: the tuned clamp is legacy-only.
+  threshold = use_floor ? std::clamp<int32_t>(threshold, -120, -50)
+                        : std::clamp<int32_t>(threshold, -96, -88);
   if (rssi_dbm > threshold) return false;
 
   size_t max_partial = WMBUS_T1_LEN_PROBE_BYTES + 8;
@@ -231,15 +242,28 @@ bool Radio::should_abort_t1_probe_start_(int rssi_dbm) const {
   if (!this->sx1276_busy_ether_aggressive_now_() &&
       false_start_like < 20 && this->diag_rx_path_.fifo_overrun == 0) return false;
 
-  int32_t recent_ok = this->recent_ok_rssi_valid_ ? this->recent_ok_rssi_avg_ : -80;
-  int32_t threshold = recent_ok - 12;
+  // Floor-relative threshold, when the YAML asks for it. The legacy path below
+  // derives the threshold from recent_ok_rssi_avg_, an average over SUCCESSFUL
+  // receptions - so aborting weak frames raises it, raising the threshold,
+  // aborting more. The noise floor has no such loop, and it is portable: a FEM
+  // board reads about 10 dB hotter than the same chip without one (measured on
+  // the bench 2026-08-25), so an absolute dBm threshold means something
+  // different on each, while "N dB above the floor" does not.
+  int32_t floor_dbm = 0;
+  const bool use_floor = this->use_noise_floor_threshold_ && this->noise_floor_dbm_(&floor_dbm);
+  const int32_t recent_ok = this->recent_ok_rssi_valid_ ? this->recent_ok_rssi_avg_ : -80;
+  int32_t threshold = use_floor ? (floor_dbm + this->noise_floor_margin_db_) : (recent_ok - 12);
   if (false_start_like >= 60 || this->diag_rx_path_.fifo_overrun > 0) threshold += 2;
   if (false_start_like >= 120) threshold += 2;
   if (this->sx1276_busy_ether_aggressive_now_()) threshold += 4;
   if (this->sx1276_busy_ether_severe_now_()) threshold += 3;
   // Clamp upper bound at -86 dBm: the previous -76 limit aborted T1 probe starts for
   // any meter weaker than -76 dBm once AGGRESSIVE+SEVERE was active (which was almost always).
-  threshold = std::clamp<int32_t>(threshold, -96, -86);
+  // The absolute clamp belongs to the legacy path only - it was tuned in dBm,
+  // and dBm is what is not portable. A floor-relative threshold carries its own
+  // reference, so it gets a wide sanity clamp instead of a tuned one.
+  threshold = use_floor ? std::clamp<int32_t>(threshold, -120, -50)
+                        : std::clamp<int32_t>(threshold, -96, -86);
   return rssi_dbm <= threshold;
 }
 

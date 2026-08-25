@@ -1,3 +1,24 @@
+# Feature: measured noise floor, and an opt-in threshold based on it
+
+## EN
+
+- The diagnostic summary gains `noise_floor_dbm` and `noise_floor_n`: the ambient RSSI of the channel, sampled while the receiver sits armed and idle, plus how many samples stand behind it. **Always on** - no option needed.
+- Sampled only where a full 5 s hop elapsed with no interrupt, so nothing was being received. Reported as the MINIMUM of a 16-sample ring, not a mean: a sample taken while a neighbouring meter transmits reads high, and averaging would let that drag the floor up.
+- New options `use_noise_floor_threshold` (default `false`) and `noise_floor_margin_db` (default 6). When enabled, the weak-start abort threshold becomes `floor + margin` instead of `recent_ok_rssi_avg - 12`.
+- **Why this matters.** The existing threshold is derived from an average over SUCCESSFUL receptions, so aborting weak frames raises the average, which raises the threshold, which aborts more - a feedback loop with no external reference. The noise floor has no such loop: it is what the channel does when we are not receiving.
+- **And it is portable.** A board with a FEM reads roughly 10 dB hotter than the same chip without one - measured on the bench 2026-08-25, two SX1262 boards, medians -59 vs -68 dBm and minima -79 vs -89. An absolute clamp like `[-96, -86] dBm` therefore means something physically different on each board, while "N dB above the floor" means the same everywhere.
+- **The threshold is off by default on purpose.** No measurement of a real noise floor existed when this was written, so any margin would have been a guess. The measurement ships enabled precisely so the margin can be chosen from numbers instead.
+
+## PL
+
+- Podsumowanie diagnostyczne zyskuje `noise_floor_dbm` i `noise_floor_n`: RSSI eteru mierzone, gdy odbiornik jest uzbrojony i bezczynny, oraz liczba próbek, które za tym stoją. **Zawsze włączone** — bez żadnej opcji.
+- Próbkowane wyłącznie tam, gdzie minęło pełne 5 s bez przerwania, czyli nic nie było odbierane. Raportowane jako MINIMUM z pierścienia 16 próbek, nie średnia: próbka wzięta w trakcie cudzej transmisji jest wysoka, a średnia pozwoliłaby jej podciągnąć podłogę w górę.
+- Nowe opcje `use_noise_floor_threshold` (domyślnie `false`) i `noise_floor_margin_db` (domyślnie 6). Po włączeniu próg przerywania słabych startów to `podłoga + margines` zamiast `recent_ok_rssi_avg - 12`.
+- **Dlaczego to ma znaczenie.** Dotychczasowy próg liczy się ze średniej *udanych* odbiorów, więc przerywanie słabych ramek podnosi tę średnią, co podnosi próg, co przerywa jeszcze więcej — pętla sprzężenia zwrotnego bez zewnętrznego punktu odniesienia. Podłoga szumu takiej pętli nie ma: to jest to, co robi kanał, gdy nie odbieramy.
+- **I jest przenośna.** Płytka z FEM czyta o jakieś 10 dB „goręcej" niż ten sam chip bez niego — zmierzone na stanowisku 25.08.2026, dwie płytki SX1262, mediany −59 vs −68 dBm i minima −79 vs −89. Klamra w bezwzględnych dBm, jak `[-96, -86]`, znaczy więc na każdej płytce co innego fizycznie, a „N dB nad podłogą" znaczy wszędzie to samo.
+- **Próg jest domyślnie wyłączony celowo.** W chwili pisania nie istniał żaden pomiar realnej podłogi szumu, więc każdy margines byłby zgadywaniem. Pomiar wchodzi włączony właśnie po to, żeby margines dało się wybrać z liczb.
+
+
 # Feature: `/diag/config` retained configuration snapshot
 
 ## EN
