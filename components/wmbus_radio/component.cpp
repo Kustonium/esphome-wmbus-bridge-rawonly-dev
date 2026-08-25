@@ -1090,6 +1090,22 @@ void Radio::receive_frame() {
 
   auto queue_packet = [this](std::unique_ptr<Packet> &pkt) -> bool {
     pkt->set_rssi(this->radio->get_rssi());
+    // TEMPORARY DIAGNOSTIC (2026-08-25, round 2) - remove once answered.
+    // Re-added specifically to run against the workshop transmitter
+    // (wmbus-tx.yaml, 869.850 MHz, fixed +2 dBm, repeats every 1s) instead of
+    // live meter traffic - the earlier attempt against a real meter could not
+    // separate "packet vs instant RSSI disagree" from "channel busy with
+    // other meters," even at night (docs: reference-noise-floor-measurement
+    // memory, 23-sample NES analysis). A controlled repeating source removes
+    // that confound. Safe here: same receiver-task context as the read above.
+    {
+      int8_t inst_rssi = 0;
+      if (this->radio->read_channel_rssi_dbm(&inst_rssi)) {
+        ESP_LOGW(TAG, "RSSI_COMPARE chip=%s packet=%d inst=%d diff=%d",
+                 this->radio->get_name(), (int) pkt->get_rssi(), (int) inst_rssi,
+                 (int) pkt->get_rssi() - (int) inst_rssi);
+      }
+    }
     auto packet_ptr = pkt.get();
     if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE) {
       ESP_LOGV(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
