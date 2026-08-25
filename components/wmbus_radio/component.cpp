@@ -1090,26 +1090,6 @@ void Radio::receive_frame() {
 
   auto queue_packet = [this](std::unique_ptr<Packet> &pkt) -> bool {
     pkt->set_rssi(this->radio->get_rssi());
-    // TEMPORARY DIAGNOSTIC (2026-08-25) - remove once answered. Compares the
-    // packet-status RSSI above (latched at sync detection on LR1121/SX1262,
-    // a plain register read on SX1276) against the on-demand instantaneous
-    // read added for noise-floor sampling. Not yet verified whether the two
-    // agree on LR1121/SX1262 - if they do not, the noise_floor-vs-decoded-
-    // frame margin comparison for those chips mixes incompatible scales, the
-    // same problem already found today between two SX1262 boards (11 dB
-    // offset via frame_crc32 cross-correlation). SX1276 reads both values
-    // from the same register, so it should show ~0 dB difference here as a
-    // sanity check on the method itself.
-    // Safe here: same receiver-task context as the read above, no cross-task
-    // radio access - see the note on read_channel_rssi_dbm() in transceiver.h.
-    {
-      int8_t inst_rssi = 0;
-      if (this->radio->read_channel_rssi_dbm(&inst_rssi)) {
-        ESP_LOGW(TAG, "RSSI_COMPARE chip=%s packet=%d inst=%d diff=%d",
-                 this->radio->get_name(), (int) pkt->get_rssi(), (int) inst_rssi,
-                 (int) pkt->get_rssi() - (int) inst_rssi);
-      }
-    }
     auto packet_ptr = pkt.get();
     if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE) {
       ESP_LOGV(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
