@@ -1057,7 +1057,15 @@ void Radio::receive_frame() {
     // A whole hop with no interrupt: the receiver has been armed and quiet, so
     // this reading is the ambient floor. Sampling anywhere else would catch a
     // transmission in progress or an AGC still settled on the last strong frame.
-    this->note_idle_rssi_(this->radio->get_rssi());
+    //
+    // read_channel_rssi_dbm(), NOT get_rssi(). Every driver caches get_rssi()
+    // from the last packet capture, so sampling it here would measure the last
+    // frame received rather than the channel - rebuilding the exact
+    // successful-receptions-only feedback loop this is meant to escape. A radio
+    // that cannot answer simply contributes no samples.
+    int8_t channel_rssi = 0;
+    if (this->radio->read_channel_rssi_dbm(&channel_rssi))
+      this->note_idle_rssi_((int) channel_rssi);
     waited += hop_ms;
   }
   if (!got_irq) {
