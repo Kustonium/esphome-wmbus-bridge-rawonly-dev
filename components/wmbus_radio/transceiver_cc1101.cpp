@@ -22,6 +22,22 @@ static constexpr uint8_t CC1101_SIDLE = 0x36;
 static constexpr uint8_t CC1101_SFRX  = 0x3A;
 static constexpr uint8_t CC1101_SNOP  = 0x3D;
 
+// CHIP_RDYn is bit 7 of the status byte the CC1101 returns on SO in response to
+// every header byte. TI SWRS061I section 10.1: it stays high until power and the
+// crystal have stabilised, and "must go low before the first positive edge of
+// SCLK". We cannot inspect it before sending the header - that would need the
+// MISO pin, which the ESPHome SPI bus does not expose - but it comes back in a
+// byte we already receive and used to discard. A header answered with
+// CHIP_RDYn=1 means the chip was not listening, so the write did not land.
+static constexpr uint8_t CC1101_CHIP_RDYN = 0x80;
+// Writes are idempotent, so repeating one is free. Reads are NOT repeated:
+// re-reading the RX FIFO would consume bytes that are gone for good.
+static constexpr uint8_t CC1101_WRITE_RETRIES = 5;
+static constexpr uint32_t CC1101_RETRY_GAP_US = 200;
+static constexpr uint32_t CC1101_CHIP_READY_TIMEOUT_US = 10000;
+
+static inline bool chip_ready_(uint8_t status) { return (status & CC1101_CHIP_RDYN) == 0; }
+
 // CC1101 configuration registers
 static constexpr uint8_t REG_IOCFG2   = 0x00;
 static constexpr uint8_t REG_IOCFG1   = 0x01;
@@ -211,49 +227,92 @@ static void log_expected_reg_(const char *name, uint8_t got, uint8_t expected,
 
 
 uint8_t CC1101::strobe_(uint8_t cmd) {
+  uint8_t status = 0;
+  for (uint8_t attempt = 0; attempt < CC1101_WRITE_RETRIES; attempt++) {
+    status = this->raw_strobe_(cmd);
+    if (chip_ready_(status)) return status;
+    // CHIP_RDYn was still high, so the chip never saw the strobe. Every strobe
+    // used here (SRES, SCAL, SRX, SIDLE, SFRX, SNOP) is safe to issue again.
+    this->chip_not_ready_count_++;
+    esp_rom_delay_us(CC1101_RETRY_GAP_US);
+  }
+  return status;
+}
+
+// Single transaction with no readiness handling, for callers that must not
+// recurse into the retry logic.
+uint8_t CC1101::raw_strobe_(uint8_t cmd) {
   this->delegate_->begin_transaction();
   const uint8_t status = this->delegate_->transfer(cmd);
   this->delegate_->end_transaction();
   return status;
 }
 
+// Poll CHIP_RDYn with SNOP until the crystal is running. Returns false on
+// timeout; the caller carries on, because a chip that never reports ready is
+// diagnosed far better by the startup config check than by a silent stall.
+bool CC1101::wait_chip_ready_(uint32_t timeout_us) {
+  const int64_t deadline = esp_timer_get_time() + (int64_t) timeout_us;
+  do {
+    if (chip_ready_(this->raw_strobe_(CC1101_SNOP))) return true;
+    esp_rom_delay_us(100);
+  } while (esp_timer_get_time() < deadline);
+  this->chip_not_ready_count_++;
+  return false;
+}
+
 uint8_t CC1101::read_reg_(uint8_t address) {
   this->delegate_->begin_transaction();
-  this->delegate_->transfer(address | CC1101_READ);
+  const uint8_t status = this->delegate_->transfer(address | CC1101_READ);
   const uint8_t value = this->delegate_->transfer(0x00);
   this->delegate_->end_transaction();
+  // A read taken before CHIP_RDYn went low returns 0xFF, not the register.
+  if (!chip_ready_(status)) this->chip_not_ready_count_++;
   return value;
 }
 
 uint8_t CC1101::read_status_(uint8_t address) {
   this->delegate_->begin_transaction();
-  this->delegate_->transfer(address | CC1101_READ | CC1101_BURST);
+  const uint8_t status = this->delegate_->transfer(address | CC1101_READ | CC1101_BURST);
   const uint8_t value = this->delegate_->transfer(0x00);
   this->delegate_->end_transaction();
+  if (!chip_ready_(status)) this->chip_not_ready_count_++;
   return value;
 }
 
 void CC1101::write_reg_(uint8_t address, uint8_t value) {
-  this->delegate_->begin_transaction();
-  this->delegate_->transfer(address);
-  this->delegate_->transfer(value);
-  this->delegate_->end_transaction();
+  for (uint8_t attempt = 0; attempt < CC1101_WRITE_RETRIES; attempt++) {
+    this->delegate_->begin_transaction();
+    const uint8_t status = this->delegate_->transfer(address);
+    this->delegate_->transfer(value);
+    this->delegate_->end_transaction();
+    if (chip_ready_(status)) return;
+    this->chip_not_ready_count_++;
+    esp_rom_delay_us(CC1101_RETRY_GAP_US);
+  }
+  ESP_LOGW(TAG,
+           "CC1101 register 0x%02X may not have been written: chip reported CHIP_RDYn after %u "
+           "attempts / zapis rejestru 0x%02X mogl nie dojsc: uklad zglasza CHIP_RDYn po %u probach",
+           address, (unsigned) CC1101_WRITE_RETRIES, address, (unsigned) CC1101_WRITE_RETRIES);
 }
 
 void CC1101::write_burst_(uint8_t address, const uint8_t *data, size_t len) {
   if (len == 0) return;
   this->delegate_->begin_transaction();
-  this->delegate_->transfer(address | CC1101_BURST);
+  const uint8_t status = this->delegate_->transfer(address | CC1101_BURST);
   for (size_t i = 0; i < len; i++) this->delegate_->transfer(data[i]);
   this->delegate_->end_transaction();
+  if (!chip_ready_(status)) this->chip_not_ready_count_++;
 }
 
 void CC1101::read_burst_(uint8_t address, uint8_t *data, size_t len) {
   if (len == 0) return;
   this->delegate_->begin_transaction();
-  this->delegate_->transfer(address | CC1101_READ | CC1101_BURST);
+  const uint8_t status = this->delegate_->transfer(address | CC1101_READ | CC1101_BURST);
   for (size_t i = 0; i < len; i++) data[i] = this->delegate_->transfer(0x00);
   this->delegate_->end_transaction();
+  // Never retried: a second FIFO read would consume bytes this one already took.
+  if (!chip_ready_(status)) this->chip_not_ready_count_++;
 }
 
 uint8_t CC1101::rxbytes_raw_() { return this->read_status_(REG_RXBYTES); }
@@ -268,9 +327,14 @@ void CC1101::flush_rx_() {
 }
 
 void CC1101::reset_cc1101_() {
-  // Standard command reset. Keep CS toggling under the SPI delegate.
-  this->strobe_(CC1101_SRES);
-  delay(5);
+  // TI SWRS061I manual reset sequence: wait for SO to go low (CHIP_RDYn) before
+  // issuing SRES, and again afterwards. Skipping this is only safe when the
+  // caller instead honours tsp,pd from Table 22 - and that 150 us figure was
+  // measured on a CC1101EM reference board, not on an arbitrary module.
+  this->wait_chip_ready_(CC1101_CHIP_READY_TIMEOUT_US);
+  this->raw_strobe_(CC1101_SRES);
+  delay(10);
+  this->wait_chip_ready_(CC1101_CHIP_READY_TIMEOUT_US);
 }
 
 void CC1101::set_frequency_mhz(float frequency_mhz) {
@@ -310,8 +374,8 @@ void CC1101::apply_radio_profile_() {
   this->write_reg_(REG_FIFOTHR, 0x07);
 
   this->set_frequency_(this->configured_frequency_hz_);
-  // wM-Bus T/C mode sync word 0x54 0x3D. C1 also exists with 0xCD as the second
-  // byte, which restart_rx() alternates between (see EXP_SYNC_T1 / EXP_SYNC_C1).
+  // wM-Bus sync word 0x543D, shared by mode T and mode C. See restart_rx() for
+  // why 0x54CD is not a second sync word to listen on.
   this->write_reg_(REG_SYNC1, 0x54);
   this->write_reg_(REG_SYNC0, 0x3D);
   this->write_reg_(REG_PKTLEN, 0xFF);
@@ -412,6 +476,10 @@ bool CC1101::validate_startup_config_() {
   const uint8_t frend1 = this->read_reg_(REG_FREND1);
   const uint8_t fscal3 = this->read_reg_(REG_FSCAL3);
 
+  const uint8_t freq2 = this->read_reg_(REG_FREQ2);
+  const uint8_t freq1 = this->read_reg_(REG_FREQ1);
+  const uint8_t freq0 = this->read_reg_(REG_FREQ0);
+
   bool ok = true;
 
   ESP_LOGI(TAG, "CC1101 self-check / autotest konfiguracji CC1101");
@@ -471,6 +539,30 @@ bool CC1101::validate_startup_config_() {
              "CC1101 CONFIG MISMATCH / blad konfiguracji: FSCAL3 expected config bits=0x%02X got=0x%02X "
              "(only FSCAL3[7:4] are validated / sprawdzane sa tylko bity FSCAL3[7:4])",
              EXP_FSCAL3 & 0xF0, fscal3);
+  }
+
+  // FREQ2/1/0 is the only part of the profile that depends on user YAML, and it
+  // used to be written without ever being read back. A carrier that silently
+  // stayed at the reset default cannot be told apart from a dead antenna in any
+  // other log line, so it is checked here explicitly.
+  const uint32_t freq_want = (uint32_t) (((uint64_t) this->configured_frequency_hz_ << 16) / CC1101_FOSC_HZ);
+  const uint32_t freq_got = ((uint32_t) freq2 << 16) | ((uint32_t) freq1 << 8) | (uint32_t) freq0;
+  const bool freq_ok = freq_got == freq_want;
+  ok = ok && freq_ok;
+  if (freq_ok) {
+    ESP_LOGI(TAG,
+             "CC1101 check OK / test OK: FREQ=0x%06X (%.3f MHz carrier / nosna %.3f MHz)",
+             (unsigned) freq_got, this->configured_frequency_hz_ / 1000000.0f,
+             this->configured_frequency_hz_ / 1000000.0f);
+  } else {
+    const double got_mhz = ((double) freq_got * (double) CC1101_FOSC_HZ) / 65536.0 / 1000000.0;
+    ESP_LOGE(TAG,
+             "CC1101 CONFIG MISMATCH / blad konfiguracji: FREQ expected=0x%06X got=0x%06X "
+             "(radio is tuned to %.3f MHz instead of %.3f MHz / radio jest nastrojone na %.3f MHz "
+             "zamiast %.3f MHz)",
+             (unsigned) freq_want, (unsigned) freq_got, got_mhz,
+             this->configured_frequency_hz_ / 1000000.0f, got_mhz,
+             this->configured_frequency_hz_ / 1000000.0f);
   }
 
   if (ok) {
@@ -677,10 +769,11 @@ void CC1101::dump_debug_status(const char *reason) {
   ESP_LOGW(TAG,
            "CC1101 debug status / status debug: reason=%s PARTNUM=0x%02X VERSION=0x%02X "
            "MARCSTATE=0x%02X(%u) RXBYTES=0x%02X(count=%u overflow=%s) "
-           "GDO0=%d GDO2=%d",
+           "GDO0=%d GDO2=%d chip_not_ready=%u",
            reason ? reason : "unknown", partnum, version,
            marc_raw, (unsigned) marc, rxbytes_raw, (unsigned) rxbytes,
-           overflow ? "true" : "false", gdo0, gdo2);
+           overflow ? "true" : "false", gdo0, gdo2,
+           (unsigned) this->chip_not_ready_count_);
 
   ESP_LOGW(TAG,
            "CC1101 config snapshot / zrzut konfiguracji: IOCFG2=0x%02X IOCFG0=0x%02X "
@@ -764,15 +857,14 @@ void CC1101::restart_rx() {
     this->strobe_(CC1101_SRX);
     return;
   }
-  if (this->listen_mode_ == LISTEN_MODE_T1) {
-    sync2 = 0x3D;
-  } else if (this->listen_mode_ == LISTEN_MODE_C1) {
-    sync2 = (this->sync_cycle_ == 3) ? 0xCD : 0x3D;
-    this->sync_cycle_ = (uint8_t) ((this->sync_cycle_ + 1) & 0x03);
-  } else {
-    sync2 = (this->sync_cycle_ == 3) ? 0xCD : 0x3D;
-    this->sync_cycle_ = (uint8_t) ((this->sync_cycle_ + 1) & 0x03);
-  }
+  // Mode T and mode C share one sync word, 0x543D. In a mode C telegram the
+  // 0x54CD that follows is the frame-format marker and arrives as DATA, which is
+  // why packet.cpp strips it as WMBUS_MODE_C_SUFIX_LEN. Arming the radio on
+  // 0x54CD therefore does not catch C1 frames from their start - it only spends
+  // a share of the listening windows on a sync word that is never transmitted as
+  // one. Both known working CC1101 drivers (SzczepanLeon, alex-icesoft) set this
+  // register once and never touch it again.
+  sync2 = 0x3D;
 
   this->flush_rx_();
   this->set_sync_word_(sync2);
