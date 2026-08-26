@@ -51,6 +51,10 @@ class CC1101 : public RadioTransceiver {
   uint32_t fifo_overrun_count_{0};
   // SPI transactions the chip answered with CHIP_RDYn still high.
   uint32_t chip_not_ready_count_{0};
+  // Boot-profile registers that never held their value, and how many extra
+  // write attempts the profile needed in total.
+  uint32_t reg_failed_count_{0};
+  uint32_t reg_retry_count_{0};
 
   void reset_cc1101_();
   void apply_radio_profile_();
@@ -64,6 +68,7 @@ class CC1101 : public RadioTransceiver {
   uint8_t read_reg_(uint8_t address);
   uint8_t read_status_(uint8_t address);
   void write_reg_(uint8_t address, uint8_t value);
+  bool write_reg_verified_(uint8_t address, uint8_t value);
   void write_burst_(uint8_t address, const uint8_t *data, size_t len);
   void read_burst_(uint8_t address, uint8_t *data, size_t len);
 

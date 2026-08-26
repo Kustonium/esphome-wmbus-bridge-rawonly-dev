@@ -35,6 +35,9 @@ static constexpr uint8_t CC1101_CHIP_RDYN = 0x80;
 static constexpr uint8_t CC1101_WRITE_RETRIES = 5;
 static constexpr uint32_t CC1101_RETRY_GAP_US = 200;
 static constexpr uint32_t CC1101_CHIP_READY_TIMEOUT_US = 10000;
+// Read-back verification of the boot profile. Runs once per boot, so the extra
+// transaction per register costs nothing that matters.
+static constexpr uint8_t CC1101_VERIFY_RETRIES = 3;
 
 static inline bool chip_ready_(uint8_t status) { return (status & CC1101_CHIP_RDYN) == 0; }
 
@@ -358,6 +361,39 @@ void CC1101::set_sync_word_(uint8_t sync2) {
   this->write_reg_(REG_SYNC0, sync2);
 }
 
+// Write a configuration register, read it back, and repeat while they differ.
+//
+// The startup self-check already reports that the profile is wrong, but only
+// after the fact and only as a list of final values. It cannot say which write
+// failed, whether repeating it helps, or how often. That distinction is the
+// whole diagnosis: if a repeat fixes the value the transport is corrupting
+// bytes, and if the register keeps reverting to its reset default no amount of
+// retrying will help and the fault is in the part or its supply.
+//
+// Failure is reported, never fatal. A few registers may legitimately read back
+// differently from what was written (reserved or read-only bits), and refusing
+// to boot over that would be worse than the problem being measured.
+bool CC1101::write_reg_verified_(uint8_t address, uint8_t value) {
+  for (uint8_t attempt = 0; attempt < CC1101_VERIFY_RETRIES; attempt++) {
+    this->write_reg_(address, value);
+    const uint8_t got = this->read_reg_(address);
+    if (got == value) {
+      this->reg_retry_count_ += attempt;
+      return true;
+    }
+    esp_rom_delay_us(CC1101_RETRY_GAP_US);
+  }
+  this->reg_retry_count_ += CC1101_VERIFY_RETRIES;
+  this->reg_failed_count_++;
+  const uint8_t last = this->read_reg_(address);
+  ESP_LOGW(TAG,
+           "CC1101 register 0x%02X did not hold 0x%02X after %u attempts (last read 0x%02X) / "
+           "rejestr 0x%02X nie utrzymal 0x%02X po %u probach (ostatni odczyt 0x%02X)",
+           address, value, (unsigned) CC1101_VERIFY_RETRIES, last,
+           address, value, (unsigned) CC1101_VERIFY_RETRIES, last);
+  return false;
+}
+
 void CC1101::apply_radio_profile_() {
   // CC1101 RF profile adjusted to the known-working Szczepan/Kubasa-style
   // wM-Bus 868.950 MHz profile. Keep our hardware model intact:
@@ -365,21 +401,21 @@ void CC1101::apply_radio_profile_() {
   // - GDO0 = FIFO threshold/data hint
   // - non-inverted GDO levels, because this driver uses rising-edge IRQ and
   //   polls the actual GDO levels directly.
-  this->write_reg_(REG_IOCFG2, GDO_SYNC_WORD);
-  this->write_reg_(REG_IOCFG1, 0x2E);  // GDO1 high impedance, do not fight MISO/GDO1
-  this->write_reg_(REG_IOCFG0, GDO_RXFIFO_THR);
+  this->write_reg_verified_(REG_IOCFG2, GDO_SYNC_WORD);
+  this->write_reg_verified_(REG_IOCFG1, 0x2E);  // GDO1 high impedance, do not fight MISO/GDO1
+  this->write_reg_verified_(REG_IOCFG0, GDO_RXFIFO_THR);
 
   // Source: TI CC1101 datasheet, FIFOTHR.FIFO_THRESHOLD. 0x07 selects the
   // 32-byte RX FIFO threshold that drives GDO0 (GDO_RXFIFO_THR above).
-  this->write_reg_(REG_FIFOTHR, 0x07);
+  this->write_reg_verified_(REG_FIFOTHR, 0x07);
 
   this->set_frequency_(this->configured_frequency_hz_);
   // wM-Bus sync word 0x543D, shared by mode T and mode C. See restart_rx() for
   // why 0x54CD is not a second sync word to listen on.
-  this->write_reg_(REG_SYNC1, 0x54);
-  this->write_reg_(REG_SYNC0, 0x3D);
-  this->write_reg_(REG_PKTLEN, 0xFF);
-  this->write_reg_(REG_PKTCTRL1, 0x00);  // no address check, no appended status
+  this->write_reg_verified_(REG_SYNC1, 0x54);
+  this->write_reg_verified_(REG_SYNC0, 0x3D);
+  this->write_reg_verified_(REG_PKTLEN, 0xFF);
+  this->write_reg_verified_(REG_PKTCTRL1, 0x00);  // no address check, no appended status
 
   // Source: TI CC1101 datasheet, PKTCTRL0.LENGTH_CONFIG — 0b10 = infinite packet
   // length. This is the documented setting for receiving packets whose length is
@@ -389,9 +425,9 @@ void CC1101::apply_radio_profile_() {
   // used 0x00 (fixed) until PR #407 (JarDol, merged 2026-07-19) changed it to
   // 0x02 as well — his design decodes on the ESP, where frames are shorter, so
   // fixed length looked adequate there until someone fed it a long telegram.
-  this->write_reg_(REG_PKTCTRL0, 0x02);  // infinite packet length, CRC off, whitening off
-  this->write_reg_(REG_ADDR, 0x00);
-  this->write_reg_(REG_CHANNR, 0x00);
+  this->write_reg_verified_(REG_PKTCTRL0, 0x02);  // infinite packet length, CRC off, whitening off
+  this->write_reg_verified_(REG_ADDR, 0x00);
+  this->write_reg_verified_(REG_CHANNR, 0x00);
 
   // ---------------------------------------------------------------------------
   // RF profile — PROVENANCE: inherited, not derived here.
@@ -412,40 +448,49 @@ void CC1101::apply_radio_profile_() {
   // Deviations from that baseline are deliberate and are commented at the site
   // that deviates (PKTCTRL0 above, dual-GDO IOCFG mapping further up).
   // ---------------------------------------------------------------------------
-  this->write_reg_(REG_FSCTRL1, 0x08);
-  this->write_reg_(REG_FSCTRL0, 0x00);
-  this->write_reg_(REG_MDMCFG4, 0x5C);
-  this->write_reg_(REG_MDMCFG3, 0x04);
-  this->write_reg_(REG_MDMCFG2, 0x06);
-  this->write_reg_(REG_MDMCFG1, 0x22);
-  this->write_reg_(REG_MDMCFG0, 0xF8);
-  this->write_reg_(REG_DEVIATN, 0x44);
+  this->write_reg_verified_(REG_FSCTRL1, 0x08);
+  this->write_reg_verified_(REG_FSCTRL0, 0x00);
+  this->write_reg_verified_(REG_MDMCFG4, 0x5C);
+  this->write_reg_verified_(REG_MDMCFG3, 0x04);
+  this->write_reg_verified_(REG_MDMCFG2, 0x06);
+  this->write_reg_verified_(REG_MDMCFG1, 0x22);
+  this->write_reg_verified_(REG_MDMCFG0, 0xF8);
+  this->write_reg_verified_(REG_DEVIATN, 0x44);
 
-  this->write_reg_(REG_MCSM2, 0x07);
-  this->write_reg_(REG_MCSM1, 0x00);
-  this->write_reg_(REG_MCSM0, 0x18);  // auto-calibrate from IDLE to RX/TX
-  this->write_reg_(REG_FOCCFG, 0x2E);
-  this->write_reg_(REG_BSCFG, 0xBF);
-  this->write_reg_(REG_AGCCTRL2, 0x43);
-  this->write_reg_(REG_AGCCTRL1, 0x09);
-  this->write_reg_(REG_AGCCTRL0, 0xB5);
-  this->write_reg_(REG_WOREVT1, 0x87);
-  this->write_reg_(REG_WOREVT0, 0x6B);
-  this->write_reg_(REG_WORCTRL, 0xFB);
-  this->write_reg_(REG_FREND1, 0xB6);
-  this->write_reg_(REG_FREND0, 0x10);
-  this->write_reg_(REG_FSCAL3, 0xEA);
-  this->write_reg_(REG_FSCAL2, 0x2A);
-  this->write_reg_(REG_FSCAL1, 0x00);
-  this->write_reg_(REG_FSCAL0, 0x1F);
-  this->write_reg_(REG_RCCTRL1, 0x41);
-  this->write_reg_(REG_RCCTRL0, 0x00);
-  this->write_reg_(REG_FSTEST, 0x59);
-  this->write_reg_(REG_PTEST, 0x7F);
-  this->write_reg_(REG_AGCTEST, 0x3F);
-  this->write_reg_(REG_TEST2, 0x81);
-  this->write_reg_(REG_TEST1, 0x35);
-  this->write_reg_(REG_TEST0, 0x09);
+  this->write_reg_verified_(REG_MCSM2, 0x07);
+  this->write_reg_verified_(REG_MCSM1, 0x00);
+  this->write_reg_verified_(REG_MCSM0, 0x18);  // auto-calibrate from IDLE to RX/TX
+  this->write_reg_verified_(REG_FOCCFG, 0x2E);
+  this->write_reg_verified_(REG_BSCFG, 0xBF);
+  this->write_reg_verified_(REG_AGCCTRL2, 0x43);
+  this->write_reg_verified_(REG_AGCCTRL1, 0x09);
+  this->write_reg_verified_(REG_AGCCTRL0, 0xB5);
+  this->write_reg_verified_(REG_WOREVT1, 0x87);
+  this->write_reg_verified_(REG_WOREVT0, 0x6B);
+  this->write_reg_verified_(REG_WORCTRL, 0xFB);
+  this->write_reg_verified_(REG_FREND1, 0xB6);
+  this->write_reg_verified_(REG_FREND0, 0x10);
+  this->write_reg_verified_(REG_FSCAL3, 0xEA);
+  this->write_reg_verified_(REG_FSCAL2, 0x2A);
+  this->write_reg_verified_(REG_FSCAL1, 0x00);
+  this->write_reg_verified_(REG_FSCAL0, 0x1F);
+  this->write_reg_verified_(REG_RCCTRL1, 0x41);
+  this->write_reg_verified_(REG_RCCTRL0, 0x00);
+  this->write_reg_verified_(REG_FSTEST, 0x59);
+  this->write_reg_verified_(REG_PTEST, 0x7F);
+  this->write_reg_verified_(REG_AGCTEST, 0x3F);
+  this->write_reg_verified_(REG_TEST2, 0x81);
+  this->write_reg_verified_(REG_TEST1, 0x35);
+  this->write_reg_verified_(REG_TEST0, 0x09);
+
+  if (this->reg_retry_count_ != 0 || this->reg_failed_count_ != 0) {
+    ESP_LOGW(TAG,
+             "CC1101 profile write-back / zapis profilu: %u register(s) never held their value, "
+             "%u extra attempt(s) were needed / %u rejestr(ow) nie utrzymalo wartosci, "
+             "potrzeba bylo %u dodatkowych prob",
+             (unsigned) this->reg_failed_count_, (unsigned) this->reg_retry_count_,
+             (unsigned) this->reg_failed_count_, (unsigned) this->reg_retry_count_);
+  }
 
   this->strobe_(CC1101_SCAL);
   delay(2);
@@ -769,11 +814,12 @@ void CC1101::dump_debug_status(const char *reason) {
   ESP_LOGW(TAG,
            "CC1101 debug status / status debug: reason=%s PARTNUM=0x%02X VERSION=0x%02X "
            "MARCSTATE=0x%02X(%u) RXBYTES=0x%02X(count=%u overflow=%s) "
-           "GDO0=%d GDO2=%d chip_not_ready=%u",
+           "GDO0=%d GDO2=%d chip_not_ready=%u reg_write_failed=%u reg_write_retries=%u",
            reason ? reason : "unknown", partnum, version,
            marc_raw, (unsigned) marc, rxbytes_raw, (unsigned) rxbytes,
            overflow ? "true" : "false", gdo0, gdo2,
-           (unsigned) this->chip_not_ready_count_);
+           (unsigned) this->chip_not_ready_count_, (unsigned) this->reg_failed_count_,
+           (unsigned) this->reg_retry_count_);
 
   ESP_LOGW(TAG,
            "CC1101 config snapshot / zrzut konfiguracji: IOCFG2=0x%02X IOCFG0=0x%02X "
