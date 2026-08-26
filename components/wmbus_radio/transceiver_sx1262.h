@@ -16,12 +16,30 @@ enum SX1262RxGain : uint8_t {
   BOOSTED = 1,
 };
 
+// T1 receiver bandwidth. C1 and S1 are NOT affected: their 234.3 kHz is a
+// measured optimum (three-point sweep, 2026-08-01, see set_rf_params_) and
+// stays pinned.
+//
+// T1 never got that treatment - 312.0 kHz is an inherited default, not a
+// measurement. It is 25% wider than the 250 kHz the SX1276 uses for the same
+// mode, which costs about 1.2 dB of noise for nothing if the signal fits in
+// the narrower window. This enum exists to settle that on hardware rather
+// than by argument, with two SX1262 boards running side by side.
+enum SX1262T1RxBandwidth : uint8_t {
+  T1_BW_312 = 0,  // inherited default, current behaviour
+  T1_BW_234 = 1,  // matches C1/S1 and roughly the SX1276 window
+  T1_BW_156 = 2,  // deliberately too narrow; the losing end of the S1 sweep
+};
+
 class SX1262 : public RadioTransceiver {
  public:
   SX1262() { this->irq_edge_ = gpio::INTERRUPT_RISING_EDGE; }
 
   // RX gain (BOOSTED/POWER_SAVING)
   void set_rx_gain(SX1262RxGain gain) { this->rx_gain_ = gain; }
+
+  // T1 receiver bandwidth only; C1/S1 stay at their measured 234.3 kHz.
+  void set_t1_rx_bandwidth(SX1262T1RxBandwidth bw) { this->t1_rx_bandwidth_ = bw; }
 
   // SX1262 tuning / board helpers (set from YAML via __init__.py)
   void set_frequency_mhz(float frequency_mhz) {
@@ -129,6 +147,7 @@ class SX1262 : public RadioTransceiver {
   bool dio2_rf_switch_{true};
   bool has_tcxo_{false};
   SX1262RxGain rx_gain_{BOOSTED};
+  SX1262T1RxBandwidth t1_rx_bandwidth_{T1_BW_312};
   bool long_gfsk_packets_{false};
   bool clear_device_errors_on_boot_{false};
 

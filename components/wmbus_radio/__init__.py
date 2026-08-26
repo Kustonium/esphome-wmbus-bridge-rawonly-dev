@@ -92,6 +92,17 @@ CONF_DIAG_METER_STATS = "diagnostic_meter_stats"
 CONF_DIAG_PUBLISH_SUGGESTION = "diagnostic_publish_suggestion"
 CONF_SX1276_BUSY_ETHER_MODE = "sx1276_busy_ether_mode"
 
+# SX1262 T1 receiver bandwidth. C1 and S1 are not affected - their 234.3 kHz
+# is a measured optimum (three-point sweep on S-mode, 2026-08-01) and is
+# pinned in the driver. T1 never got that sweep: its 312.0 kHz is inherited,
+# and 25% wider than the window the SX1276 uses for the same mode.
+CONF_SX1262_RX_BANDWIDTH = "sx1262_rx_bandwidth"
+SX1262_T1_RX_BANDWIDTHS = {
+    "312khz": "T1_BW_312",
+    "234khz": "T1_BW_234",
+    "156khz": "T1_BW_156",
+}
+
 # Heltec V4 FEM pins (SX1262 external front-end)
 CONF_FEM_CTRL_PIN = "fem_ctrl_pin"
 CONF_FEM_EN_PIN = "fem_en_pin"
@@ -408,6 +419,9 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_SX1276_BUSY_ETHER_MODE, default="normal"): cv.one_of(
                 "normal", "aggressive", "adaptive", lower=True
             ),
+            cv.Optional(CONF_SX1262_RX_BANDWIDTH, default="312khz"): cv.one_of(
+                *SX1262_T1_RX_BANDWIDTHS, lower=True
+            ),
 
             # Optional log highlighting for selected meter IDs
             cv.Optional(CONF_HIGHLIGHT_METERS, default=[]): cv.ensure_list(_validate_meter_id),
@@ -491,7 +505,7 @@ _REPORT_CORE = (CONF_RADIO_TYPE, CONF_LISTEN_MODE, CONF_LISTEN_MODE_FILTER_AFTER
 _REPORT_RADIO = {
     "SX1262": (CONF_HAS_TCXO, CONF_DIO2_RF_SWITCH, CONF_RF_SWITCH, CONF_RX_GAIN,
                CONF_LONG_GFSK_PACKETS, CONF_CLEAR_DEVICE_ERRORS_ON_BOOT,
-               CONF_PUBLISH_DEV_ERR_AFTER_CLEAR),
+               CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, CONF_SX1262_RX_BANDWIDTH),
     "SX1276": (CONF_SX1276_BUSY_ETHER_MODE,),
     "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL,),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
@@ -667,6 +681,16 @@ async def to_code(config):
             )
         )
         cg.add(radio_var.set_long_gfsk_packets(config.get(CONF_LONG_GFSK_PACKETS, False)))
+
+        SX1262T1RxBandwidth = radio_ns.enum("SX1262T1RxBandwidth")
+        cg.add(
+            radio_var.set_t1_rx_bandwidth(
+                getattr(
+                    SX1262T1RxBandwidth,
+                    SX1262_T1_RX_BANDWIDTHS[config.get(CONF_SX1262_RX_BANDWIDTH, "312khz")],
+                )
+            )
+        )
 
         # Clear SX1262 device errors on boot (optional)
         cg.add(radio_var.set_clear_device_errors_on_boot(config.get(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, False)))

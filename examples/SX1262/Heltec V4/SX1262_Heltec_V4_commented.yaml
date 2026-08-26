@@ -173,6 +173,22 @@ wmbus_radio:
   # rx_gain: boosted  # default: boosted
   long_gfsk_packets: true
 
+  # EN: T1 receiver bandwidth. Affects T1 ONLY - C1 and S1 keep their measured
+  #     234.3 kHz no matter what is set here.
+  #     The 312 kHz default was inherited, never measured for T1, and is 25%
+  #     wider than the window an SX1276 uses for the same mode, so it admits
+  #     noise the signal does not need. 234khz is the value to compare against.
+  #     Change it on ONE board and leave a second one at the default, otherwise
+  #     the comparison says nothing.
+  # PL: Szerokosc pasma odbiornika dla T1. Dotyczy WYLACZNIE T1 - C1 i S1
+  #     zachowuja swoje zmierzone 234,3 kHz niezaleznie od tego ustawienia.
+  #     Domyslne 312 kHz jest odziedziczone, nigdy nie zmierzone dla T1 i o 25%
+  #     szersze niz okno SX1276 w tym samym trybie, wiec wpuszcza szum, ktorego
+  #     sygnal nie potrzebuje. 234khz to wartosc do porownania.
+  #     Zmieniac na JEDNEJ plytce, druga zostawic na domyslnej - inaczej
+  #     porownanie niczego nie mowi.
+  # sx1262_rx_bandwidth: 234khz  # default: 312khz
+
   # EN: Receive mode. Available values: t1, c1, both, s1.
   #     both means T1/C1 only. S1 is separate and cannot be combined with T1/C1.
   #     Default frequency: T1/C1/both = 868.950 MHz, S1 = 868.300 MHz.

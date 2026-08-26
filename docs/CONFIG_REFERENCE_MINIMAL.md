@@ -49,6 +49,7 @@ Poprawny telegram S1 jest publikowany na `wmbus/<topic_name>/telegram` tak samo 
 | `dio2_rf_switch` | `SX1262` | `true` | public | sterowanie przełącznikiem RF przez DIO2 |
 | `rx_gain` | `SX1262` | `boosted` | public | `boosted` albo `power_saving` |
 | `long_gfsk_packets` | `SX1262` | `false` | public | zalecane dla długich ramek T1; brak może powodować ucinanie/dropy |
+| `sx1262_rx_bandwidth` | `SX1262` | `312khz` | public | `312khz` (domyślne, odziedziczone, niezmierzone dla T1), `234khz`, `156khz`. Działa dla `listen_mode: t1` **i `both`**; `c1` oraz `s1` ignorują — ich 234,3 kHz jest zmierzone i przypięte |
 | `fem_ctrl_pin`, `fem_en_pin`, `fem_pa_pin` | `SX1262` | brak | board-specific | piny zewnętrznego front-endu RF, np. Heltec V4 |
 | `rf_sw_pin` | `SX1262` | brak | board-specific | bramka wewnętrznego przełącznika RF modułu; wymagane na XIAO ESP32-S3 + Wio-SX1262 (`GPIO38`), inaczej czułość niższa o ~30 dB |
 | `sx1276_busy_ether_mode` | `SX1276` | `normal` | public | `normal`, `aggressive`, `adaptive`; podnosić dopiero przy **zmierzonym** przeciążeniu (`fifo_overrun`/`truncated` > 0) — `adaptive` przerywa słabe starty i kosztuje ok. 12 dB czułości |
