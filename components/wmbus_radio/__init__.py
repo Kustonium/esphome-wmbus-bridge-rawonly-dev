@@ -118,6 +118,7 @@ CONF_RF_SW_PIN = "rf_sw_pin"
 CONF_GDO0_PIN = "gdo0_pin"
 CONF_GDO2_PIN = "gdo2_pin"
 CONF_CC1101_ALLOW_EXPERIMENTAL = "cc1101_allow_experimental"
+CONF_SPI_DATA_RATE = "spi_data_rate"
 CONF_ALLOW_UNTESTED_FRAMEWORK = "allow_untested_framework"
 CONF_FREQUENCY = "frequency"
 
@@ -291,6 +292,21 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_GDO0_PIN): pins.internal_gpio_input_pin_schema,
             cv.Optional(CONF_GDO2_PIN): pins.internal_gpio_input_pin_schema,
             cv.Optional(CONF_CC1101_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
+            # SPI clock for the radio device only, not for the whole bus.
+            #
+            # The driver defaults to 2 MHz, which is well inside every supported
+            # part's rating. What it is not inside is every user's wiring: a
+            # module on dupont leads has enough capacitance and crosstalk to drop
+            # bits at 2 MHz on an otherwise healthy 3.3 V board. That failure is
+            # silent - registers read back as their reset defaults and the radio
+            # simply behaves as if it were misconfigured.
+            #
+            # Lower this before suspecting the part. Raising it above 2 MHz is
+            # allowed but has no known benefit here: the RX FIFO drain is paced
+            # by the radio, not by the bus.
+            cv.Optional(CONF_SPI_DATA_RATE): cv.All(
+                cv.frequency, cv.Range(min=100000, max=8000000)
+            ),
             cv.Optional(CONF_ALLOW_UNTESTED_FRAMEWORK, default=False): cv.boolean,
             cv.Optional(CONF_FREQUENCY): cv.float_range(min=300.0, max=928.0),
             cv.Optional(CONF_LISTEN_MODE, default="both"): cv.one_of(
@@ -494,6 +510,7 @@ def _report_value(value, key=None):
     return str(value)
 
 
+_REPORT_BUS = (CONF_SPI_DATA_RATE,)
 _REPORT_PINS = ("cs_pin", CONF_RESET_PIN, CONF_IRQ_PIN, CONF_BUSY_PIN,
                 CONF_GDO0_PIN, CONF_GDO2_PIN, CONF_TCXO_PIN, CONF_RF_SW_PIN,
                 CONF_FEM_EN_PIN, CONF_FEM_CTRL_PIN, CONF_FEM_PA_PIN)
@@ -555,6 +572,7 @@ def _config_report_lines(config):
     for title, keys in (
         ("core", _REPORT_CORE),
         ("pins", _REPORT_PINS),
+        ("bus", _REPORT_BUS),
         (f"{radio_type.lower()}", _REPORT_RADIO.get(radio_type, ())),
         ("output", _REPORT_OUTPUT),
         ("diagnostics", _REPORT_DIAG),
@@ -665,6 +683,11 @@ async def to_code(config):
         config[CONF_RADIO_TYPE], RadioTransceiver
     )
     radio_var = cg.new_Pvariable(config[CONF_RADIO_ID])
+
+    # Must run before spi_setup(), which reads data_rate_ when it registers the
+    # device with the bus. Left alone, the template default (2 MHz) stands.
+    if CONF_SPI_DATA_RATE in config:
+        cg.add(radio_var.set_data_rate(int(config[CONF_SPI_DATA_RATE])))
 
     if config[CONF_RADIO_TYPE] == "SX1262":
         dio2_rf = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))

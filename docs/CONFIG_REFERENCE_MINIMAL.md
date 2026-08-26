@@ -60,6 +60,7 @@ Poprawny telegram S1 jest publikowany na `wmbus/<topic_name>/telegram` tak samo 
 | `publish_dev_err_after_clear` | `SX1262` | `false` | advanced | opublikuj ponownie odczytany stan błędów po skasowaniu; jedyny sposób, by zobaczyć go na węźle, który nic nie odbiera |
 | `cc1101_allow_experimental` | `CC1101` | `false` | safety gate | wymagane do uruchomienia CC1101 |
 | `gdo0_pin`, `gdo2_pin` | `CC1101` | wymagane | public | dual IRQ; single-IRQ CC1101 nie jest wspierany |
+| `spi_data_rate` | wszystkie | `2000000` (2 MHz) | advanced | zegar SPI **tego urządzenia**, nie całej magistrali. Obniż, zanim zaczniesz podejrzewać układ: moduł na przewodach dupont potrafi gubić bity przy 2 MHz nawet na zdrowych 3,3 V, a objaw jest cichy — rejestry odczytują się jako wartości domyślne i radio zachowuje się jak źle skonfigurowane. Sprawdź `reg_write_retries` w linii `CC1101 debug status`: wartość > 0 to dowód, że magistrala przekłamuje |
 | `lr1121_allow_experimental` | `LR1121` | `false` | safety gate | wymagane do uruchomienia LR1121 |
 | `tcxo_voltage` | `LR1121` | `3.0v` | public | napięcie TCXO modułu |
 | `tcxo_startup_ticks` | `LR1121` | `3000` | advanced | czas rozruchu TCXO w taktach 32,768 kHz (~91,6 ms) |

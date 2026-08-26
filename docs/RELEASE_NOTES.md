@@ -1,3 +1,22 @@
+# Feature: `spi_data_rate`, and proof that the SPI bus was the problem
+
+## EN
+
+- **New option `spi_data_rate`** (all radios, default unchanged at 2 MHz). Sets the SPI clock for the radio device only, not for the whole bus. Range 100 kHz to 8 MHz.
+- **Why it exists.** On the board in issue #22, `reg_write_retries=4` with `reg_write_failed=0`: every configuration register eventually took its value, but four of them needed a second attempt. That is a bus corrupting bytes, measured rather than guessed — and it happened on a healthy 3.3 V supply, with the module on jumper leads.
+- **The failure is silent, which is the point.** A dropped bit in a register write leaves that register at its reset default. Nothing reports an error; the radio simply behaves as if it had been configured for a different data rate and deviation, and every frame fails its CRC three layers further down. Before the read-back verification landed, this was indistinguishable from a dead antenna.
+- **Lower it before suspecting the part.** Raising it above 2 MHz is permitted but has no known benefit here — the RX FIFO drain is paced by the radio, not by the bus.
+- **What it does not fix.** Register writes are repeated on mismatch, so they recover. The RX FIFO read cannot be repeated: a second read consumes bytes the first one already took. If the bus corrupts a byte there, the frame is lost and no amount of retrying will bring it back. That is the case for setting a clock the wiring can actually carry.
+
+## PL
+
+- **Nowa opcja `spi_data_rate`** (wszystkie radia, domyślnie bez zmian — 2 MHz). Ustawia zegar SPI **tego urządzenia**, nie całej magistrali. Zakres od 100 kHz do 8 MHz.
+- **Skąd się wzięła.** Na płytce ze zgłoszenia #22 `reg_write_retries=4` przy `reg_write_failed=0`: każdy rejestr konfiguracji ostatecznie przyjął swoją wartość, ale cztery potrzebowały drugiej próby. To jest magistrala przekłamująca bajty — zmierzona, nie zgadnięta — i to na zdrowym zasilaniu 3,3 V, z modułem na przewodach.
+- **Awaria jest cicha i o to właśnie chodzi.** Zgubiony bit w zapisie rejestru zostawia ten rejestr na wartości domyślnej. Nic nie zgłasza błędu; radio po prostu zachowuje się tak, jakby skonfigurowano je na inną prędkość i dewiację, a każda ramka pada na CRC trzy warstwy niżej. Zanim doszła weryfikacja przez odczyt zwrotny, było to nie do odróżnienia od martwej anteny.
+- **Obniż go, zanim zaczniesz podejrzewać układ.** Podniesienie powyżej 2 MHz jest dozwolone, ale nie ma tu znanego zysku — opróżnianie RX FIFO dyktuje radio, nie magistrala.
+- **Czego to nie naprawia.** Zapisy rejestrów są powtarzane przy niezgodności, więc się podnoszą. Odczytu RX FIFO powtórzyć się nie da: drugi odczyt zabiera bajty, które pierwszy już pobrał. Jeśli magistrala przekłamie bajt w tym miejscu, ramka przepada i żadne powtarzanie jej nie odzyska. To jest właśnie argument za ustawieniem zegara, który okablowanie faktycznie udźwignie.
+
+
 # Fix: CC1101 lost register writes when the chip was not ready
 
 ## EN
