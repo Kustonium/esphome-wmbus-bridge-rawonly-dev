@@ -857,14 +857,29 @@ void CC1101::restart_rx() {
     this->strobe_(CC1101_SRX);
     return;
   }
-  // Mode T and mode C share one sync word, 0x543D. In a mode C telegram the
-  // 0x54CD that follows is the frame-format marker and arrives as DATA, which is
-  // why packet.cpp strips it as WMBUS_MODE_C_SUFIX_LEN. Arming the radio on
-  // 0x54CD therefore does not catch C1 frames from their start - it only spends
-  // a share of the listening windows on a sync word that is never transmitted as
-  // one. Both known working CC1101 drivers (SzczepanLeon, alex-icesoft) set this
-  // register once and never touch it again.
-  sync2 = 0x3D;
+  // The 3:1 cycle onto 0x54CD is kept deliberately, and it is NOT settled.
+  //
+  // Argument for removing it: mode T and mode C share the sync word 0x543D, and
+  // in the one C1 capture we have (issue #22) the 0x54CD that follows arrives as
+  // DATA - which is exactly why packet.cpp strips it as WMBUS_MODE_C_SUFIX_LEN.
+  // On that reading, arming on 0x54CD cannot catch a C1 frame from its start and
+  // only spends listening windows. Neither reference CC1101 driver
+  // (SzczepanLeon, alex-icesoft) cycles this register.
+  //
+  // Why it stays anyway: that capture came from a board whose RF profile does
+  // not apply correctly, so it is not evidence about what a healthy receiver
+  // sees. The sibling drivers cycle for a documented reason (transceiver_sx1262
+  // .cpp), and CC1101 reports "3:1 bias" in its own dump_config. Changing this
+  // one driver on a hypothesis would break that consistency for users it
+  // currently works for.
+  //
+  // Settle it with a measurement from a working CC1101, not by reasoning.
+  if (this->listen_mode_ == LISTEN_MODE_T1) {
+    sync2 = 0x3D;
+  } else {
+    sync2 = (this->sync_cycle_ == 3) ? 0xCD : 0x3D;
+    this->sync_cycle_ = (uint8_t) ((this->sync_cycle_ + 1) & 0x03);
+  }
 
   this->flush_rx_();
   this->set_sync_word_(sync2);
