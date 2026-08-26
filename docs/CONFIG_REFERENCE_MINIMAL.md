@@ -169,8 +169,8 @@ tylko własne.
 ```yaml
 wmbus_radio:
   forward_meters:
-    - 41551279
-    - 90830781
+    - 44332211
+    - 77665544
 ```
 
 Jeżeli te same liczniki masz już w `highlight_meters`, nie przepisuj ich drugi raz —
@@ -179,8 +179,8 @@ Jeżeli te same liczniki masz już w `highlight_meters`, nie przepisuj ich drugi
 ```yaml
 wmbus_radio:
   highlight_meters:
-    - 41551279
-    - 90830781
+    - 44332211
+    - 77665544
   forward_meters: true
 ```
 
@@ -189,7 +189,7 @@ wmbus_radio:
   filtr się nie włącza, a w logu startowym pojawia się ostrzeżenie.
 - Wpisuj ID dokładnie tak, jak pokazuje log — to ten sam zapis, którego używa
   `highlight_meters`:
-  - `id:41551279` → `- 41551279` (licznik BCD, zapis dziesiętny),
+  - `id:44332211` → `- 44332211` (licznik BCD, zapis dziesiętny),
   - `id:417F0666` → `- "0x417F0666"` (licznik nie-BCD, np. Diehl/IZAR).
 - **Wpisy szesnastkowe ujmuj w cudzysłów.** Bez niego YAML sam zamieni `0x417F0666` na
   liczbę `1098843750` i wpis trafiłby na listę dziesiętną, gdzie nigdy z niczym nie
@@ -198,7 +198,7 @@ wmbus_radio:
 - Rozróżnienie jest jednoznaczne i nie wymaga wiedzy, który licznik jest który: A-field
   spoza BCD zawsze zawiera cyfrę A–F, a ID w BCD nigdy. Wpis czysto cyfrowy znaczy więc
   „dziesiętne", wpis z literami — „surowe".
-- Formy `0x` można użyć również dla licznika BCD (`"0x00088888"` = `89907`), bo surowa
+- Formy `0x` można użyć również dla licznika BCD (`"0x00088888"` = `88888`), bo surowa
   postać istnieje dla każdego licznika.
 - Po starcie log pokazuje sparsowane ID i to, czy przyszły z `highlight_meters`; stan
   filtra jest też w `dump_config()` jako `Forward whitelist:`.
