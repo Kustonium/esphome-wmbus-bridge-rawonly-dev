@@ -198,7 +198,7 @@ wmbus_radio:
 - Rozróżnienie jest jednoznaczne i nie wymaga wiedzy, który licznik jest który: A-field
   spoza BCD zawsze zawiera cyfrę A–F, a ID w BCD nigdy. Wpis czysto cyfrowy znaczy więc
   „dziesiętne", wpis z literami — „surowe".
-- Formy `0x` można użyć również dla licznika BCD (`"0x00089907"` = `89907`), bo surowa
+- Formy `0x` można użyć również dla licznika BCD (`"0x00088888"` = `89907`), bo surowa
   postać istnieje dla każdego licznika.
 - Po starcie log pokazuje sparsowane ID i to, czy przyszły z `highlight_meters`; stan
   filtra jest też w `dump_config()` jako `Forward whitelist:`.

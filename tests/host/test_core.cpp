@@ -442,7 +442,7 @@ static void test_packet_s1_field_erasures_from_2026_08_14() {
 }
 
 // For a BCD meter the raw A-field value is simply its decimal digits read as
-// hex: meter 89907 is stored as the bytes that print 00089907. This pins the
+// hex: meter 88888 is stored as the bytes that print 00088888. This pins the
 // byte order of the raw extraction, which is where a silent bug would live.
 static uint32_t bcd_digits_as_hex(uint32_t decimal_id) {
   uint32_t out = 0;
@@ -564,7 +564,7 @@ static void test_forward_meter_whitelist() {
   const std::vector<uint32_t> bcd = {41551279, 90830781};
   check(meter_id_allowed(bcd, none, 41551279, 0x41551279), "listed BCD meter is forwarded");
   check(meter_id_allowed(bcd, none, 90830781, 0x90830781), "second listed BCD meter is forwarded");
-  check(!meter_id_allowed(bcd, none, 89907, 0x00089907), "unlisted meter is dropped");
+  check(!meter_id_allowed(bcd, none, 88888, 0x00088888), "unlisted meter is dropped");
   check(!meter_id_allowed(bcd, none, 0, 0), "frame with no usable id is dropped while filtering");
 
   // Non-BCD meters (Diehl/IZAR and friends) have no decimal ID at all: id is 0
@@ -575,14 +575,14 @@ static void test_forward_meter_whitelist() {
   check(!meter_id_allowed(none, raw, 41551279, 0x41551279), "BCD meter not on the raw list is dropped");
 
   // A raw entry may also address a BCD meter, since the raw form exists for
-  // every meter - writing 0x00089907 must match meter 89907.
-  const std::vector<uint32_t> raw_of_bcd = {0x00089907};
-  check(meter_id_allowed(none, raw_of_bcd, 89907, 0x00089907), "BCD meter matches via its raw form");
+  // every meter - writing 0x00088888 must match meter 88888.
+  const std::vector<uint32_t> raw_of_bcd = {0x00088888};
+  check(meter_id_allowed(none, raw_of_bcd, 88888, 0x00088888), "BCD meter matches via its raw form");
 
   // Either list may carry the match.
   check(meter_id_in_lists(bcd, raw, 41551279, 0x41551279), "bcd list hit");
   check(meter_id_in_lists(bcd, raw, 0, 0x417F0666), "raw list hit");
-  check(!meter_id_in_lists(bcd, raw, 89907, 0x00089907), "no list hit");
+  check(!meter_id_in_lists(bcd, raw, 88888, 0x00088888), "no list hit");
 
   // highlight_meters semantics: an empty configuration highlights nothing,
   // unlike the whitelist where empty means "allow everything".

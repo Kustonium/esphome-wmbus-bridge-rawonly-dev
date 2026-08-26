@@ -208,8 +208,7 @@ wmbus_radio:
   # does not stream, so it does not need to know.
   #
   # What is NOT established: sensitivity at the margin. The bench signal was
-  # strong. A weak real S1 transmitter is a different test - see
-  # docs/S1_HELTEC_V4_TEST_2026-08-14_PL.md.
+  # strong. A weak real S1 transmitter is a different test.
   listen_mode: both  # pinned: kept explicit while this radio is new
 
   # ---------------------------------------------------------------------------

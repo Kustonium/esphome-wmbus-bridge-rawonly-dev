@@ -124,7 +124,7 @@ Uwagi:
 - Nie musisz wiedzieć, który licznik jest którego rodzaju. A-field poza BCD zawsze
   zawiera półbajtówkę powyżej 9, więc jego zapis zawsze ma literę A-F, a ID w BCD nigdy
   - wpis czysto cyfrowy znaczy „dziesiętny", wpis z literami „surowy". Forma `0x`
-  działa też dla liczników BCD (`"0x00089907"` to licznik `89907`).
+  działa też dla liczników BCD (`"0x00088888"` to licznik `89907`).
 - Diagnostyka jest nietknięta: liczniki i statystyki RSSI powstają przed publikacją,
   więc summary dalej obejmuje cały eter razem z sąsiadami. Obcinany jest sam strumień RAW.
 - `target_meter_id` ma własny topic i celowo nie podlega whiteliście.
@@ -222,8 +222,8 @@ Do normalnego użycia:
 ```yaml
 diagnostic_mode: normal
 highlight_meters:
-  - "00089907"
-  - "03534159"
+  - "00088888"
+  - "03500001"
 ```
 
 To publikuje zbiorczy snapshot na:

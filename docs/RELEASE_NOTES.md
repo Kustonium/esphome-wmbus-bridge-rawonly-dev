@@ -793,7 +793,7 @@ Carson nie opisuje dobrze sygnału kodowanego Manchesterem. Strumień chipów ni
 - The Seeed Wio-SX1262 does not connect its antenna unconditionally. Module pin 1 (`RF_SW`, "External IO control internal gate RF switch") must be held high by the host; on the XIAO ESP32S3 kit it is GPIO38. Nothing drove it, so the pin idled as a high-impedance input and the receiver ran on leakage alone.
 - This is separate from `dio2_rf_switch`, and both are needed. Per the module datasheet the SX1262's own DIO2 chooses the TX/RX *direction* (high = TX, low = RX); `RF_SW` decides whether the switch conducts at all.
 - The XIAO examples did carry a workaround - an `on_boot` action toggling a `gpio` output on GPIO38 - and it never worked. Priority 900 lands in the same ESPHome setup bucket as the `gpio output` component itself, so ordering falls out of registration order and the write happened before the pin was an output. No warning, no error, no log line. It has been removed from both examples.
-- Measured on hardware, same board and antenna before and after: meter `00089907` went from -96 dBm to -68 dBm, and the receiver went from 4-6 frames per minute across 3 meters to 14 across 32.
+- Measured on hardware, same board and antenna before and after: meter `00088888` went from -96 dBm to -68 dBm, and the receiver went from 4-6 frames per minute across 3 meters to 14 across 32.
 
 ### Added
 - `rf_sw_pin` for `SX1262`. The pin is driven high inside the radio's own setup, before the chip reset, where ordering is guaranteed. Boards whose module gates the antenna path this way need it; Heltec V3/V4/V4-R8 do not - they use the `fem_*` pins and are unaffected.
@@ -809,7 +809,7 @@ Carson nie opisuje dobrze sygnału kodowanego Manchesterem. Strumień chipów ni
 - Moduł Seeed Wio-SX1262 nie podłącza anteny bezwarunkowo. Wyprowadzenie nr 1 modułu (`RF_SW`, "External IO control internal gate RF switch") musi być trzymane w stanie wysokim przez host; w zestawie z XIAO ESP32S3 jest to GPIO38. Nic go nie sterowało, więc pin pozostawał wejściem w stanie wysokiej impedancji, a odbiornik pracował wyłącznie na przecieku sygnału.
 - To jest coś innego niż `dio2_rf_switch` i potrzebne są oba. Zgodnie z notą katalogową modułu DIO2 układu SX1262 wybiera *kierunek* TX/RX (wysoki = TX, niski = RX), natomiast `RF_SW` decyduje, czy przełącznik w ogóle przewodzi.
 - Przykłady dla XIAO zawierały obejście - akcję `on_boot` przełączającą wyjście `gpio` na GPIO38 - i nigdy ono nie działało. Priorytet 900 trafia w tym samym etapie inicjalizacji ESPHome co sam komponent `gpio output`, więc o kolejności decyduje kolejność rejestracji i zapis wykonywał się, zanim wyprowadzenie stało się wyjściem. Bez ostrzeżenia, bez błędu, bez śladu w logu. Obejście zostało usunięte z obu przykładów.
-- Pomiar na sprzęcie, ta sama płytka i antena przed i po: licznik `00089907` z -96 dBm na -68 dBm, a odbiornik z 4-6 ramek na minutę od 3 liczników na 14 od 32.
+- Pomiar na sprzęcie, ta sama płytka i antena przed i po: licznik `00088888` z -96 dBm na -68 dBm, a odbiornik z 4-6 ramek na minutę od 3 liczników na 14 od 32.
 
 ### Dodano
 - `rf_sw_pin` dla `SX1262`. Wyprowadzenie ustawiane jest w stan wysoki wewnątrz inicjalizacji radia, przed resetem układu, gdzie kolejność jest jednoznaczna. Opcja jest potrzebna płytkom, których moduł bramkuje w ten sposób tor antenowy; Heltec V3/V4/V4-R8 jej nie wymagają - korzystają z wyprowadzeń `fem_*` i zmiana ich nie dotyczy.
@@ -860,7 +860,7 @@ Carson nie opisuje dobrze sygnału kodowanego Manchesterem. Strumień chipów ni
 ### Fixed
 - Meter matching decoded the A-field as BCD and gave up otherwise, so meters that do not use a BCD ID (Diehl/IZAR among others) had no usable ID at all. They could never be listed in `highlight_meters`, and with `forward_meters` active their telegrams were dropped silently - the one case where the whitelist discarded frames the user could not get back by any configuration.
 - Both options now also match the raw A-field value, written the way the log prints it: `id:417F0666` is configured as `"0x417F0666"` (quoted, or YAML turns it into a number). Decimal entries keep their existing meaning, so no configuration changes behaviour.
-- The two forms are told apart without ambiguity: a non-BCD A-field always contains a nibble above 9 and therefore always prints a hex letter, while a BCD ID never does. The `0x` form works for BCD meters too (`"0x00089907"` is meter `89907`).
+- The two forms are told apart without ambiguity: a non-BCD A-field always contains a nibble above 9 and therefore always prints a hex letter, while a BCD ID never does. The `0x` form works for BCD meters too (`"0x00088888"` is meter `89907`).
 - Per-meter statistics were keyed on the BCD ID, so every non-BCD meter collapsed into a single shared entry at key 0. They are now keyed on the raw A-field value, which is unique for every meter.
 - `target_meter_id` still accepts only BCD IDs. A hex value there used to be accepted and then never match; it now logs a warning at boot pointing to `forward_meters`.
 
@@ -869,7 +869,7 @@ Carson nie opisuje dobrze sygnału kodowanego Manchesterem. Strumień chipów ni
 ### Naprawiono
 - Dopasowanie liczników dekodowało A-field jako BCD i w przeciwnym razie rezygnowało, więc liczniki bez ID w BCD (m.in. Diehl/IZAR) nie miały żadnego użytecznego ID. Nie dało się ich wpisać do `highlight_meters`, a przy aktywnym `forward_meters` ich telegramy znikały bez śladu - jedyny przypadek, w którym whitelista odrzucała ramki, których użytkownik nie mógł odzyskać żadną konfiguracją.
 - Obie opcje dopasowują teraz również surową wartość A-field, zapisywaną tak, jak pokazuje ją log: `id:417F0666` konfigurujesz jako `"0x417F0666"` (w cudzyslowie, inaczej YAML zamieni to na liczbe). Wpisy dziesiętne zachowują dotychczasowe znaczenie, więc żadna konfiguracja nie zmienia zachowania.
-- Rozróżnienie obu form jest jednoznaczne: A-field poza BCD zawsze zawiera półbajtówkę powyżej 9, więc zawsze wypisuje literę szesnastkową, a ID w BCD nigdy. Forma `0x` działa też dla liczników BCD (`"0x00089907"` to licznik `89907`).
+- Rozróżnienie obu form jest jednoznaczne: A-field poza BCD zawsze zawiera półbajtówkę powyżej 9, więc zawsze wypisuje literę szesnastkową, a ID w BCD nigdy. Forma `0x` działa też dla liczników BCD (`"0x00088888"` to licznik `89907`).
 - Statystyki per licznik były kluczowane po ID z BCD, więc wszystkie liczniki nie-BCD zlewały się w jeden wspólny wpis pod kluczem 0. Teraz kluczem jest surowa wartość A-field, unikalna dla każdego licznika.
 - `target_meter_id` nadal przyjmuje wyłącznie ID w BCD. Wartość szesnastkowa była tam dotąd przyjmowana i po cichu nigdy nie pasowała; teraz przy starcie pojawia się ostrzeżenie kierujące do `forward_meters`.
 

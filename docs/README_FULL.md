@@ -124,7 +124,7 @@ Notes:
 - You do not have to know which kind a meter is. A non-BCD A-field always contains a
   nibble above 9, so its printed form always carries a hex letter, while a BCD ID never
   does — an all-digits entry means decimal, anything with letters means raw. The `0x`
-  form also works for BCD meters (`"0x00089907"` is meter `89907`).
+  form also works for BCD meters (`"0x00088888"` is meter `89907`).
 - Diagnostics are unaffected: counters and RSSI statistics are updated before
   publishing, so summaries still cover the whole ether including neighbours. Only the
   RAW stream is reduced.
@@ -223,8 +223,8 @@ For normal use:
 ```yaml
 diagnostic_mode: normal
 highlight_meters:
-  - "00089907"
-  - "03534159"
+  - "00088888"
+  - "03500001"
 ```
 
 This publishes a combined snapshot on:

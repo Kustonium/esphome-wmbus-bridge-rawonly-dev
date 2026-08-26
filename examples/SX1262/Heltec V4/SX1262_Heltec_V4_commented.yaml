@@ -212,8 +212,8 @@ wmbus_radio:
 
   # Optional 15-minute per-meter statistics for selected IDs.
   # highlight_meters:  # default: []
-  #   - "00089907"
-  #   - "03534159"
+  #   - "00088888"
+  #   - "03500001"
   # highlight_ansi: true  # default: false
   # highlight_tag: "wmbus_user"  # default: wmbus_user
   # highlight_prefix: "★ "  # default: "★ "
@@ -227,7 +227,7 @@ wmbus_radio:
   #     Zamiast listy można dać `forward_meters: true` i użyć listy z highlight_meters.
   #     ID szesnastkowe w cudzysłowie, inaczej YAML zamieni 0x417F0666 na 1098843750.
   # forward_meters:  # default: []
-  #   - "00089907"
+  #   - "00088888"
   #   - "0x417F0666"
 
   # diagnostic_publish_summary_15min: true

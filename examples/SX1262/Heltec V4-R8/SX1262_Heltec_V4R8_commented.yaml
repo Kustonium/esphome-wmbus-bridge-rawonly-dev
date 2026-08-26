@@ -214,7 +214,7 @@ wmbus_radio:
   #     Zamiast listy można dać `forward_meters: true` i użyć listy z highlight_meters.
   #     ID szesnastkowe w cudzysłowie, inaczej YAML zamieni 0x417F0666 na 1098843750.
   # forward_meters:  # default: []
-  #   - "00089907"
+  #   - "00088888"
   #   - "0x417F0666"
 
   on_frame:
