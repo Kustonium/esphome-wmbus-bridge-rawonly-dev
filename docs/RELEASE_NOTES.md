@@ -1,3 +1,18 @@
+# Fix: FREQ and SYNC writes were not verified, and FREQ was the one that mattered
+
+## EN
+
+- The read-back verification added for the boot profile (`write_reg_verified_`) covered every register written from `apply_radio_profile_()` directly, but missed two callees that write registers of their own: `set_frequency_()` (`FREQ2/1/0`) and `set_sync_word_()` (`SYNC1/0`, both the normal and the S1 path).
+- **Issue #22 caught it immediately.** With `spi_data_rate: 1MHz` in place, `FREQ1` landed but `FREQ2` and `FREQ0` stayed at their reset defaults - the radio was listening on 790.961 MHz instead of 868.950 MHz, with everything else in the profile now correct. The FREQ validation added earlier this same day is what made this visible instead of silent.
+- All five registers now go through the same write-verify-retry path as the rest of the profile.
+
+## PL
+
+- Weryfikacja przez odczyt zwrotny dodana dla profilu startowego (`write_reg_verified_`) objęła każdy rejestr zapisywany bezpośrednio z `apply_radio_profile_()`, ale ominęła dwie wywoływane funkcje, które zapisują własne rejestry: `set_frequency_()` (`FREQ2/1/0`) i `set_sync_word_()` (`SYNC1/0`, zarówno ścieżka normalna, jak i S1).
+- **Zgłoszenie #22 złapało to natychmiast.** Z `spi_data_rate: 1MHz` `FREQ1` doszedł, ale `FREQ2` i `FREQ0` zostały na wartościach domyślnych - radio słuchało na 790,961 MHz zamiast 868,950 MHz, przy reszcie profilu już poprawnej. Walidacja FREQ dodana tego samego dnia wcześniej jest tym, co sprawiło, że to było widoczne, a nie ciche.
+- Wszystkie pięć rejestrów przechodzi teraz przez tę samą ścieżkę zapisz-zweryfikuj-powtórz co reszta profilu.
+
+
 # Feature: `spi_data_rate`, and proof that the SPI bus was the problem
 
 ## EN

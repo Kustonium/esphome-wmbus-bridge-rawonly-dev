@@ -351,14 +351,22 @@ void CC1101::set_frequency_mhz(float frequency_mhz) {
 
 void CC1101::set_frequency_(uint32_t frequency_hz) {
   const uint32_t freq = (uint32_t) (((uint64_t) frequency_hz << 16) / CC1101_FOSC_HZ);
-  this->write_reg_(REG_FREQ2, (uint8_t) ((freq >> 16) & 0xFF));
-  this->write_reg_(REG_FREQ1, (uint8_t) ((freq >> 8) & 0xFF));
-  this->write_reg_(REG_FREQ0, (uint8_t) (freq & 0xFF));
+  // Verified like the rest of the profile. These three used to be the only
+  // startup registers written without a read-back, and issue #22 caught exactly
+  // that: FREQ1 landed while FREQ2 and FREQ0 stayed at their reset defaults,
+  // leaving the radio listening on 790.961 MHz while every other register was
+  // correct.
+  this->write_reg_verified_(REG_FREQ2, (uint8_t) ((freq >> 16) & 0xFF));
+  this->write_reg_verified_(REG_FREQ1, (uint8_t) ((freq >> 8) & 0xFF));
+  this->write_reg_verified_(REG_FREQ0, (uint8_t) (freq & 0xFF));
 }
 
 void CC1101::set_sync_word_(uint8_t sync2) {
-  this->write_reg_(REG_SYNC1, 0x54);
-  this->write_reg_(REG_SYNC0, sync2);
+  // A sync word that fails to land means the receiver listens for a pattern that
+  // is never transmitted and hears nothing at all - silently. Worth two extra
+  // reads per RX restart, which is noise next to the flush this sits beside.
+  this->write_reg_verified_(REG_SYNC1, 0x54);
+  this->write_reg_verified_(REG_SYNC0, sync2);
 }
 
 // Write a configuration register, read it back, and repeat while they differ.
@@ -893,8 +901,8 @@ void CC1101::restart_rx() {
     // of S-mode sync as an experimental raw sniffer. SX1262/SX1276 are preferred for S1.
     sync2 = 0x96;
     this->flush_rx_();
-    this->write_reg_(REG_SYNC1, 0x76);
-    this->write_reg_(REG_SYNC0, sync2);
+    this->write_reg_verified_(REG_SYNC1, 0x76);
+    this->write_reg_verified_(REG_SYNC0, sync2);
     this->chunk_len_ = 0;
     this->chunk_idx_ = 0;
     this->rssi_captured_ = false;
