@@ -31,6 +31,26 @@ enum SX1262T1RxBandwidth : uint8_t {
   T1_BW_156 = 2,  // deliberately too narrow; the losing end of the S1 sweep
 };
 
+// Datasheet (SX1261/2 Rev 2.2, section 13.3.6): SetDIO3AsTCXOCtrl tcxoVoltage
+// byte. This value was hardcoded to 3.0V until 2026-08-26 - fine for the
+// boards this project had (Heltec V4, XIAO both take a TCXO-less crystal
+// path, so has_tcxo is false there and the value was never applied). It
+// stopped being fine the moment a board showed up whose TCXO wants 1.8V
+// (LilyGO T-Beam v1.2, per Meshtastic's own variant.h and confirmed against
+// this datasheet table): DIO3 is a REGULATED supply out of the SX1262 itself,
+// so feeding a 1.8V-rated TCXO a 3.0V rail is a 67% overvoltage on real
+// hardware, not a rounding error.
+enum SX1262TcxoVoltage : uint8_t {
+  SX1262_TCXO_1_6V = 0x00,
+  SX1262_TCXO_1_7V = 0x01,
+  SX1262_TCXO_1_8V = 0x02,
+  SX1262_TCXO_2_2V = 0x03,
+  SX1262_TCXO_2_4V = 0x04,
+  SX1262_TCXO_2_7V = 0x05,
+  SX1262_TCXO_3_0V = 0x06,  // default: matches the value every existing board used
+  SX1262_TCXO_3_3V = 0x07,
+};
+
 class SX1262 : public RadioTransceiver {
  public:
   SX1262() { this->irq_edge_ = gpio::INTERRUPT_RISING_EDGE; }
@@ -47,6 +67,7 @@ class SX1262 : public RadioTransceiver {
   }
   void set_dio2_rf_switch(bool v) { this->dio2_rf_switch_ = v; }
   void set_has_tcxo(bool v) { this->has_tcxo_ = v; }
+  void set_tcxo_voltage(SX1262TcxoVoltage v) { this->tcxo_voltage_ = v; }
 
   // Enable Semtech AN1200.53 long GFSK RX path.
   // This bypasses the 255-byte internal data-buffer limitation by streaming
@@ -148,6 +169,7 @@ class SX1262 : public RadioTransceiver {
   bool has_tcxo_{false};
   SX1262RxGain rx_gain_{BOOSTED};
   SX1262T1RxBandwidth t1_rx_bandwidth_{T1_BW_312};
+  SX1262TcxoVoltage tcxo_voltage_{SX1262_TCXO_3_0V};
   bool long_gfsk_packets_{false};
   bool clear_device_errors_on_boot_{false};
 

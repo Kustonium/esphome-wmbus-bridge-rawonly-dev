@@ -151,6 +151,20 @@ LR1121_TCXO_VOLTAGES = {
     "3.3v": "LR1121_TCXO_3_3V",
 }
 
+# Same key (tcxo_voltage), same eight datasheet steps, same reason it exists:
+# proven on LR1121 (Waveshare HF_XOSC_START tuning), now extended to SX1262
+# because a board finally showed up (LilyGO T-Beam v1.2) that isn't 3.0V.
+SX1262_TCXO_VOLTAGES = {
+    "1.6v": "SX1262_TCXO_1_6V",
+    "1.7v": "SX1262_TCXO_1_7V",
+    "1.8v": "SX1262_TCXO_1_8V",
+    "2.2v": "SX1262_TCXO_2_2V",
+    "2.4v": "SX1262_TCXO_2_4V",
+    "2.7v": "SX1262_TCXO_2_7V",
+    "3.0v": "SX1262_TCXO_3_0V",
+    "3.3v": "SX1262_TCXO_3_3V",
+}
+
 LR1121_RX_BANDWIDTHS = {
     "234300": "LR1121_BW_234300",
     "312000": "LR1121_BW_312000",
@@ -520,7 +534,7 @@ _REPORT_CORE = (CONF_RADIO_TYPE, CONF_LISTEN_MODE, CONF_LISTEN_MODE_FILTER_AFTER
                 CONF_FREQUENCY, CONF_RECEIVER_TASK_STACK_SIZE, CONF_ALLOW_UNTESTED_FRAMEWORK)
 
 _REPORT_RADIO = {
-    "SX1262": (CONF_HAS_TCXO, CONF_DIO2_RF_SWITCH, CONF_RF_SWITCH, CONF_RX_GAIN,
+    "SX1262": (CONF_HAS_TCXO, CONF_TCXO_VOLTAGE, CONF_DIO2_RF_SWITCH, CONF_RF_SWITCH, CONF_RX_GAIN,
                CONF_LONG_GFSK_PACKETS, CONF_CLEAR_DEVICE_ERRORS_ON_BOOT,
                CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, CONF_SX1262_RX_BANDWIDTH),
     "SX1276": (CONF_SX1276_BUSY_ETHER_MODE,),
@@ -693,6 +707,11 @@ async def to_code(config):
         dio2_rf = config.get(CONF_RF_SWITCH, config.get(CONF_DIO2_RF_SWITCH, True))
         cg.add(radio_var.set_dio2_rf_switch(dio2_rf))
         cg.add(radio_var.set_has_tcxo(config.get(CONF_HAS_TCXO, False)))
+
+        SX1262TcxoVoltage = radio_ns.enum("SX1262TcxoVoltage")
+        cg.add(radio_var.set_tcxo_voltage(
+            getattr(SX1262TcxoVoltage, SX1262_TCXO_VOLTAGES[config[CONF_TCXO_VOLTAGE]])
+        ))
 
         SX1262RxGain = radio_ns.enum("SX1262RxGain")
         gain = config.get(CONF_RX_GAIN, "boosted")
