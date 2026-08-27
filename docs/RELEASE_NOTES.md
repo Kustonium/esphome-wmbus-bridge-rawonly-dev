@@ -1,3 +1,20 @@
+# Feature: CC1101 hints at a marginal SPI connection when a write needs a retry
+
+## EN
+
+- When `apply_radio_profile_()` needs a retry to land a register, or a register never holds its value at all, the existing `CC1101 profile write-back` line now gets a follow-up `CC1101 hint` explaining what that number likely means.
+- Two tiers: a register that never held its value even after retries points at a persistent fault - reseat every connection, check for a short between adjacent pins, try a shorter cable. A register that needed a retry but landed points at something intermittent - a loose header pin, a marginal short, a cable too long for the clock speed.
+- **Why "likely" and not "confirmed":** `chip_not_ready_count_` already rules out `CHIP_RDYn` as the cause of a retry - if a write is answered with the chip ready and the value still does not read back, the bus corrupted a byte in transit. Issue #22 traced one real case of this to an intermittent short between two jumper wires: `reg_retry_count_` went from double digits to zero the moment the short was fixed, with nothing else about the setup changed. One correlated report is a lead, not a proof, which is why the hint says "likely" rather than naming a cause.
+- This is CC1101-only. The write-verify-retry mechanism it reads from only exists on that driver.
+
+## PL
+
+- Kiedy `apply_radio_profile_()` potrzebuje powtórki, żeby zapisać rejestr, albo rejestr w ogóle nie utrzymuje wartości, istniejąca linia `CC1101 profile write-back` dostaje teraz kontynuację `CC1101 hint` tłumaczącą, co ta liczba prawdopodobnie znaczy.
+- Dwa poziomy: rejestr, który nie utrzymał wartości mimo powtórek, wskazuje na trwałą usterkę - sprawdzić każde połączenie, szukać zwarcia między sąsiednimi pinami, spróbować krótszego kabla. Rejestr, który potrzebował powtórki, ale się zapisał, wskazuje na coś przejściowego - luźny pin, przejściowe zwarcie, kabel za długi jak na prędkość zegara.
+- **Dlaczego „prawdopodobnie", nie „potwierdzone":** `chip_not_ready_count_` już wyklucza `CHIP_RDYn` jako przyczynę powtórki - jeśli zapis dostaje odpowiedź „układ gotowy", a wartość i tak się nie odczytuje z powrotem, to magistrala przekłamała bajt po drodze. Zgłoszenie #22 doprowadziło jeden realny taki przypadek do przejściowego zwarcia między dwoma przewodami: `reg_retry_count_` spadł z dwucyfrowej liczby do zera dokładnie w momencie naprawy zwarcia, bez żadnej innej zmiany w konfiguracji. Jedno skorelowane zgłoszenie to trop, nie dowód, dlatego hint mówi „prawdopodobnie", a nie wskazuje przyczynę wprost.
+- To dotyczy tylko CC1101. Mechanizm zapisu-z-weryfikacją, z którego ten hint korzysta, istnieje tylko w tym sterowniku.
+
+
 # Fix: FREQ and SYNC writes were not verified, and FREQ was the one that mattered
 
 ## EN

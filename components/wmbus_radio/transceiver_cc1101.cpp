@@ -498,6 +498,33 @@ void CC1101::apply_radio_profile_() {
              "potrzeba bylo %u dodatkowych prob",
              (unsigned) this->reg_failed_count_, (unsigned) this->reg_retry_count_,
              (unsigned) this->reg_failed_count_, (unsigned) this->reg_retry_count_);
+    // CHIP_RDYn was checked for every one of these and was never the cause
+    // (chip_not_ready_count_ is logged separately and covers that). A write
+    // that needed a retry means the chip accepted the transaction and the
+    // value still did not match on readback - the bus corrupted a byte in
+    // transit. Issue #22 traced one real case of this to an intermittent
+    // short between two jumper wires: reg_retry_count_ went from double
+    // digits to zero the moment the short was fixed, with nothing else
+    // changed. One correlated report is a lead, not a proof, hence "likely".
+    if (this->reg_failed_count_ != 0) {
+      ESP_LOGW(TAG,
+               "CC1101 hint / wskazowka: registers that never held their value even after retries "
+               "point at a persistent fault, not an intermittent one - reseat or resolder every "
+               "connection on this module, check for a short between adjacent pins/wires, and try a "
+               "shorter cable before suspecting the chip itself / rejestry ktore nie utrzymaly "
+               "wartosci mimo powtorek wskazuja na trwaly, nie przejsciowy blad - sprawdz kazde "
+               "polaczenie na tym module, szukaj zwarcia miedzy sasiednimi pinami/przewodami i "
+               "sprobuj krotszego kabla, zanim podejrzewasz sam uklad");
+    } else {
+      ESP_LOGW(TAG,
+               "CC1101 hint / wskazowka: registers needing a retry but eventually landing likely "
+               "means a marginal SPI connection - a loose header pin, an intermittent short between "
+               "two wires, or a cable that is too long for the clock speed. Worth checking the "
+               "wiring even though setup will proceed / rejestry ktore potrzebowaly powtorki, ale "
+               "ostatecznie sie zapisaly, wskazuja prawdopodobnie na niepewne polaczenie SPI - luzny "
+               "pin, przejsciowe zwarcie miedzy dwoma przewodami albo kabel za dlugi jak na predkosc "
+               "zegara. Warto sprawdzic okablowanie, mimo ze uruchomienie przejdzie dalej");
+    }
   }
 
   this->strobe_(CC1101_SCAL);
