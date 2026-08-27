@@ -652,13 +652,22 @@ def _validate_radio_pins(config):
     else:
         if config.get(CONF_LR1121_ALLOW_EXPERIMENTAL, False):
             raise cv.Invalid("lr1121_allow_experimental is only valid for radio_type: LR1121.")
-        for key in (CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS, CONF_RX_BANDWIDTH, CONF_PREAMBLE_DETECTOR,
+        for key in (CONF_TCXO_STARTUP_TICKS, CONF_RX_BANDWIDTH, CONF_PREAMBLE_DETECTOR,
                     CONF_PAYLOAD_LENGTH, CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION):
             # Defaults are always present, so only an explicit non-default value
             # is worth rejecting. Silently ignoring it would be worse: the user
             # would think they had tuned something.
             if key in config and config[key] != BASE_CONFIG_DEFAULTS_LR1121[key]:
                 raise cv.Invalid(f"{key} is only valid for radio_type: LR1121.")
+
+        # tcxo_voltage is shared with SX1262 (2026-08-26: SX1262's DIO3-TCXO
+        # voltage is now configurable too, same key, same eight datasheet
+        # steps) - so it is exempt from the LR1121-only loop above, but still
+        # rejected for radios that have no TCXO-voltage command at all
+        # (SX1276 uses tcxo_pin instead; CC1101 has no TCXO concept).
+        if (radio_type != "SX1262" and CONF_TCXO_VOLTAGE in config
+                and config[CONF_TCXO_VOLTAGE] != BASE_CONFIG_DEFAULTS_LR1121[CONF_TCXO_VOLTAGE]):
+            raise cv.Invalid("tcxo_voltage is only valid for radio_type: LR1121 or SX1262.")
 
     return config
 
