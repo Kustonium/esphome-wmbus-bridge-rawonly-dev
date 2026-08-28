@@ -136,6 +136,20 @@ static constexpr uint16_t REG_AGC_GAIN_TUNE_11_12 = 0x08FA;
 static constexpr uint16_t REG_AGC_GAIN_TUNE_13 = 0x08FB;
 static constexpr uint16_t REG_AGC_FIRST_POWER_THRESHOLD = 0x08B9;
 
+// GFSK baseline registers - NOT in the SX1261/2 datasheet at all. Source:
+// RadioLib's SX126x::fixGFSK() (modules/SX126x/SX126x.cpp), whose own comment
+// says these come from "Semtech repositories", not the public datasheet.
+// RadioLib applies one set of values for 600/1200 bps and a different
+// "reset" set for every other bitrate - T1 (100 kbps) and S1 (32768 bps)
+// both fall in the second group, so both use the same four values below.
+// 0x08B8 sits one address below the AGC FirstPow register above; same
+// undocumented calibration neighbourhood, but these four are copied
+// verbatim from a working reference implementation, not guessed.
+static constexpr uint16_t REG_GFSK_FIX_1 = 0x06D1;
+static constexpr uint16_t REG_GFSK_FIX_3 = 0x08B8;
+static constexpr uint16_t REG_GFSK_FIX_4 = 0x06AC;
+static constexpr uint16_t REG_RSSI_AVG_WINDOW = 0x089B;
+
 // Semtech AN1200.53 long-packet reception registers:
 //   REG_RX_ADDR_PTR      - current HW write pointer into the 256-byte circular buffer
 //   REG_RXTX_PAYLOAD_LEN - intended end index; radio asserts RX_DONE when pointer reaches this value
@@ -1199,6 +1213,34 @@ void SX1262::setup() {
       (this->rx_gain_ == SX1262RxGain::POWER_SAVING) ? RX_GAIN_POWER_SAVING : RX_GAIN_BOOSTED;
   this->write_register_(REG_RX_GAIN, {gain});
   ESP_LOGI(TAG, "RX gain / wzmocnienie RX: %s", (this->rx_gain_ == SX1262RxGain::POWER_SAVING) ? "POWER_SAVING" : "BOOSTED");
+
+  // GFSK baseline fix, ported from RadioLib's fixGFSK() "reset" branch (see
+  // REG_GFSK_FIX_1/3/4 and REG_RSSI_AVG_WINDOW comments above). This driver
+  // has never written any of these four registers, so every SX1262 board in
+  // this project has been running on whatever value survived chip reset -
+  // never verified against what Semtech's own reference code sets. Each
+  // write below is read-modify-write over the stated bit field only; every
+  // other bit in the byte is left exactly as the chip had it.
+  {
+    uint8_t v;
+    v = this->read_register8_(REG_GFSK_FIX_1);
+    v = (uint8_t) ((v & ~0x18) | 0x08);  // bits[4:3] = 01
+    this->write_register_(REG_GFSK_FIX_1, {v});
+
+    v = this->read_register8_(REG_RSSI_AVG_WINDOW);
+    v = (uint8_t) (v & ~0x1C);  // bits[4:2] = 000
+    this->write_register_(REG_RSSI_AVG_WINDOW, {v});
+
+    v = this->read_register8_(REG_GFSK_FIX_3);
+    v = (uint8_t) (v | 0x10);  // bit[4] = 1
+    this->write_register_(REG_GFSK_FIX_3, {v});
+
+    v = this->read_register8_(REG_GFSK_FIX_4);
+    v = (uint8_t) (v & ~0x70);  // bits[6:4] = 000
+    this->write_register_(REG_GFSK_FIX_4, {v});
+
+    ESP_LOGI(TAG, "GFSK baseline fix applied (RadioLib fixGFSK reset branch, undocumented in datasheet)");
+  }
 
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
 
