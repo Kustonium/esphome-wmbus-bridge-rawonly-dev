@@ -443,10 +443,24 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   const bool is_sx1276 = (this->radio != nullptr && strcmp(this->radio->get_name(), "SX1276") == 0);
   const int32_t ok_vs_drop_rssi_gap =
       (this->diag_rssi_ok_n_ == 0 || this->diag_rssi_drop_n_ == 0) ? 0 : (avg_ok_rssi - avg_drop_rssi);
+  // payload_size_unknown and raw_drain_skipped_weak fire on the SAME event on
+  // the SX126x path - the drain is skipped precisely because no length could be
+  // derived and the signal was weak - so adding them counted every false start
+  // twice. Measured 2026-09-02/03 on ten consecutive summaries from four boards:
+  // the two were equal to the unit every time and the total was exactly double.
+  // That matters because the hint below triggers at >= 40, i.e. it was really
+  // firing at 20.
+  //
+  // max() rather than dropping one of them: on the SX1276 path they are NOT the
+  // same event (raw_drain_skipped_weak stays 0 while probe_start_aborted carries
+  // the count), and that case was already correct - 2905 = 522 + 76 + 69 + 2238.
+  // Taking the larger of the pair keeps both drivers right and survives another
+  // counter later overlapping the same way.
+  const uint32_t diag_rx_path_no_length = std::max(this->diag_rx_path_.payload_size_unknown,
+                                          this->diag_rx_path_.raw_drain_skipped_weak);
   const uint32_t rx_false_start_like =
-      this->diag_rx_path_.preamble_read_failed + this->diag_rx_path_.payload_size_unknown +
-      this->diag_rx_path_.weak_start_aborted + this->diag_rx_path_.probe_start_aborted +
-      this->diag_rx_path_.raw_drain_skipped_weak;
+      this->diag_rx_path_.preamble_read_failed + diag_rx_path_no_length +
+      this->diag_rx_path_.weak_start_aborted + this->diag_rx_path_.probe_start_aborted;
   const uint32_t raw_drain_recovery_pct =
       (this->diag_rx_path_.raw_drain_attempted == 0)
           ? 0
@@ -476,8 +490,8 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
       hint_pl = "brak ramek, a odbiornik ani razu się nie wyzwolił; sprawdź antenę, częstotliwość i połączenia";
     } else {
       hint_code = "RX_NO_MATCH";
-      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode and the meter's mode";
-      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode i tryb licznika";
+      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode, min_preamble_bits and the meter's mode";
+      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode, min_preamble_bits i tryb licznika";
     }
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
@@ -897,10 +911,24 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
   const bool is_sx1276 = (this->radio != nullptr && strcmp(this->radio->get_name(), "SX1276") == 0);
   const int32_t ok_vs_drop_rssi_gap =
       (this->diag_15m_rssi_ok_n_ == 0 || this->diag_15m_rssi_drop_n_ == 0) ? 0 : (avg_ok_rssi - avg_drop_rssi);
+  // payload_size_unknown and raw_drain_skipped_weak fire on the SAME event on
+  // the SX126x path - the drain is skipped precisely because no length could be
+  // derived and the signal was weak - so adding them counted every false start
+  // twice. Measured 2026-09-02/03 on ten consecutive summaries from four boards:
+  // the two were equal to the unit every time and the total was exactly double.
+  // That matters because the hint below triggers at >= 40, i.e. it was really
+  // firing at 20.
+  //
+  // max() rather than dropping one of them: on the SX1276 path they are NOT the
+  // same event (raw_drain_skipped_weak stays 0 while probe_start_aborted carries
+  // the count), and that case was already correct - 2905 = 522 + 76 + 69 + 2238.
+  // Taking the larger of the pair keeps both drivers right and survives another
+  // counter later overlapping the same way.
+  const uint32_t diag_15m_rx_path_no_length = std::max(this->diag_15m_rx_path_.payload_size_unknown,
+                                          this->diag_15m_rx_path_.raw_drain_skipped_weak);
   const uint32_t rx_false_start_like =
-      this->diag_15m_rx_path_.preamble_read_failed + this->diag_15m_rx_path_.payload_size_unknown +
-      this->diag_15m_rx_path_.weak_start_aborted + this->diag_15m_rx_path_.probe_start_aborted +
-      this->diag_15m_rx_path_.raw_drain_skipped_weak;
+      this->diag_15m_rx_path_.preamble_read_failed + diag_15m_rx_path_no_length +
+      this->diag_15m_rx_path_.weak_start_aborted + this->diag_15m_rx_path_.probe_start_aborted;
   const uint32_t raw_drain_recovery_pct =
       (this->diag_15m_rx_path_.raw_drain_attempted == 0)
           ? 0
@@ -930,8 +958,8 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
       hint_pl = "brak ramek, a odbiornik ani razu się nie wyzwolił; sprawdź antenę, częstotliwość i połączenia";
     } else {
       hint_code = "RX_NO_MATCH";
-      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode and the meter's mode";
-      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode i tryb licznika";
+      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode, min_preamble_bits and the meter's mode";
+      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode, min_preamble_bits i tryb licznika";
     }
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
@@ -1349,10 +1377,24 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
   const bool is_sx1276 = (this->radio != nullptr && strcmp(this->radio->get_name(), "SX1276") == 0);
   const int32_t ok_vs_drop_rssi_gap =
       (this->diag_60min_rssi_ok_n_ == 0 || this->diag_60min_rssi_drop_n_ == 0) ? 0 : (avg_ok_rssi - avg_drop_rssi);
+  // payload_size_unknown and raw_drain_skipped_weak fire on the SAME event on
+  // the SX126x path - the drain is skipped precisely because no length could be
+  // derived and the signal was weak - so adding them counted every false start
+  // twice. Measured 2026-09-02/03 on ten consecutive summaries from four boards:
+  // the two were equal to the unit every time and the total was exactly double.
+  // That matters because the hint below triggers at >= 40, i.e. it was really
+  // firing at 20.
+  //
+  // max() rather than dropping one of them: on the SX1276 path they are NOT the
+  // same event (raw_drain_skipped_weak stays 0 while probe_start_aborted carries
+  // the count), and that case was already correct - 2905 = 522 + 76 + 69 + 2238.
+  // Taking the larger of the pair keeps both drivers right and survives another
+  // counter later overlapping the same way.
+  const uint32_t diag_60min_rx_path_no_length = std::max(this->diag_60min_rx_path_.payload_size_unknown,
+                                          this->diag_60min_rx_path_.raw_drain_skipped_weak);
   const uint32_t rx_false_start_like =
-      this->diag_60min_rx_path_.preamble_read_failed + this->diag_60min_rx_path_.payload_size_unknown +
-      this->diag_60min_rx_path_.weak_start_aborted + this->diag_60min_rx_path_.probe_start_aborted +
-      this->diag_60min_rx_path_.raw_drain_skipped_weak;
+      this->diag_60min_rx_path_.preamble_read_failed + diag_60min_rx_path_no_length +
+      this->diag_60min_rx_path_.weak_start_aborted + this->diag_60min_rx_path_.probe_start_aborted;
   const uint32_t raw_drain_recovery_pct =
       (this->diag_60min_rx_path_.raw_drain_attempted == 0)
           ? 0
@@ -1382,8 +1424,8 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
       hint_pl = "brak ramek, a odbiornik ani razu się nie wyzwolił; sprawdź antenę, częstotliwość i połączenia";
     } else {
       hint_code = "RX_NO_MATCH";
-      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode and the meter's mode";
-      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode i tryb licznika";
+      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode, min_preamble_bits and the meter's mode";
+      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode, min_preamble_bits i tryb licznika";
     }
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {

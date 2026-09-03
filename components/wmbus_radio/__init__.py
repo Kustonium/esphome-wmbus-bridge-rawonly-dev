@@ -732,6 +732,39 @@ def _validate_radio_pins(config):
                     "detektor w 1/2/3 bajtach, więc 8, 16 i 24 to jedyne wartości niezerowe."
                 )
 
+    # min_preamble_bits above 16 makes a T1 receiver deaf. Measured on hardware
+    # 2026-09-03: an SX1262 on listen_mode: t1 with min_preamble_bits: 24 took
+    # 184 receiver triggers over two minutes and decoded ZERO frames. The
+    # detector waits for 24 bits of continuous preamble, the T1 preamble is
+    # shorter than that, so detection never completes and every frame flies
+    # past. 16 works, so the usable preamble is 16..23 bits - consistent with
+    # the 19 commonly quoted for T-mode.
+    #
+    # So 24 and 32 are not stricter thresholds for T1, they are values outside
+    # its range, and a board configured that way receives nothing at all while
+    # looking healthy: the radio triggers, the frame count stays at zero, and
+    # nothing in the logs points at the preamble unless you know to look. That
+    # is exactly the failure worth refusing at validation time rather than
+    # discovering on a roof. Applies to every radio - this is a property of the
+    # T1 signal, not of the chip - and to `both`, which includes T1.
+    #
+    # C1 and S1 are left alone: their preambles were not measured here, and
+    # guessing in the direction that silently disables a receiver is the wrong
+    # way to be wrong.
+    if (config.get(CONF_MIN_PREAMBLE_BITS, 0) > 16
+            and config.get(CONF_LISTEN_MODE) in ("t1", "both")):
+        raise cv.Invalid(
+            "min_preamble_bits: {} makes a T1 receiver deaf - the T1 preamble is shorter than "
+            "24 bits, so the detector never completes and no frame is ever decoded (measured: "
+            "184 triggers, 0 frames). Use 16 (the default) or 8 for listen_mode {}. / "
+            "min_preamble_bits: {} czyni odbiornik T1 gluchym - preambula T1 jest krotsza niz "
+            "24 bity, wiec detektor nigdy nie konczy detekcji i zadna ramka nie zostaje "
+            "zdekodowana (zmierzone: 184 wyzwolenia, 0 ramek). Uzyj 16 (domyslnie) albo 8 dla "
+            "listen_mode {}.".format(
+                config[CONF_MIN_PREAMBLE_BITS], config.get(CONF_LISTEN_MODE),
+                config[CONF_MIN_PREAMBLE_BITS], config.get(CONF_LISTEN_MODE))
+        )
+
     return config
 
 
