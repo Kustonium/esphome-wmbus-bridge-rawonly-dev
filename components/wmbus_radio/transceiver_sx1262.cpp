@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "transceiver_sx1262.h"
+#include "decode3of6.h"
 
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -52,6 +53,7 @@ static constexpr uint8_t PACKET_TYPE_GFSK = 0x00;
 // ---------------------------------------------------------------------------
 // GFSK modulation / packet parameter constants
 // ---------------------------------------------------------------------------
+static constexpr uint8_t GFSK_PULSE_SHAPE_NONE  = 0x00;  // no filter — upstream (Szczepan) and the LR1121 driver both use this
 static constexpr uint8_t GFSK_PULSE_SHAPE_BT_0_5 = 0x09;
 static constexpr uint8_t GFSK_RX_BW_312_0 = 0x19;
 static constexpr uint8_t GFSK_RX_BW_234_3 = 0x0A;  // 234.3 kHz RX bandwidth (C1)
@@ -527,6 +529,70 @@ static size_t s1_expected_raw_len_(const std::vector<uint8_t> &raw) {
 }
 
 // ---------------------------------------------------------------------------
+// t1_expected_raw_len_: how many raw (3-of-6 coded) bytes this T-mode frame
+// occupies, derived from its own L field. The T counterpart of
+// s1_expected_raw_len_() above, and it exists for the same reason: with no
+// length the stream capture does not know where the frame ends, so it runs on
+// to its byte cap collecting post-frame noise.
+//
+// That was not a corner case in T mode, it was every single capture, because
+// both of the loop's early exits are unreachable in this configuration:
+//
+//   * `end_irq` waits for RX_DONE or TIMEOUT. RX_DONE cannot fire - the loop
+//     pushes REG_RXTX_PAYLOAD_LEN ahead of the write pointer on every poll,
+//     which is exactly what AN1200.53 asks for - and RX is armed continuous,
+//     so there is no TIMEOUT either.
+//   * `silence` waits 30 ms without new bytes. In continuous RX the
+//     demodulator keeps producing bits out of noise once the frame has ended,
+//     so bytes keep arriving, last_change_ms keeps being refreshed, and the
+//     silence never happens. (The S-mode branch does reach this exit, which is
+//     why the note there reads the other way round - a different packet
+//     configuration, and not a claim that holds for T mode.)
+//
+// So every capture ran to `buffer_cap`: 512 bytes, 125 ms of deafness, and a
+// short frame buried under repeated reads of a 256-byte circular buffer. That
+// is where `long_gfsk_packets: true` spent its 7.5 dB - not in sensitivity,
+// which is why no register ever explained it. Confirmed by the field data: the
+// exit reason recorded in the RSSI diagnostics was `buffer_cap` every time,
+// and 512 copied bytes means 512 bytes really did arrive.
+//
+// Two differences from the S-mode helper, both making this one simpler:
+//
+//   * No polarity search. Manchester has two, so s1_expected_raw_len_() tries
+//     both and needs the C field to reject the complement. 3-of-6 has no
+//     polarity ambiguity, so the C field buys nothing here and is not read -
+//     one less byte that has to survive at the sensitivity threshold.
+//   * A decoded byte is exactly 1.5 raw bytes, so encoded_size() from the
+//     3-of-6 decoder answers directly instead of the S-mode x2.
+//
+// Returns 0 when no length can be derived; the caller then keeps its cap.
+// ---------------------------------------------------------------------------
+static size_t t1_expected_raw_len_(const std::vector<uint8_t> &raw) {
+  // Two raw bytes carry the two 6-bit symbols that make up the L field (with
+  // four bits to spare). That is the entire input this needs.
+  if (raw.size() < 2)
+    return 0;
+
+  const std::vector<uint8_t> head(raw.begin(), raw.begin() + 2);
+  const auto decoded = decode3of6(head);
+  if (!decoded.has_value() || decoded->empty())
+    return 0;
+
+  const uint8_t l_field = (*decoded)[0];
+  const size_t frame_len = (size_t) l_field + 1U;
+  // Same bounds as the S-mode helper: under 12 there is no room for a DLL
+  // header, over 260 no wM-Bus frame exists.
+  if (frame_len < 12U || frame_len > 260U)
+    return 0;
+
+  // Format A block layout, identical in both modes: block 1 carries 10 bytes,
+  // every further block 16, each followed by a 2-byte CRC.
+  const size_t blocks = (l_field < 26U) ? 2U : (size_t) ((l_field - 26U) / 16U + 3U);
+  const size_t decoded_with_crc = frame_len + 2U * blocks;
+  return encoded_size(decoded_with_crc);
+}
+
+// ---------------------------------------------------------------------------
 // wait_while_busy_: poll BUSY pin until low (command accepted).
 // Bail out after 200 ms to avoid hanging on a broken SPI bus.
 // ---------------------------------------------------------------------------
@@ -970,6 +1036,7 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
   size_t copied = 0;
   uint8_t state_index = 0;  // last read index (wraps 0..255)
   size_t s1_expected_raw_len = 0;
+  size_t t1_expected_raw_len = 0;
 
   // Instrumentation for the capture itself, not for its contents.
   //
@@ -1073,6 +1140,26 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
           this->rx_buffer_.resize(s1_expected_raw_len);
           copied = s1_expected_raw_len;
           exit_reason = "s1_length";
+          break;
+        }
+      } else if (this->listen_mode_ == LISTEN_MODE_T1) {
+        if (t1_expected_raw_len == 0) {
+          t1_expected_raw_len = t1_expected_raw_len_(this->rx_buffer_);
+          // Same argument as the S-mode branch: the helper only ever reads raw
+          // bytes 0..1, so once those have arrived and yielded nothing they
+          // will keep yielding nothing. Without an L field nothing downstream
+          // can find the block boundaries either, so the frame is already lost
+          // and the only question left is how long to stay deaf over it.
+          // 256 raw bytes is 63 ms instead of 125.
+          if (t1_expected_raw_len == 0 && this->rx_buffer_.size() >= 2)
+            capture_cap = 256;
+        }
+        if (t1_expected_raw_len != 0 && copied >= t1_expected_raw_len) {
+          // Trim the noise the radio wrote after the frame ended. Everything
+          // past this point is post-frame demodulation, never frame content.
+          this->rx_buffer_.resize(t1_expected_raw_len);
+          copied = t1_expected_raw_len;
+          exit_reason = "t1_length";
           break;
         }
       }
@@ -1454,7 +1541,7 @@ void SX1262::setup() {
   // Always FIX_LEN for WMBus.
   const uint8_t pkt_len_mode = GFSK_PACKET_FIX_LEN;
   this->cmd_write_(CMD_SET_PACKET_PARAMS,
-                   {preamble_msb, preamble_lsb, GFSK_PREAMBLE_DETECT_8,
+                   {preamble_msb, preamble_lsb, (uint8_t) this->preamble_detector_,
                     S1_SYNC_WORD_BITS_OR_DEFAULT(this->listen_mode_),
                     GFSK_ADDRESS_FILT_OFF, pkt_len_mode,
                     0xFF,  // max payload

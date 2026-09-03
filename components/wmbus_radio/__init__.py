@@ -96,6 +96,18 @@ CONF_SX1276_BUSY_ETHER_MODE = "sx1276_busy_ether_mode"
 # is a measured optimum (three-point sweep on S-mode, 2026-08-01) and is
 # pinned in the driver. T1 never got that sweep: its 312.0 kHz is inherited,
 # and 25% wider than the window the SX1276 uses for the same mode.
+# SX1262 preamble detector: how many preamble bits the radio must see before it
+# starts a reception. Upstream hardcodes 8; the LR1121 driver uses 16. Measured
+# 2026-09-01: this is the single knob that decides how aggressively a board
+# attempts weak frames, so it belongs in YAML rather than in the source.
+SX1262_PREAMBLE_DETECTORS = {
+    0: "PREAMBLE_DETECT_OFF",
+    8: "PREAMBLE_DETECT_8",
+    16: "PREAMBLE_DETECT_16",
+    24: "PREAMBLE_DETECT_24",
+    32: "PREAMBLE_DETECT_32",
+}
+
 CONF_SX1262_RX_BANDWIDTH = "sx1262_rx_bandwidth"
 SX1262_T1_RX_BANDWIDTHS = {
     "312khz": "T1_BW_312",
@@ -132,7 +144,11 @@ CONF_TCXO_VOLTAGE = "tcxo_voltage"
 # 300 RTC ticks at 32.768 kHz is ~9.2 ms, the vendor value.
 CONF_TCXO_STARTUP_TICKS = "tcxo_startup_ticks"
 CONF_RX_BANDWIDTH = "rx_bandwidth"
-CONF_PREAMBLE_DETECTOR = "preamble_detector"
+# Minimum preamble bits the receiver must see before it starts a reception.
+# Chip-agnostic on purpose: SX1262 and LR1121 expose the same knob under
+# different names. NOT the transmit preamble length - that is a separate
+# SetPacketParams field and is not configurable here.
+CONF_MIN_PREAMBLE_BITS = "min_preamble_bits"
 CONF_PAYLOAD_LENGTH = "payload_length"
 CONF_RX_BOOSTED = "rx_boosted"
 CONF_BITRATE = "bitrate"
@@ -173,11 +189,11 @@ LR1121_RX_BANDWIDTHS = {
 }
 
 LR1121_PREAMBLE_DETECTORS = {
-    "off": "LR1121_PREAMBLE_OFF",
-    "8": "LR1121_PREAMBLE_MIN_8B",
-    "16": "LR1121_PREAMBLE_MIN_16B",
-    "24": "LR1121_PREAMBLE_MIN_24B",
-    "32": "LR1121_PREAMBLE_MIN_32B",
+    0: "LR1121_PREAMBLE_OFF",
+    8: "LR1121_PREAMBLE_MIN_8B",
+    16: "LR1121_PREAMBLE_MIN_16B",
+    24: "LR1121_PREAMBLE_MIN_24B",
+    32: "LR1121_PREAMBLE_MIN_32B",
 }
 
 # Schema defaults, and the SINGLE SOURCE for them: the cv.Optional entries below
@@ -194,7 +210,8 @@ BASE_CONFIG_DEFAULTS_LR1121 = {
     CONF_TCXO_VOLTAGE: "3.0v",
     CONF_TCXO_STARTUP_TICKS: 3000,
     CONF_RX_BANDWIDTH: "234300",
-    CONF_PREAMBLE_DETECTOR: "16",
+    # Shared by SX1262/SX1276/LR1121, not LR1121-only - see the schema entry.
+    CONF_MIN_PREAMBLE_BITS: 16,
     CONF_PAYLOAD_LENGTH: 255,
     CONF_RX_BOOSTED: True,
     CONF_BITRATE: 100000,
@@ -363,6 +380,23 @@ BASE_CONFIG_SCHEMA = (
             # SX1276-specific board helper (for boards such as LilyGO T3 V3.0 TCXO).
             cv.Optional(CONF_TCXO_PIN): pins.internal_gpio_output_pin_schema,
 
+            # Shared by SX1262, SX1276 and LR1121 - deliberately NOT in the
+            # LR1121 block below. All three gate the start of a reception on a
+            # minimum preamble length, and the 2026-09-01 measurements made that
+            # gate the single knob deciding how aggressively a board attempts
+            # weak frames: 8 bits cost ~16% of the meters heard, reproduced on
+            # two independent antenna-matched pairs. CC1101 has the same gate
+            # (PQT) but in different units, and SX1276 has no 32-bit setting;
+            # both are rejected in the validator with a reason.
+            #
+            # The default is read out of BASE_CONFIG_DEFAULTS_LR1121 because
+            # that dict is the single source for schema defaults and the
+            # validator compares against it to tell "the user set this" from
+            # "the schema injected it". It stays there despite the name.
+            cv.Optional(CONF_MIN_PREAMBLE_BITS, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_MIN_PREAMBLE_BITS]): cv.one_of(
+                0, 8, 16, 24, 32, int=True
+            ),
+
             # LR1121-specific tuning (ignored for other radios).
             #
             # Everything the RF path depends on is exposed here on purpose. The
@@ -377,9 +411,6 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_TCXO_STARTUP_TICKS, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_TCXO_STARTUP_TICKS]): cv.int_range(min=1, max=16777215),
             cv.Optional(CONF_RX_BANDWIDTH, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_RX_BANDWIDTH]): cv.one_of(
                 *LR1121_RX_BANDWIDTHS, lower=True
-            ),
-            cv.Optional(CONF_PREAMBLE_DETECTOR, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_PREAMBLE_DETECTOR]): cv.one_of(
-                *LR1121_PREAMBLE_DETECTORS, lower=True
             ),
             cv.Optional(CONF_PAYLOAD_LENGTH, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_PAYLOAD_LENGTH]): cv.int_range(min=16, max=255),
             cv.Optional(CONF_RX_BOOSTED, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_RX_BOOSTED]): cv.boolean,
@@ -536,11 +567,12 @@ _REPORT_CORE = (CONF_RADIO_TYPE, CONF_LISTEN_MODE, CONF_LISTEN_MODE_FILTER_AFTER
 _REPORT_RADIO = {
     "SX1262": (CONF_HAS_TCXO, CONF_TCXO_VOLTAGE, CONF_DIO2_RF_SWITCH, CONF_RF_SWITCH, CONF_RX_GAIN,
                CONF_LONG_GFSK_PACKETS, CONF_CLEAR_DEVICE_ERRORS_ON_BOOT,
-               CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, CONF_SX1262_RX_BANDWIDTH),
-    "SX1276": (CONF_SX1276_BUSY_ETHER_MODE,),
+               CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, CONF_SX1262_RX_BANDWIDTH,
+               CONF_MIN_PREAMBLE_BITS),
+    "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS),
     "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL,),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
-               CONF_RX_BANDWIDTH, CONF_PREAMBLE_DETECTOR, CONF_PAYLOAD_LENGTH,
+               CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
                CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION),
 }
 
@@ -652,7 +684,7 @@ def _validate_radio_pins(config):
     else:
         if config.get(CONF_LR1121_ALLOW_EXPERIMENTAL, False):
             raise cv.Invalid("lr1121_allow_experimental is only valid for radio_type: LR1121.")
-        for key in (CONF_TCXO_STARTUP_TICKS, CONF_RX_BANDWIDTH, CONF_PREAMBLE_DETECTOR,
+        for key in (CONF_TCXO_STARTUP_TICKS, CONF_RX_BANDWIDTH,
                     CONF_PAYLOAD_LENGTH, CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION):
             # Defaults are always present, so only an explicit non-default value
             # is worth rejecting. Silently ignoring it would be worse: the user
@@ -668,6 +700,37 @@ def _validate_radio_pins(config):
         if (radio_type != "SX1262" and CONF_TCXO_VOLTAGE in config
                 and config[CONF_TCXO_VOLTAGE] != BASE_CONFIG_DEFAULTS_LR1121[CONF_TCXO_VOLTAGE]):
             raise cv.Invalid("tcxo_voltage is only valid for radio_type: LR1121 or SX1262.")
+
+        # min_preamble_bits is shared with SX1262 and SX1276 (2026-09-01): all
+        # three gate the start of a reception on a minimum preamble length, and
+        # that gate turned out to be the single knob deciding how aggressively a
+        # board attempts weak frames. Same key, same values, three drivers - so
+        # it is exempt from the LR1121-only loop above.
+        #
+        # Rejected elsewhere because no other driver here implements it, NOT
+        # because the hardware lacks it. The CC1101 has the same gate as PQT
+        # (PKTCTRL1 bits 7:5) - this driver pins PKTCTRL1 to 0x00, i.e. PQT=0,
+        # the fully permissive end, and verifies it stays there. Its units are
+        # quality steps 0-7, not preamble bits, so it cannot share this key's
+        # value space even if it were wired up. SX1276 gates reception
+        # differently again (its own abort machinery).
+        if CONF_MIN_PREAMBLE_BITS in config and config[CONF_MIN_PREAMBLE_BITS] != BASE_CONFIG_DEFAULTS_LR1121[CONF_MIN_PREAMBLE_BITS]:
+            if radio_type == "CC1101":
+                raise cv.Invalid(
+                    "min_preamble_bits is not supported on CC1101. The chip has the same gate "
+                    "(PQT, PKTCTRL1 bits 7:5) but this driver pins PKTCTRL1 to 0x00 and verifies "
+                    "it stays there, and PQT counts quality steps 0-7, not preamble bits. / "
+                    "min_preamble_bits nie jest obsługiwane na CC1101. Układ ma tę samą bramkę "
+                    "(PQT, bity 7:5 rejestru PKTCTRL1), ale ten sterownik ustawia PKTCTRL1 na 0x00 "
+                    "i tego pilnuje, a PQT liczy stopnie jakości 0-7, nie bity preambuły."
+                )
+            if radio_type == "SX1276" and config[CONF_MIN_PREAMBLE_BITS] == 32:
+                raise cv.Invalid(
+                    "min_preamble_bits: 32 is not available on SX1276 - RegPreambleDetect sizes "
+                    "the detector in 1/2/3 bytes, so 8, 16 and 24 are the only non-zero values. / "
+                    "min_preamble_bits: 32 nie istnieje na SX1276 - RegPreambleDetect wymiarowuje "
+                    "detektor w 1/2/3 bajtach, więc 8, 16 i 24 to jedyne wartości niezerowe."
+                )
 
     return config
 
@@ -742,6 +805,15 @@ async def to_code(config):
                 )
             )
         )
+        SX1262PreambleDetector = radio_ns.enum("SX1262PreambleDetector")
+        cg.add(
+            radio_var.set_preamble_detector(
+                getattr(
+                    SX1262PreambleDetector,
+                    SX1262_PREAMBLE_DETECTORS[config.get(CONF_MIN_PREAMBLE_BITS, 16)],
+                )
+            )
+        )
 
         # Clear SX1262 device errors on boot (optional)
         cg.add(radio_var.set_clear_device_errors_on_boot(config.get(CONF_CLEAR_DEVICE_ERRORS_ON_BOOT, False)))
@@ -781,12 +853,15 @@ async def to_code(config):
             getattr(LR1121RxBandwidth, LR1121_RX_BANDWIDTHS[config[CONF_RX_BANDWIDTH]])
         ))
         cg.add(radio_var.set_preamble_detector(
-            getattr(LR1121PreambleDetector, LR1121_PREAMBLE_DETECTORS[config[CONF_PREAMBLE_DETECTOR]])
+            getattr(LR1121PreambleDetector, LR1121_PREAMBLE_DETECTORS[config[CONF_MIN_PREAMBLE_BITS]])
         ))
         cg.add(radio_var.set_payload_length(config[CONF_PAYLOAD_LENGTH]))
         cg.add(radio_var.set_rx_boosted(config[CONF_RX_BOOSTED]))
         cg.add(radio_var.set_bitrate(config[CONF_BITRATE]))
         cg.add(radio_var.set_deviation(config[CONF_DEVIATION]))
+
+    if config[CONF_RADIO_TYPE] == "SX1276":
+        cg.add(radio_var.set_min_preamble_bits(config[CONF_MIN_PREAMBLE_BITS]))
 
     if config[CONF_RADIO_TYPE] == "SX1276" and CONF_TCXO_PIN in config:
         tcxo_pin = await cg.gpio_pin_expression(config[CONF_TCXO_PIN])

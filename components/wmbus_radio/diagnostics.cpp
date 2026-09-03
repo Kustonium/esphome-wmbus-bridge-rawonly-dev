@@ -466,9 +466,19 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
   const char *hint_en = "looks good";
   const char *hint_pl = "wygląda dobrze";
   if (total == 0) {
-    hint_code = "NO_DATA";
-    hint_en = "no packets in this window";
-    hint_pl = "brak ramek w tym oknie";
+    // Split by irq_fired: the receiver either never triggered at all, or it
+    // triggered and nothing survived to the listen_mode filter. Those are two
+    // completely different faults and used to look identical here. The count
+    // itself is on the summary line above as irq=.
+    if (this->diag_rx_path_.irq_fired == 0) {
+      hint_code = "NO_DATA";
+      hint_en = "no packets and the receiver never triggered; check antenna, frequency and wiring";
+      hint_pl = "brak ramek, a odbiornik ani razu się nie wyzwolił; sprawdź antenę, częstotliwość i połączenia";
+    } else {
+      hint_code = "RX_NO_MATCH";
+      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode and the meter's mode";
+      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode i tryb licznika";
+    }
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
       if (c1_avg_drop_rssi <= -95) {
@@ -567,6 +577,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
            "\"interval_s\":%u,"
            "\"uptime_ms\":%lu,"
            "\"listen_mode\":\"%s\","
+           "\"irq_fired\":%u,"
            "\"total\":%u,"
            "\"ok\":%u,"
            "\"truncated\":%u,"
@@ -625,6 +636,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
              "\"other\":%u"
            "},"
            "\"rx_path\":{"
+             "\"irq_fired\":%u,"
              "\"irq_timeout\":%u,"
              "\"preamble_read_failed\":%u,"
              "\"preamble_retry_recovered\":%u,"
@@ -653,6 +665,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
            (unsigned) interval_s,
            (unsigned long) now_ms,
            listen_mode,
+           (unsigned) this->diag_rx_path_.irq_fired,
            (unsigned) total,
            (unsigned) this->diag_ok_,
            (unsigned) this->diag_truncated_,
@@ -724,6 +737,7 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
            (unsigned) this->diag_dropped_by_stage_[SB_DLL_CRC_B2],
            (unsigned) this->diag_dropped_by_stage_[SB_LINK_MODE],
            (unsigned) this->diag_dropped_by_stage_[SB_OTHER],
+           (unsigned) this->diag_rx_path_.irq_fired,
            (unsigned) this->diag_rx_path_.irq_timeout,
            (unsigned) this->diag_rx_path_.preamble_read_failed,
            (unsigned) this->diag_rx_path_.preamble_retry_recovered,
@@ -772,8 +786,9 @@ void Radio::maybe_publish_diag_summary_(uint32_t now_ms) {
 
   const std::string summary_topic = this->diag_summary_topic_();
   mqtt->publish(summary_topic, payload);
-  ESP_LOGI(TAG, "DIAG summary / podsumowanie diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
+  ESP_LOGI(TAG, "DIAG summary / podsumowanie diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s irq=%u total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
+           (unsigned) this->diag_rx_path_.irq_fired,
            (unsigned) total, (unsigned) this->diag_ok_,
            (unsigned) this->diag_truncated_, (unsigned) this->diag_dropped_, (unsigned) crc_failed);
 
@@ -905,9 +920,19 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
   const char *hint_en = "looks good";
   const char *hint_pl = "wygląda dobrze";
   if (total == 0) {
-    hint_code = "NO_DATA";
-    hint_en = "no packets in this window";
-    hint_pl = "brak ramek w tym oknie";
+    // Split by irq_fired: the receiver either never triggered at all, or it
+    // triggered and nothing survived to the listen_mode filter. Those are two
+    // completely different faults and used to look identical here. The count
+    // itself is on the summary line above as irq=.
+    if (this->diag_15m_rx_path_.irq_fired == 0) {
+      hint_code = "NO_DATA";
+      hint_en = "no packets and the receiver never triggered; check antenna, frequency and wiring";
+      hint_pl = "brak ramek, a odbiornik ani razu się nie wyzwolił; sprawdź antenę, częstotliwość i połączenia";
+    } else {
+      hint_code = "RX_NO_MATCH";
+      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode and the meter's mode";
+      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode i tryb licznika";
+    }
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
       if (c1_avg_drop_rssi <= -95) {
@@ -1006,6 +1031,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            "\"interval_s\":%u,"
            "\"uptime_ms\":%lu,"
            "\"listen_mode\":\"%s\","
+           "\"irq_fired\":%u,"
            "\"total\":%u,"
            "\"ok\":%u,"
            "\"truncated\":%u,"
@@ -1062,6 +1088,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
              "\"other\":%u"
            "},"
            "\"rx_path\":{"
+             "\"irq_fired\":%u,"
              "\"irq_timeout\":%u,"
              "\"preamble_read_failed\":%u,"
              "\"preamble_retry_recovered\":%u,"
@@ -1089,6 +1116,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            (unsigned) interval_s,
            (unsigned long) now_ms,
            listen_mode,
+           (unsigned) this->diag_15m_rx_path_.irq_fired,
            (unsigned) total,
            (unsigned) this->diag_15m_ok_,
            (unsigned) this->diag_15m_truncated_,
@@ -1155,6 +1183,7 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
            (unsigned) this->diag_15m_dropped_by_stage_[SB_DLL_CRC_B2],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_LINK_MODE],
            (unsigned) this->diag_15m_dropped_by_stage_[SB_OTHER],
+           (unsigned) this->diag_15m_rx_path_.irq_fired,
            (unsigned) this->diag_15m_rx_path_.irq_timeout,
            (unsigned) this->diag_15m_rx_path_.preamble_read_failed,
            (unsigned) this->diag_15m_rx_path_.preamble_retry_recovered,
@@ -1196,8 +1225,9 @@ void Radio::maybe_publish_diag_15min_summary_(uint32_t now_ms) {
 
   const std::string summary_topic = this->diag_summary_15min_topic_();
   mqtt->publish(summary_topic, payload);
-  ESP_LOGI(TAG, "DIAG 15min summary / podsumowanie 15min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
+  ESP_LOGI(TAG, "DIAG 15min summary / podsumowanie 15min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s irq=%u total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
+           (unsigned) this->diag_15m_rx_path_.irq_fired,
            (unsigned) total, (unsigned) this->diag_15m_ok_,
            (unsigned) this->diag_15m_truncated_, (unsigned) this->diag_15m_dropped_, (unsigned) crc_failed);
 
@@ -1342,9 +1372,19 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
   const char *hint_en = "looks good";
   const char *hint_pl = "wygląda dobrze";
   if (total == 0) {
-    hint_code = "NO_DATA";
-    hint_en = "no packets in this window";
-    hint_pl = "brak ramek w tym oknie";
+    // Split by irq_fired: the receiver either never triggered at all, or it
+    // triggered and nothing survived to the listen_mode filter. Those are two
+    // completely different faults and used to look identical here. The count
+    // itself is on the summary line above as irq=.
+    if (this->diag_60min_rx_path_.irq_fired == 0) {
+      hint_code = "NO_DATA";
+      hint_en = "no packets and the receiver never triggered; check antenna, frequency and wiring";
+      hint_pl = "brak ramek, a odbiornik ani razu się nie wyzwolił; sprawdź antenę, częstotliwość i połączenia";
+    } else {
+      hint_code = "RX_NO_MATCH";
+      hint_en = "receiver triggered but nothing passed the filter - something IS transmitting; check listen_mode and the meter's mode";
+      hint_pl = "odbiornik się wyzwalał, ale nic nie przeszło filtru - coś NADAJE; sprawdź listen_mode i tryb licznika";
+    }
   } else {
     if (c1_total > 0 && c1_ok == 0 && c1_crc == c1_total) {
       if (c1_avg_drop_rssi <= -95) {
@@ -1443,6 +1483,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            "\"interval_s\":%u,"
            "\"uptime_ms\":%lu,"
            "\"listen_mode\":\"%s\","
+           "\"irq_fired\":%u,"
            "\"total\":%u,"
            "\"ok\":%u,"
            "\"truncated\":%u,"
@@ -1499,6 +1540,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
              "\"other\":%u"
            "},"
            "\"rx_path\":{"
+             "\"irq_fired\":%u,"
              "\"irq_timeout\":%u,"
              "\"preamble_read_failed\":%u,"
              "\"preamble_retry_recovered\":%u,"
@@ -1526,6 +1568,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            (unsigned) interval_s,
            (unsigned long) now_ms,
            listen_mode,
+           (unsigned) this->diag_60min_rx_path_.irq_fired,
            (unsigned) total,
            (unsigned) this->diag_60min_ok_,
            (unsigned) this->diag_60min_truncated_,
@@ -1592,6 +1635,7 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
            (unsigned) this->diag_60min_dropped_by_stage_[SB_DLL_CRC_B2],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_LINK_MODE],
            (unsigned) this->diag_60min_dropped_by_stage_[SB_OTHER],
+           (unsigned) this->diag_60min_rx_path_.irq_fired,
            (unsigned) this->diag_60min_rx_path_.irq_timeout,
            (unsigned) this->diag_60min_rx_path_.preamble_read_failed,
            (unsigned) this->diag_60min_rx_path_.preamble_retry_recovered,
@@ -1633,8 +1677,9 @@ void Radio::maybe_publish_diag_60min_summary_(uint32_t now_ms) {
 
   const std::string summary_topic = this->diag_summary_60min_topic_();
   mqtt->publish(summary_topic, payload);
-  ESP_LOGI(TAG, "DIAG 60min summary / podsumowanie 60min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
+  ESP_LOGI(TAG, "DIAG 60min summary / podsumowanie 60min diag: topic=%s interval=%us uptime_ms=%lu listen_mode=%s irq=%u total=%u ok=%u truncated=%u dropped=%u crc_failed=%u",
            summary_topic.c_str(), (unsigned) interval_s, (unsigned long) now_ms, listen_mode,
+           (unsigned) this->diag_60min_rx_path_.irq_fired,
            (unsigned) total, (unsigned) this->diag_60min_ok_,
            (unsigned) this->diag_60min_truncated_, (unsigned) this->diag_60min_dropped_, (unsigned) crc_failed);
 

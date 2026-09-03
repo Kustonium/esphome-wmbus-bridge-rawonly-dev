@@ -1052,6 +1052,9 @@ void Radio::receive_frame() {
     this->radio->restart_rx();
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(hop_ms))) {
       got_irq = true;
+      this->diag_rx_path_.irq_fired++;
+      this->diag_15m_rx_path_.irq_fired++;
+      this->diag_60min_rx_path_.irq_fired++;
       break;
     }
     // A whole hop with no interrupt: the receiver has been armed and quiet, so
@@ -1296,6 +1299,34 @@ void Radio::receive_frame() {
       char detail[112];
       snprintf(detail, sizeof(detail), "remaining=%u total_len=%u already_read=%u", (unsigned) remaining,
                (unsigned) total_len, (unsigned) already_read);
+
+      // Diagnostic, 2026-09-02: read the radio's own receive-chain registers at
+      // the moment the payload read runs short, not at boot. Added to answer one
+      // question - whether REG_RXTX_PAYLOAD_LEN really holds 0x01 here, as the
+      // rx_configured dump on one board suggests, while SetPacketParams writes
+      // 0xFF. A setup-time dump cannot tell "wrong from the start" from "written
+      // later by the stream path"; this can.
+      //
+      // Placed before raw_drain_fallback() so it sees the register state closest
+      // to the failure. That means it also covers reads the drain fallback then
+      // recovers, which do not log "Failed to read data" - so expect more of
+      // these lines than of that warning.
+      //
+      // Once per boot, and that is deliberate. The first run of this diagnostic
+      // produced 35 samples on one board in 21 minutes and every single one was
+      // byte-identical (RxAddrPtr=0x5C RxTxPldLen=0x5C, already_read=18,
+      // regardless of frame length), so repeating it adds nothing and buries the
+      // rest of the log. A reboot re-arms it, which is all that is needed to
+      // check another board or another day. Same convention the RX snapshots
+      // already follow: report once per receive path, then go quiet.
+      {
+        static bool pld_dump_done = false;
+        if (!pld_dump_done) {
+          pld_dump_done = true;
+          ESP_LOGW(TAG, "payload read short / urwany odczyt payloadu: %s", detail);
+          this->radio->dump_debug_status("payload_read_failed");
+        }
+      }
 
       if (raw_drain_fallback("receive_payload", detail, already_read, is_c_mode)) {
         return;

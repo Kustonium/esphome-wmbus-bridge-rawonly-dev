@@ -299,6 +299,11 @@ protected:
   };
 
   struct RxPathCounters {
+    // How many times the radio actually raised the data interrupt, i.e. the
+    // receiver started something at all. Counted before any parsing, so it is
+    // the only counter that separates "never triggered" from "triggered and
+    // then lost downstream".
+    uint32_t irq_fired{0};
     uint32_t irq_timeout{0};
     uint32_t preamble_read_failed{0};
     uint32_t preamble_retry_recovered{0};

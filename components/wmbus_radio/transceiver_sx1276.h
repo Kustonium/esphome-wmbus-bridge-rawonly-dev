@@ -22,6 +22,10 @@ class SX1276 : public RadioTransceiver {
     this->configured_frequency_hz_ = (uint32_t) (frequency_mhz * 1000000.0f + 0.5f);
   }
   void set_tcxo_pin(InternalGPIOPin *pin) { this->tcxo_pin_ = pin; }
+  // Minimum preamble bits before reception starts (RegPreambleDetect 0x1F).
+  // 0 disables the detector; 8/16/24 map to the 1/2/3-byte sizes. 32 does not
+  // exist on this chip - the field is two bits wide.
+  void set_min_preamble_bits(uint8_t bits) { this->min_preamble_bits_ = bits; }
   void setup() override;
   optional<uint8_t> read() override;
   void restart_rx() override;
@@ -39,6 +43,7 @@ class SX1276 : public RadioTransceiver {
  protected:
   uint32_t configured_frequency_hz_{868950000UL};
   InternalGPIOPin *tcxo_pin_{nullptr};
+  uint8_t min_preamble_bits_{16};
   uint8_t sync_cycle_{0};
 
   // Burst chunk buffered in ESP32 RAM and served byte-by-byte to upper layer.
@@ -77,18 +82,11 @@ class SX1276 : public RadioTransceiver {
   // restart_rx(): the point is to report how old the last real reading is.
   int64_t frame_metrics_us_{0};
 
-  // Whole FSK register bank (0x00-0x7F) as hex, captured twice per boot: the
-  // POR baseline right after reset(), and the live state at log_reg_status().
-  // Meant to be run in one listen mode and then the other - or on one radio and
-  // then the other - and the logs diffed. Reading the registers beats arguing
-  // from the setup sequence about which of them can possibly differ.
-  static constexpr size_t REGISTER_BANK_COUNT = 128;
-  void capture_register_bank_(std::array<uint8_t, REGISTER_BANK_COUNT> &snapshot);
-  void log_register_bank_(const char *stage,
-                          const std::array<uint8_t, REGISTER_BANK_COUNT> &snapshot);
-
-  std::array<uint8_t, REGISTER_BANK_COUNT> reset_register_snapshot_{};
-  bool reset_register_snapshot_valid_{false};
+  // Whole FSK register bank as hex, once at boot under verbose diagnostics.
+  // Meant to be run in one listen mode and then the other, and the two logs
+  // diffed - reading the registers beats arguing from the setup sequence about
+  // which of them can possibly differ.
+  void dump_register_bank_();
 };
 
 }  // namespace wmbus_radio
