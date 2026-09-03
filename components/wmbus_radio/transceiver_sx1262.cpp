@@ -611,6 +611,56 @@ uint8_t SX1262::read_register8_(uint16_t addr) {
   return v;
 }
 
+// TEST INSTRUMENTATION: capture the register neighbourhoods that contain the
+// undocumented GFSK baseline fields and the documented RSSI/AGC calibration
+// table. The POR snapshot is retained until log_reg_status(), because setup()
+// runs early enough that its INFO output may not reach an attached log client.
+void SX1262::capture_candidate_registers_(
+    std::array<uint8_t, CANDIDATE_REGISTER_COUNT> &snapshot) {
+  struct RegisterRange {
+    uint16_t first;
+    uint16_t last;
+  };
+  static constexpr RegisterRange ranges[] = {
+      {0x06A0, 0x06DF},  // packet/GFSK area: includes 0x06AC and 0x06D1
+      {0x0880, 0x08BF},  // RSSI/AGC area: includes 0x089B..0x089D, 0x08B8/0x08B9
+      {0x08E0, 0x08FF},  // AGC gain table: includes 0x08F5..0x08FB
+  };
+
+  size_t index = 0;
+  for (const auto &range : ranges) {
+    for (uint16_t address = range.first; address <= range.last; address++) {
+      snapshot[index++] = this->read_register8_(address);
+    }
+  }
+}
+
+// Print a captured snapshot as sixteen bytes per line. This routine is
+// read-only; it does not touch the radio and therefore cannot perturb RX.
+void SX1262::log_candidate_registers_(
+    const char *stage, const std::array<uint8_t, CANDIDATE_REGISTER_COUNT> &snapshot) {
+  static constexpr uint16_t range_starts[] = {0x06A0, 0x0880, 0x08E0};
+  static constexpr uint8_t range_lengths[] = {64, 64, 32};
+  size_t index = 0;
+
+  ESP_LOGI(TAG, "SX1262 REGISTER DUMP BEGIN stage=%s", stage != nullptr ? stage : "?");
+  for (size_t range = 0; range < 3; range++) {
+    for (uint8_t range_offset = 0; range_offset < range_lengths[range]; range_offset += 16) {
+      const uint16_t base = (uint16_t) (range_starts[range] + range_offset);
+      char line[96];
+      int used = snprintf(line, sizeof(line), "%04X:", (unsigned) base);
+      for (uint8_t offset = 0; offset < 16; offset++) {
+        const uint8_t value = snapshot[index++];
+        if (used > 0 && (size_t) used < sizeof(line)) {
+          used += snprintf(line + used, sizeof(line) - (size_t) used, " %02X", value);
+        }
+      }
+      ESP_LOGI(TAG, "SX1262 REG [%s] %s", stage != nullptr ? stage : "?", line);
+    }
+  }
+  ESP_LOGI(TAG, "SX1262 REGISTER DUMP END stage=%s", stage != nullptr ? stage : "?");
+}
+
 
 
 // ---------------------------------------------------------------------------
@@ -1208,6 +1258,11 @@ void SX1262::setup() {
   this->reset();
   delay(10);
 
+  // TEST INSTRUMENTATION: retain the POR baseline before this driver changes
+  // RX gain, applies the RadioLib GFSK fix, or runs calibration/configuration.
+  this->capture_candidate_registers_(this->reset_register_snapshot_);
+  this->reset_register_snapshot_valid_ = true;
+
   // Apply RX gain (datasheet values)
   const uint8_t gain =
       (this->rx_gain_ == SX1262RxGain::POWER_SAVING) ? RX_GAIN_POWER_SAVING : RX_GAIN_BOOSTED;
@@ -1523,6 +1578,16 @@ void SX1262::dump_debug_status(const char *reason) {
 }
 
 void SX1262::log_reg_status() {
+  // TEST INSTRUMENTATION: print both snapshots here, when ESPHome emits the
+  // normal visible component report. Capture the live state immediately before
+  // printing it; logging itself performs no further SPI transactions.
+  if (this->reset_register_snapshot_valid_) {
+    this->log_candidate_registers_("after_reset", this->reset_register_snapshot_);
+  }
+  std::array<uint8_t, CANDIDATE_REGISTER_COUNT> configured_snapshot{};
+  this->capture_candidate_registers_(configured_snapshot);
+  this->log_candidate_registers_("rx_configured", configured_snapshot);
+
   // SX1262 uses 16-bit register addresses; reading via CMD_READ_REGISTER.
   const uint8_t reg_rx_gain  = this->read_register8_(REG_RX_GAIN);
   const uint8_t reg_sync0    = this->read_register8_(REG_SYNC_WORD_0);

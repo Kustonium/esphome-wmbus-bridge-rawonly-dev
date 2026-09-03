@@ -4,6 +4,7 @@
 #include "transceiver.h"
 #include "esphome/core/hal.h"
 
+#include <array>
 #include <vector>
 
 namespace esphome {
@@ -113,6 +114,10 @@ class SX1262 : public RadioTransceiver {
 
   // Register helpers
   uint8_t read_register8_(uint16_t addr);
+  static constexpr size_t CANDIDATE_REGISTER_COUNT = 160;
+  void capture_candidate_registers_(std::array<uint8_t, CANDIDATE_REGISTER_COUNT> &snapshot);
+  void log_candidate_registers_(const char *stage,
+                                const std::array<uint8_t, CANDIDATE_REGISTER_COUNT> &snapshot);
   uint16_t get_irq_status_();
 
   // Raw SX126x status byte (GetStatus). Chip mode lives in bits 6:4 and is the
@@ -127,6 +132,9 @@ class SX1262 : public RadioTransceiver {
 
   // Raw RssiSync / RssiAvg from GetPacketStatus (0 = never latched).
   void read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg);
+
+  std::array<uint8_t, CANDIDATE_REGISTER_COUNT> reset_register_snapshot_{};
+  bool reset_register_snapshot_valid_{false};
 
   // Which of the two receive paths produced a frame. Doubles as the index into
   // rssi_diag_reported_, so the values must stay 0/1.

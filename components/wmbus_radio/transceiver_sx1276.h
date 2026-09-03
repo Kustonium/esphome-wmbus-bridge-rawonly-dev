@@ -77,11 +77,18 @@ class SX1276 : public RadioTransceiver {
   // restart_rx(): the point is to report how old the last real reading is.
   int64_t frame_metrics_us_{0};
 
-  // Whole FSK register bank as hex, once at boot under verbose diagnostics.
-  // Meant to be run in one listen mode and then the other, and the two logs
-  // diffed - reading the registers beats arguing from the setup sequence about
-  // which of them can possibly differ.
-  void dump_register_bank_();
+  // Whole FSK register bank (0x00-0x7F) as hex, captured twice per boot: the
+  // POR baseline right after reset(), and the live state at log_reg_status().
+  // Meant to be run in one listen mode and then the other - or on one radio and
+  // then the other - and the logs diffed. Reading the registers beats arguing
+  // from the setup sequence about which of them can possibly differ.
+  static constexpr size_t REGISTER_BANK_COUNT = 128;
+  void capture_register_bank_(std::array<uint8_t, REGISTER_BANK_COUNT> &snapshot);
+  void log_register_bank_(const char *stage,
+                          const std::array<uint8_t, REGISTER_BANK_COUNT> &snapshot);
+
+  std::array<uint8_t, REGISTER_BANK_COUNT> reset_register_snapshot_{};
+  bool reset_register_snapshot_valid_{false};
 };
 
 }  // namespace wmbus_radio

@@ -202,6 +202,12 @@ void SX1276::setup() {
   }
   this->reset();
 
+  // TEST INSTRUMENTATION: retain the POR baseline before this driver writes a
+  // single register, so the configured bank can be diffed against the state the
+  // chip powers up in rather than against an assumption about it.
+  this->capture_register_bank_(this->reset_register_snapshot_);
+  this->reset_register_snapshot_valid_ = true;
+
   const uint8_t revision = this->spi_read(0x42);
   if (revision < 0x11 || revision > 0x13) {
     ESP_LOGE(TAG, "Invalid silicon revision / nieprawidlowa rewizja ukladu: %02X", revision);
@@ -302,43 +308,65 @@ void SX1276::log_reg_status() {
                   "Check VCC/GND/SCK/MOSI/MISO/NSS/RESET.");
   }
 
-  if (this->diag_verbose_)
-    this->dump_register_bank_();
+  // TEST INSTRUMENTATION: print both stages here, where ESPHome emits the
+  // normal visible component report. Unconditional, like the matching SX1262
+  // dump - the point is to be able to compare two radios from one log taken
+  // with the same YAML, without a diagnostics option in between.
+  if (this->reset_register_snapshot_valid_)
+    this->log_register_bank_("after_reset", this->reset_register_snapshot_);
+
+  std::array<uint8_t, REGISTER_BANK_COUNT> configured_snapshot{};
+  this->capture_register_bank_(configured_snapshot);
+  this->log_register_bank_("rx_configured", configured_snapshot);
 }
 
 // ---------------------------------------------------------------------------
-// dump_register_bank_: the whole FSK register bank, once, as hex.
+// capture_register_bank_ / log_register_bank_: the whole FSK register bank as
+// hex, captured at two stages and printed once each at boot.
 //
 // This exists because reasoning about which registers differ between two
-// listen modes turned out to be a poor substitute for reading them. The setup
-// sequence is a hundred lines of literals; deriving from it that "only the bit
-// rate and the sync length can differ" is an argument, and arguments have been
-// wrong repeatedly here. Dumping the bank in one mode and in the other and
-// diffing the two logs is not an argument.
+// listen modes - or between two radios - turned out to be a poor substitute for
+// reading them. The setup sequence is a hundred lines of literals; deriving
+// from it that "only the bit rate and the sync length can differ" is an
+// argument, and arguments have been wrong repeatedly here. Dumping the bank in
+// one mode and in the other and diffing the two logs is not an argument.
+//
+// The range is 0x00-0x7F, which covers the whole FSK/OOK map: the configuration
+// bank up to 0x4F, RegBitrateFrac at 0x5D, the AGC reference and thresholds at
+// 0x61-0x64, and RegPll at 0x70. Reserved addresses in between are read and
+// printed as they come; reading them has no side effect.
 //
 // 0x00 is deliberately skipped: it is RegFifo, and reading it pops a byte off
-// the receive FIFO. Printed as "--" so the column alignment still matches the
-// datasheet's address grid.
-//
-// Runs from log_reg_status(), i.e. from the main task at boot, under verbose
-// diagnostics only. Five lines per boot.
+// the receive FIFO. Stored as 0x00 and printed as "--" so the column alignment
+// still matches the datasheet's address grid.
 // ---------------------------------------------------------------------------
-void SX1276::dump_register_bank_() {
-  ESP_LOGI(TAG, "Register bank / bank rejestrow (FSK, 0x00-0x4F; 0x00 = RegFifo, not read):");
-  for (uint8_t base = 0x00; base < 0x50; base = (uint8_t) (base + 0x10)) {
+void SX1276::capture_register_bank_(std::array<uint8_t, REGISTER_BANK_COUNT> &snapshot) {
+  for (size_t addr = 0; addr < REGISTER_BANK_COUNT; addr++)
+    snapshot[addr] = (addr == REG_FIFO) ? (uint8_t) 0x00 : this->spi_read((uint8_t) addr);
+}
+
+// Print a captured snapshot as sixteen bytes per line. This routine is
+// read-only; it does not touch the radio and therefore cannot perturb RX.
+void SX1276::log_register_bank_(const char *stage,
+                                const std::array<uint8_t, REGISTER_BANK_COUNT> &snapshot) {
+  const char *tag = (stage != nullptr) ? stage : "?";
+
+  ESP_LOGI(TAG, "SX1276 REGISTER DUMP BEGIN stage=%s", tag);
+  for (size_t base = 0; base < REGISTER_BANK_COUNT; base += 16) {
     char line[80];
-    int pos = snprintf(line, sizeof(line), "  %02X:", base);
-    for (uint8_t off = 0; off < 0x10; off++) {
-      const uint8_t addr = (uint8_t) (base + off);
-      if (addr == REG_FIFO) {
-        pos += snprintf(line + pos, sizeof(line) - pos, " --");
-        continue;
+    int used = snprintf(line, sizeof(line), "%02X:", (unsigned) base);
+    for (size_t offset = 0; offset < 16; offset++) {
+      const size_t addr = base + offset;
+      if (used > 0 && (size_t) used < sizeof(line)) {
+        if (addr == REG_FIFO)
+          used += snprintf(line + used, sizeof(line) - (size_t) used, " --");
+        else
+          used += snprintf(line + used, sizeof(line) - (size_t) used, " %02X", snapshot[addr]);
       }
-      pos += snprintf(line + pos, sizeof(line) - pos, " %02X", this->spi_read(addr));
     }
-    ESP_LOGI(TAG, "%s", line);
+    ESP_LOGI(TAG, "SX1276 REG [%s] %s", tag, line);
   }
-  ESP_LOGI(TAG, "  5D: %02X  (RegBitrateFrac)", this->spi_read(0x5D));
+  ESP_LOGI(TAG, "SX1276 REGISTER DUMP END stage=%s", tag);
 }
 
 // ---------------------------------------------------------------------------
