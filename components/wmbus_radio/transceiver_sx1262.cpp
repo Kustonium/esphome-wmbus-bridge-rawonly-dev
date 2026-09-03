@@ -1148,11 +1148,27 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
           // Same argument as the S-mode branch: the helper only ever reads raw
           // bytes 0..1, so once those have arrived and yielded nothing they
           // will keep yielding nothing. Without an L field nothing downstream
-          // can find the block boundaries either, so the frame is already lost
-          // and the only question left is how long to stay deaf over it.
-          // 256 raw bytes is 63 ms instead of 125.
-          if (t1_expected_raw_len == 0 && this->rx_buffer_.size() >= 2)
-            capture_cap = 256;
+          // can find the block boundaries either, so the frame is already lost.
+          //
+          // Where this differs from S-mode: stop NOW rather than gathering a
+          // shorter window. Every further byte is time spent deaf over a frame
+          // that will be discarded anyway, and this is the one path that fires
+          // more often the weaker the signal - so continuing costs exactly the
+          // frames that were hardest to catch in the first place. That feedback
+          // is a candidate for the ~7 dB this mode still loses in weak signal
+          // (measured 2026-09-02/03, off -> on -> off on one board).
+          //
+          // Verbose keeps the old 256-byte window: telling a genuine weak frame
+          // from a noise trigger needs to see what the stream looked like, and
+          // that is worth 63 ms when somebody is deliberately watching.
+          if (t1_expected_raw_len == 0 && this->rx_buffer_.size() >= 2) {
+            if (this->diag_verbose_) {
+              capture_cap = 256;
+            } else {
+              exit_reason = "t1_no_length";
+              break;
+            }
+          }
         }
         if (t1_expected_raw_len != 0 && copied >= t1_expected_raw_len) {
           // Trim the noise the radio wrote after the frame ended. Everything
