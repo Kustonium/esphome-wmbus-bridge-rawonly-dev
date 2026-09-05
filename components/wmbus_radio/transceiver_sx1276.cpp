@@ -264,7 +264,7 @@ void SX1276::setup() {
   // Size was pinned at 2 bytes (16 bits) until 2026-09-01; it is now the
   // min_preamble_bits option, shared with SX1262 and LR1121.
   {
-    const uint8_t tol = 0x0A;
+    const uint8_t tol = this->preamble_tolerance_;
     uint8_t v = 0;
     if (this->min_preamble_bits_ == 0) {
       v = tol;  // detector off

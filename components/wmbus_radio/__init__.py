@@ -120,6 +120,7 @@ CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY = "diagnostic_publish_highlight_only"
 CONF_DIAG_METER_STATS = "diagnostic_meter_stats"
 CONF_DIAG_PUBLISH_SUGGESTION = "diagnostic_publish_suggestion"
 CONF_SX1276_BUSY_ETHER_MODE = "sx1276_busy_ether_mode"
+CONF_SX1276_PREAMBLE_TOLERANCE = "sx1276_preamble_tolerance"
 
 # SX1262 T1 receiver bandwidth. C1 and S1 are not affected - their 234.3 kHz
 # is a measured optimum (three-point sweep on S-mode, 2026-08-01) and is
@@ -586,6 +587,18 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_SX1276_BUSY_ETHER_MODE, default="normal"): cv.one_of(
                 "normal", "aggressive", "adaptive", lower=True
             ),
+
+            # Chip errors tolerated inside the preamble pattern
+            # (RegPreambleDetect 0x1F, bits 4:0). SX1276 only - the SX126x and
+            # LR1121 have no equivalent field, their sync match is exact.
+            #
+            # Diagnostic knob. 0 makes the match exact here too, which is the
+            # direct test of whether this field is why the SX1276 is the only
+            # receiver in the benchmark that still decodes an off-rate
+            # transmitter (measured 2026-09-05: 8.4% at -6% chip rate, against
+            # exactly zero on two SX1262 boards and an LR1121).
+            cv.Optional(CONF_SX1276_PREAMBLE_TOLERANCE, default=10): cv.int_range(min=0, max=31),
+
             cv.Optional(CONF_SX1262_RX_BANDWIDTH, default="312khz"): cv.one_of(
                 *SX1262_T1_RX_BANDWIDTHS, lower=True
             ),
@@ -679,7 +692,8 @@ _REPORT_RADIO = {
                CONF_LONG_GFSK_PACKETS, CONF_CLEAR_DEVICE_ERRORS_ON_BOOT,
                CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, CONF_SX1262_RX_BANDWIDTH,
                CONF_MIN_PREAMBLE_BITS),
-    "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS),
+    "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS,
+               CONF_SX1276_PREAMBLE_TOLERANCE),
     "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL,),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
                CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
@@ -1007,6 +1021,7 @@ async def to_code(config):
 
     if config[CONF_RADIO_TYPE] == "SX1276":
         cg.add(radio_var.set_min_preamble_bits(config[CONF_MIN_PREAMBLE_BITS]))
+        cg.add(radio_var.set_preamble_tolerance(config[CONF_SX1276_PREAMBLE_TOLERANCE]))
 
     if config[CONF_RADIO_TYPE] == "SX1276" and CONF_TCXO_PIN in config:
         tcxo_pin = await cg.gpio_pin_expression(config[CONF_TCXO_PIN])
