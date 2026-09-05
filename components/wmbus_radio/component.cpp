@@ -1154,6 +1154,26 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              mfr, id_str, (unsigned) ver, (unsigned) dev, (unsigned) ci);
   }
 
+  // Per-frame frequency error, next to the meter that sent it.
+  //
+  // This exists because the offset is a property of the TRANSMITTER's crystal,
+  // so it only means anything when it is tied to a meter id. The timeout dump
+  // reports the same numbers, but only after 60 s with no interrupt at all -
+  // a condition a board receiving T1 traffic never reaches, which made the
+  // measurement unobtainable in exactly the mode where it matters.
+  //
+  // Only the SX1276 answers: SX126x and LR1121 have no AFC in GFSK and no
+  // register that reports the offset, so on those radios this is silent.
+  if (this->diag_verbose_) {
+    int32_t afc_hz = 0, fei_hz = 0;
+    if (this->radio->take_frame_freq_error(&afc_hz, &fei_hz)) {
+      ESP_LOGI(TAG, "FREQERR id:%s mode:%s len:%zu rssi:%ddBm afc:%ldHz fei:%ldHz"
+                    " / blad czestotliwosci nadajnika",
+               id_str, link_mode_name(frame->link_mode()), d.size(), frame->rssi(),
+               (long) afc_hz, (long) fei_hz);
+    }
+  }
+
   this->maybe_forward_frame_(frame.value(), id_val, id_raw, id_str, log_tag);
 
   for (auto &handler : this->handlers_)

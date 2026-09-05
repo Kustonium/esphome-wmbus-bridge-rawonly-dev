@@ -39,6 +39,7 @@ class SX1276 : public RadioTransceiver {
   uint32_t take_fifo_overrun_count() override;
   void log_reg_status() override;
   void dump_debug_status(const char *reason) override;
+  bool take_frame_freq_error(int32_t *afc_hz, int32_t *fei_hz) override;
 
  protected:
   uint32_t configured_frequency_hz_{868950000UL};
@@ -81,6 +82,12 @@ class SX1276 : public RadioTransceiver {
   // Timestamp of the latch, 0 = nothing received since boot. Not cleared by
   // restart_rx(): the point is to report how old the last real reading is.
   int64_t frame_metrics_us_{0};
+  // Set by latch_frame_metrics_(), cleared by take_frame_freq_error(). Exists
+  // so the per-frame report is tied to a frame and not to whoever asks: the
+  // timeout dump prints the same latch every minute by design, and that is
+  // fine there because it prints the age alongside. A per-frame line has no
+  // age field, so it must not be allowed to repeat.
+  bool freq_error_fresh_{false};
 
   // Whole FSK register bank as hex, once at boot under verbose diagnostics.
   // Meant to be run in one listen mode and then the other, and the two logs

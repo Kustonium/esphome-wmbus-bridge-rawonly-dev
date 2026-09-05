@@ -74,6 +74,16 @@ public:
   // Optional radio-specific debug dump. Used when RX waits time out.
   virtual void dump_debug_status(const char *reason) {}
 
+  // Frequency error of the frame just received, in Hz, latched when its first
+  // bytes arrived. Returns false on radios that cannot measure it - which is
+  // every one here except the SX1276: SX126x and LR1121 have no AFC in GFSK
+  // and no register that reports the offset.
+  //
+  // Single-shot on purpose: it answers true once per latched frame and then
+  // goes quiet, so a caller that runs more often than frames arrive cannot
+  // report the same reading twice as if it were two measurements.
+  virtual bool take_frame_freq_error(int32_t *afc_hz, int32_t *fei_hz) { return false; }
+
   // Verbose diagnostics, pushed down from the component before the receiver
   // task starts.
   //
