@@ -555,12 +555,26 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                  "  dio2_rf_switch: false -> check board wiring; OK only for boards without DIO2 RF switch / sprawdz plytke; OK tylko bez przelacznika RF na DIO2");
       }
 
+      // Which of these two is the warning was inverted on 2026-09-03, because
+      // the measurement went the other way than the original guess.
+      //
+      // `true` costs about 7 dB in weak signal. Measured off/on/off on one
+      // board over three windows, with three untouched control boards holding
+      // their RSSI percentile to the decibel across all of it. That price is
+      // paid on every frame, whether or not a long one ever arrives.
+      //
+      // `false` costs nothing unless a meter actually sends more than about
+      // 150 decoded bytes - a three-phase electricity meter will, a typical
+      // water or heat meter will not. So the conditional cost belongs to
+      // `false` and the unconditional one to `true`, which is the opposite of
+      // how this used to read.
       if (t1_like) {
         if (this->sx1262_yaml_long_gfsk_packets_) {
-          ESP_LOGI(TAG, "  long_gfsk_packets: true -> long T1 frames supported / dlugie ramki T1 obslugiwane");
-        } else {
           ESP_LOGW(TAG,
-                   "  long_gfsk_packets: false -> RISK(!): long T1 frames may be truncated or dropped / dlugie ramki T1 moga byc ucinane albo dropowane");
+                   "  long_gfsk_packets: true -> costs ~7 dB in weak signal; worth it only if you receive frames above ~150 decoded bytes / kosztuje ~7 dB przy slabym sygnale; oplaca sie tylko, jesli odbierasz ramki powyzej ~150 bajtow zdekodowanych");
+        } else {
+          ESP_LOGI(TAG,
+                   "  long_gfsk_packets: false -> full sensitivity; frames above ~150 decoded bytes are truncated / pelna czulosc; ramki powyzej ~150 bajtow zdekodowanych sa ucinane");
         }
       } else {
         ESP_LOGI(TAG, "  long_gfsk_packets: %s -> long T1 check not applicable for this listen_mode / kontrola dlugich T1 nie dotyczy tego trybu",
