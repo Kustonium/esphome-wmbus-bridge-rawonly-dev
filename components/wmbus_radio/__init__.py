@@ -27,6 +27,15 @@ DEPENDENCIES = ["esp32", "spi", "mqtt"]
 # Single public component only.
 # Everything needed by the raw-only bridge lives inside wmbus_radio, so the user
 # can keep a simple YAML declaration: components: [wmbus_radio]
+#
+# Deliberately still empty. The optional sensor:/number:/select: platforms of
+# this component are used by a minority of configs, and auto-loading their core
+# components would make every user compile three extra base components just so
+# mqtt_outbox.cpp could include their headers - the opposite of an opt-in
+# feature. Those includes are now guarded by USE_SENSOR / USE_NUMBER /
+# USE_SELECT, which ESPHome defines for whichever components a config actually
+# loads; declaring `sensor: - platform: wmbus_radio` loads the sensor component
+# on its own, so nothing is lost by keeping this empty.
 AUTO_LOAD = []
 
 MULTI_CONF = True
@@ -51,6 +60,26 @@ CONF_TARGET_LOG = "target_log"
 CONF_PUBLISH_RADIO_RAW = "publish_radio_raw"
 CONF_PUBLISH_RSSI = "publish_rssi"
 CONF_FORWARD_METERS = "forward_meters"
+
+# Per-topic MQTT QoS (0/1/2). Every default below matches the value that was
+# previously hardcoded, so an existing YAML with none of these set keeps
+# publishing exactly as before.
+CONF_TELEGRAM_QOS = "telegram_qos"
+CONF_RSSI_QOS = "rssi_qos"
+CONF_HEALTH_QOS = "health_qos"
+CONF_DIAGNOSTIC_QOS = "diagnostic_qos"
+CONF_RX_QOS = "rx_qos"
+
+# RAM store-and-forward buffer for the telegram/rx-metadata stream while MQTT
+# is disconnected. 0 disables buffering (pre-existing behaviour: drop).
+CONF_MQTT_BUFFER_SIZE = "mqtt_buffer_size"
+
+# Per-meter share of the RAM buffer, only meaningful with a non-empty
+# forward_meters whitelist. Plain positive integer weights (not percentages)
+# so there is no total the user has to make add up correctly - see
+# Radio::recompute_buffer_quotas_() in mqtt_outbox.cpp for how weights become
+# quotas that always sum to exactly the current buffer capacity.
+CONF_BUFFER_PRIORITY = "buffer_priority"
 
 # SX1262 board helpers
 CONF_DIO2_RF_SWITCH = "dio2_rf_switch"
@@ -301,6 +330,43 @@ def _meters_csv(values):
     return ",".join([str(m).strip() for m in values if str(m).strip()])
 
 
+def _priority_csv(mapping):
+    """Join a YAML buffer_priority {meter_id: weight} mapping into the
+    "<id>:<weight>,<id>:<weight>,..." CSV string parsed by
+    parse_meter_priority_csv_ in component.cpp. Keys are already validated
+    meter-ID strings (_validate_meter_id), so no further quoting is needed."""
+    return ",".join(f"{str(k).strip()}:{v}" for k, v in mapping.items())
+
+
+def _validate_mqtt_buffer_size(value):
+    """Either an explicit MESSAGE count, or "auto" to size the buffer from free
+    heap/PSRAM at runtime (see Radio::suggested_mqtt_outbox_capacity_ in
+    mqtt_outbox.cpp - re-evaluated periodically, not just once at boot).
+
+    UNITS: this counts queued MQTT MESSAGES, not telegrams. One received
+    telegram enqueues TWO of them - the raw frame on .../telegram and its
+    metadata companion (rssi_dbm + received_at) on .../rx, which is published
+    for every forwarded frame because rx_topic is always configured. So
+    mqtt_buffer_size: 64 survives roughly 32 telegrams, not 64. Every figure
+    in this feature uses the same unit (the buffer_depth / buffer_dropped_*
+    sensors, the buffer_capacity number, the per-meter buffer_priority
+    quotas), so there is exactly one unit to reason about - but it is
+    messages, and halving it is the number of readings you actually keep.
+
+    The explicit-number path keeps a sanity cap (8192): typos like an extra
+    zero should fail validation, not silently compile. It is a soft ceiling
+    either way - the C++ side refuses to grow the buffer once free heap (or
+    free PSRAM, on a board whose payloads live there) drops below its safety
+    reserve, regardless of what number is configured here. On a board without
+    PSRAM a value in the thousands is simply unreachable and the runtime
+    reserve pins the effective size far lower; "auto" is the sane choice
+    there. On a PSRAM board a few thousand frames is realistic.
+    """
+    if isinstance(value, str) and value.strip().lower() == "auto":
+        return "auto"
+    return cv.int_range(min=0, max=8192)(value)
+
+
 def _normalize_diagnostic_mode(mode):
     mode = str(mode).lower().strip()
     if mode == "medium":
@@ -452,6 +518,46 @@ BASE_CONFIG_SCHEMA = (
                 cv.boolean, cv.ensure_list(_validate_meter_id)
             ),
 
+            # Per-topic MQTT QoS. Recommended: QoS 1 on the telegram/rx path
+            # once mqtt_buffer_size > 0 (the buffered replay then also lands
+            # at-least-once on reconnect). Defaults keep the pre-existing
+            # hardcoded values, so an untouched YAML publishes identically.
+            cv.Optional(CONF_TELEGRAM_QOS, default=0): cv.int_range(min=0, max=2),
+            cv.Optional(CONF_RSSI_QOS, default=0): cv.int_range(min=0, max=2),
+            cv.Optional(CONF_HEALTH_QOS, default=0): cv.int_range(min=0, max=2),
+            cv.Optional(CONF_DIAGNOSTIC_QOS, default=0): cv.int_range(min=0, max=2),
+            cv.Optional(CONF_RX_QOS, default=1): cv.int_range(min=0, max=2),
+
+            # RAM outbox ceiling for the telegram + /rx metadata stream while
+            # MQTT is disconnected, counted in MESSAGES (two per telegram -
+            # see _validate_mqtt_buffer_size). "auto" sizes it from free
+            # heap/PSRAM at runtime. Runtime-adjustable downward via number:
+            # buffer_capacity if declared; see the sensor:/number:/select:
+            # platforms.
+            #
+            # DEFAULT 0 = OFF, i.e. opt-in. Store-and-forward is not a free
+            # improvement that can be switched on for everybody: it changes
+            # MQTT delivery semantics (a reconnect replays a burst of
+            # telegrams whose received_at is minutes old, which a backend that
+            # timestamps on arrival will render as a step) and it spends
+            # internal heap on boards without PSRAM. An existing config that
+            # is upgraded must keep behaving exactly as it did, so switching
+            # this on is a decision the user makes in YAML.
+            cv.Optional(CONF_MQTT_BUFFER_SIZE, default=0): _validate_mqtt_buffer_size,
+
+            # Per-meter RAM buffer share, only meaningful with a non-empty
+            # forward_meters whitelist. Every key must be a meter ID already
+            # usable in forward_meters/highlight_meters; the value is a plain
+            # weight (not a percentage - no total to make add up), e.g.:
+            #   buffer_priority:
+            #     "12345678": 3   # gets 3x the buffer share of a default (1) meter
+            #     "0x417F0666": 1
+            # A whitelisted meter with no entry here defaults to weight 1, so
+            # leaving this unset entirely means an equal split.
+            cv.Optional(CONF_BUFFER_PRIORITY, default={}): cv.Schema(
+                {_validate_meter_id: cv.int_range(min=1, max=1000)}
+            ),
+
             # Diagnostics are opt-in by default. `diagnostic_mode` applies a preset
             # for MQTT publishing only; explicit detailed flags still override it.
             cv.Optional(CONF_DIAGNOSTIC_MODE, default="off"): cv.one_of(
@@ -542,6 +648,10 @@ def _report_value(value, key=None):
     # on a setting that changes nothing.
     if key == CONF_FORWARD_METERS and (value is False or (isinstance(value, (list, tuple)) and not value)):
         return "disabled (no whitelist)"
+    if key == CONF_BUFFER_PRIORITY:
+        if not value:
+            return "disabled (shared buffer)"
+        return f"{len(value)} meter(s): " + ", ".join(f"{k}:w{v}" for k, v in value.items())
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, dict) and "number" in value:
@@ -577,7 +687,9 @@ _REPORT_RADIO = {
 }
 
 _REPORT_OUTPUT = (CONF_TOPIC_NAME, CONF_TELEGRAM_TOPIC, CONF_PUBLISH_RSSI,
-                  CONF_FORWARD_METERS, CONF_TARGET_METER_ID, CONF_PUBLISH_RADIO_RAW)
+                  CONF_FORWARD_METERS, CONF_TARGET_METER_ID, CONF_PUBLISH_RADIO_RAW,
+                  CONF_TELEGRAM_QOS, CONF_RSSI_QOS, CONF_HEALTH_QOS, CONF_DIAGNOSTIC_QOS,
+                  CONF_RX_QOS, CONF_MQTT_BUFFER_SIZE, CONF_BUFFER_PRIORITY)
 
 _REPORT_DIAG = (CONF_DIAGNOSTIC_MODE, CONF_DIAG_SUMMARY_INTERVAL, CONF_DIAG_TOPIC,
                 CONF_HIGHLIGHT_METERS, CONF_DIAG_METER_STATS, CONF_DIAG_VERBOSE)
@@ -1050,6 +1162,24 @@ async def to_code(config):
     cg.add(var.set_publish_radio_raw(config.get(CONF_PUBLISH_RADIO_RAW, False)))
     cg.add(var.set_publish_rssi(config.get(CONF_PUBLISH_RSSI, False)))
 
+    cg.add(var.set_telegram_qos(config[CONF_TELEGRAM_QOS]))
+    cg.add(var.set_rssi_qos(config[CONF_RSSI_QOS]))
+    cg.add(var.set_health_qos(config[CONF_HEALTH_QOS]))
+    cg.add(var.set_diag_qos(config[CONF_DIAGNOSTIC_QOS]))
+    cg.add(var.set_rx_qos(config[CONF_RX_QOS]))
+
+    _buffer_size = config[CONF_MQTT_BUFFER_SIZE]
+    if _buffer_size == "auto":
+        cg.add(var.set_mqtt_outbox_auto(True))
+        # Real ceiling is computed on-device from free heap/PSRAM at setup()
+        # and re-checked periodically (see mqtt_outbox.cpp); this is just a
+        # safe, small starting point in case that first computation is skipped.
+        cg.add(var.set_mqtt_outbox_max_capacity(16))
+        cg.add(var.set_mqtt_outbox_capacity(16))
+    else:
+        cg.add(var.set_mqtt_outbox_max_capacity(_buffer_size))
+        cg.add(var.set_mqtt_outbox_capacity(_buffer_size))
+
     # forward_meters accepts an explicit list, or `true` meaning "reuse
     # highlight_meters" so the same IDs do not have to be written twice.
     forward_meters = config.get(CONF_FORWARD_METERS, [])
@@ -1072,6 +1202,19 @@ async def to_code(config):
         forward_meters_csv = _meters_csv(forward_meters)
     cg.add(var.set_forward_meters_csv(forward_meters_csv))
     cg.add(var.set_forward_meters_inherited(forward_meters_inherited))
+
+    buffer_priority = config.get(CONF_BUFFER_PRIORITY, {})
+    if buffer_priority and not forward_meters_csv:
+        # forward_meters_csv is the RESOLVED whitelist (after the true/false/
+        # inherited handling above), so this also catches "forward_meters: true"
+        # resolving to nothing because highlight_meters was empty too.
+        warnings.append(
+            "buffer_priority is set but forward_meters resolves to an empty whitelist - "
+            "there is no per-meter whitelist to prioritise, ignoring / "
+            "ustawiono buffer_priority, ale forward_meters jest puste - brak whitelisty "
+            "do priorytetyzacji, ignorowanie."
+        )
+    cg.add(var.set_buffer_priority_csv(_priority_csv(buffer_priority)))
 
     diag_events_highlight_only = (
         config[CONF_DIAG_EVENTS_HIGHLIGHT_ONLY]

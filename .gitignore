@@ -28,3 +28,7 @@ _bmad-output/
 *.bak
 *.tmp
 *.tmp.*
+
+# ESPHome build output and local device configs
+/.esphome/
+/secrets.yaml
