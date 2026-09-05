@@ -186,6 +186,11 @@ wmbus_radio:
   clear_device_errors_on_boot: true  # default: false
   publish_dev_err_after_clear: true  # default: false
   # rx_gain: boosted  # default: boosted
+  # How many preamble bits the radio must see before it starts a reception.
+  # 8 is what upstream uses and costs about 16% of the meters heard here; 16 is
+  # the default and the maximum for listen_mode t1 and both, because the T1
+  # preamble is shorter than 24 bits and 24 decodes nothing at all.
+  # min_preamble_bits: 16  # default: 16
   long_gfsk_packets: true
 
   # EN: T1 receiver bandwidth. Affects T1 ONLY - C1 and S1 keep their measured
