@@ -132,6 +132,8 @@ public:
   // report, which is the default for drivers that do not record provenance.
   // Call it until it returns false: a driver may have more than one waiting.
   virtual bool take_rssi_diag(RssiDiag &out) { return false; }
+  // Main-task, cached diagnostics only: implementations must not access SPI.
+  virtual std::string runtime_diag_json() { return {}; }
 
   bool read_in_task(uint8_t *buffer, size_t length);
   bool read_in_task_partial(uint8_t *buffer, size_t max_length, size_t &out_read,

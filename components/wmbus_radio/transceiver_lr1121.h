@@ -5,6 +5,7 @@
 #include "esphome/core/hal.h"
 
 #include <vector>
+#include <atomic>
 
 // ---------------------------------------------------------------------------
 // Compile gate.
@@ -129,6 +130,7 @@ class LR1121 : public RadioTransceiver {
   void log_reg_status() override;
   void dump_debug_status(const char *reason) override;
   bool take_rssi_diag(RssiDiag &out) override;
+  std::string runtime_diag_json() override;
 
  protected:
   // --- SPI plumbing --------------------------------------------------------
@@ -207,6 +209,15 @@ class LR1121 : public RadioTransceiver {
   // Set when BUSY never fell during boot. Kept so the state is reported once,
   // and so per-command waits stop re-logging the same thing forever.
   bool busy_line_suspect_{false};
+
+  // RX task writes, main task reads. Cumulative observations, not emission counts.
+  std::atomic<uint32_t> busy_timeouts_{0}, status_fail_{0}, status_perr_{0};
+  std::atomic<uint32_t> irq_samples_{0}, irq_done_{0}, irq_timeout_{0}, irq_len_error_{0};
+  std::atomic<uint32_t> read_without_done_{0}, packet_received_{0}, packet_abort_{0};
+  std::atomic<uint32_t> last_irq_{0}, last_status_{0}, last_packet_status_{0};
+  std::atomic<uint32_t> status_samples_{0}, packet_samples_{0};
+  uint32_t last_runtime_report_ms_{0};  // main task only
+  void observe_stat1_(uint8_t stat1);
 
   // S1 probe: reported once, so a sync-without-packet condition is stated and
   // then stops repeating for every detector trigger.

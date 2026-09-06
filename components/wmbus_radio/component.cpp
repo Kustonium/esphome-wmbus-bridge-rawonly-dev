@@ -455,6 +455,16 @@ void Radio::dump_config() {
 
 void Radio::loop() {
   const uint32_t loop_now_ms = (uint32_t) esphome::millis();
+  if (this->radio != nullptr) {
+    const auto diagnostic = this->radio->runtime_diag_json();
+    if (!diagnostic.empty()) {
+      ESP_LOGI(TAG, "Radio runtime: %s", diagnostic.c_str());
+      if (this->diag_publish_summary_ && !this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
+          mqtt::global_mqtt_client->is_connected()) {
+        mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
+      }
+    }
+  }
 
   // Report where a frame's RSSI came from. The receive path records this but
   // cannot log it - it runs in the receiver task, whose output only reaches

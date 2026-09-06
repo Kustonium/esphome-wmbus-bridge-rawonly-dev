@@ -136,8 +136,10 @@ bool LR1121::wait_while_busy_(uint32_t timeout_ms) {
     return true;
   const uint32_t start = millis();
   while (this->busy_pin_->digital_read()) {
-    if ((uint32_t) (millis() - start) > timeout_ms)
+    if ((uint32_t) (millis() - start) > timeout_ms) {
+      this->busy_timeouts_.fetch_add(1, std::memory_order_relaxed);
       return false;
+    }
     delay(1);  // yield; a tight spin here starves the idle task
   }
   return true;
@@ -160,8 +162,10 @@ void LR1121::cmd_write_buf_(uint16_t opcode, const uint8_t *args, size_t len) {
     this->busy_line_suspect_ = true;
   }
   this->delegate_->begin_transaction();
-  this->delegate_->transfer((uint8_t) (opcode >> 8));
-  this->delegate_->transfer((uint8_t) (opcode & 0xFF));
+  const uint8_t stat1 = this->delegate_->transfer((uint8_t) (opcode >> 8));
+  const uint8_t stat2 = this->delegate_->transfer((uint8_t) (opcode & 0xFF));
+  this->observe_stat1_(stat1);
+  this->last_status_.store(((uint32_t) stat1 << 8) | stat2, std::memory_order_relaxed);
   for (size_t i = 0; i < len; i++)
     this->delegate_->transfer(args[i]);
   this->delegate_->end_transaction();
@@ -202,7 +206,7 @@ bool LR1121::cmd_read_(uint16_t opcode, std::initializer_list<uint8_t> args, uin
   // GetVersion then misleadingly reads type=0x01 even though the documented
   // LR1121 type is 0x03, and GetErrors moves valid low-byte flags into the
   // undefined high byte.
-  (void) this->delegate_->transfer((uint8_t) 0x00);
+  this->observe_stat1_(this->delegate_->transfer((uint8_t) 0x00));
   for (size_t i = 0; i < out_len; i++)
     out[i] = this->delegate_->transfer((uint8_t) 0x00);
   this->delegate_->end_transaction();
@@ -247,7 +251,11 @@ uint32_t LR1121::get_irq_status_() {
   for (size_t i = 0; i < sizeof(r); i++)
     r[i] = this->delegate_->transfer((uint8_t) 0x00);
   this->delegate_->end_transaction();
-  return ((uint32_t) r[2] << 24) | ((uint32_t) r[3] << 16) | ((uint32_t) r[4] << 8) | (uint32_t) r[5];
+  this->observe_stat1_(r[0]);
+  this->last_status_.store(((uint32_t) r[0] << 8) | r[1], std::memory_order_relaxed);
+  const uint32_t irq = ((uint32_t) r[2] << 24) | ((uint32_t) r[3] << 16) | ((uint32_t) r[4] << 8) | r[5];
+  this->last_irq_.store(irq, std::memory_order_relaxed);
+  return irq;
 }
 
 // S-mode sync, same bytes the SX1276 and SX1262 drivers program: the 18-bit
@@ -281,6 +289,10 @@ void LR1121::read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg) {
     return;
   raw_sync = r[0];
   raw_avg = r[1];
+  this->packet_samples_.fetch_add(1, std::memory_order_relaxed);
+  this->last_packet_status_.store(((uint32_t) r[2] << 8) | r[3], std::memory_order_relaxed);
+  if (r[3] & 0x02) this->packet_received_.fetch_add(1, std::memory_order_relaxed);
+  if (r[3] & 0x04) this->packet_abort_.fetch_add(1, std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +625,14 @@ optional<uint8_t> LR1121::read() {
     // when it is asserted do we spend transactions asking the chip what it has.
     if (this->irq_pin_ == nullptr || !this->irq_pin_->digital_read())
       return {};
+    // Observe before buffer access / the next ClearIrq. Do not change capture
+    // decisions in this diagnostic patch. Repeated latches are observations.
+    const uint32_t irq = this->get_irq_status_();
+    this->irq_samples_.fetch_add(1, std::memory_order_relaxed);
+    if (irq & IRQ_RX_DONE) this->irq_done_.fetch_add(1, std::memory_order_relaxed);
+    else this->read_without_done_.fetch_add(1, std::memory_order_relaxed);
+    if (irq & IRQ_TIMEOUT) this->irq_timeout_.fetch_add(1, std::memory_order_relaxed);
+    if (irq & IRQ_FSK_LEN_ERROR) this->irq_len_error_.fetch_add(1, std::memory_order_relaxed);
     if (!this->load_rx_buffer_())
       return {};
   }
@@ -637,6 +657,39 @@ bool LR1121::read_channel_rssi_dbm(int8_t *out) {
 }
 
 const char *LR1121::get_name() { return TAG; }
+
+void LR1121::observe_stat1_(uint8_t stat1) {
+  this->status_samples_.fetch_add(1, std::memory_order_relaxed);
+  const uint8_t command_status = (stat1 >> 1) & 7;
+  if (command_status == 0) this->status_fail_.fetch_add(1, std::memory_order_relaxed);
+  if (command_status == 1) this->status_perr_.fetch_add(1, std::memory_order_relaxed);
+}
+
+std::string LR1121::runtime_diag_json() {
+  const uint32_t now = millis();
+  if ((uint32_t) (now - this->last_runtime_report_ms_) < 60000) return {};
+  this->last_runtime_report_ms_ = now;
+  // Individual atomic samples, not a transactionally coherent snapshot.
+  const uint32_t status = this->last_status_.load(std::memory_order_relaxed);
+  const uint32_t packet = this->last_packet_status_.load(std::memory_order_relaxed);
+  char out[1024];
+  snprintf(out, sizeof(out),
+    "{\"schema\":1,\"radio\":\"LR1121\",\"uptime_ms\":%u,"
+    "\"busy_timeouts\":%u,\"status_samples\":%u,\"cmd_fail_observations\":%u,\"cmd_perr_observations\":%u,"
+    "\"irq_samples\":%u,\"rx_done_observations\":%u,\"timeout_observations\":%u,\"len_error_observations\":%u,"
+    "\"read_without_rx_done\":%u,\"last_irq\":%u,\"stat1\":%u,\"stat2\":%u,\"chip_mode\":%u,\"reset_status\":%u,"
+    "\"packet_samples\":%u,\"packet_received_observations\":%u,\"packet_abort_observations\":%u,\"packet_length\":%u,\"packet_flags\":%u}",
+    (unsigned) now, (unsigned) this->busy_timeouts_.load(), (unsigned) this->status_samples_.load(),
+    (unsigned) this->status_fail_.load(), (unsigned) this->status_perr_.load(),
+    (unsigned) this->irq_samples_.load(), (unsigned) this->irq_done_.load(),
+    (unsigned) this->irq_timeout_.load(), (unsigned) this->irq_len_error_.load(),
+    (unsigned) this->read_without_done_.load(), (unsigned) this->last_irq_.load(),
+    (unsigned) (status >> 8), (unsigned) (status & 255), (unsigned) ((status >> 1) & 7),
+    (unsigned) ((status >> 4) & 15), (unsigned) this->packet_samples_.load(),
+    (unsigned) this->packet_received_.load(), (unsigned) this->packet_abort_.load(),
+    (unsigned) (packet >> 8), (unsigned) (packet & 255));
+  return out;
+}
 
 bool LR1121::take_rssi_diag(RssiDiag &out) {
   if (!this->rssi_diag_pending_)
