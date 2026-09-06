@@ -139,6 +139,9 @@ public:
     uint32_t irq{0};
     uint16_t length{0};
     int8_t rssi{-127};
+    uint8_t verify{0};  // 0 off, 1 inconclusive, 2 equal, 3 different
+    uint16_t differing_bytes{0};
+    uint16_t first_difference{255};
     uint8_t bytes[255]{};
   };
   virtual bool take_raw_rx_sample(RawRxSample &out) { return false; }

@@ -545,6 +545,23 @@ void LR1121::restart_rx() {
 }
 
 bool LR1121::load_rx_buffer_() {
+  const bool sample_due = this->raw_sample_queue_ != nullptr &&
+      (uint32_t) (millis() - this->last_raw_sample_ms_) >= 5000;
+  const bool verify_requested = this->verify_buffer_ && sample_due &&
+      (this->last_irq_.load() & IRQ_RX_DONE) != 0;
+  const uint32_t busy_before = this->busy_timeouts_.load();
+  const uint32_t fail_before = this->status_fail_.load();
+  const uint32_t perr_before = this->status_perr_.load();
+  bool frozen = false;
+  if (verify_requested) {
+    // UM 2.2 pp.16,35,88: stop RX, then read the addressable retained RAM.
+    // Unlike an ordinary passive sample, this deliberately changes RX timing.
+    this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+    (void) this->get_irq_status_();
+    const uint32_t status = this->last_status_.load();
+    frozen = ((status >> 1) & 7) == 2 && ((status >> 9) & 7) == 2 &&
+        this->busy_timeouts_.load() == busy_before;
+  }
   uint8_t st[2]{};
   if (!this->cmd_read_(OC_GET_RXBUFFER_STATUS, {}, st, sizeof(st)))
     return false;
@@ -602,17 +619,43 @@ bool LR1121::load_rx_buffer_() {
   this->rx_len_ = this->rx_buffer_.size();
   this->rx_loaded_ = true;
 
+  uint8_t verify_result = verify_requested ? 1 : 0;
+  uint16_t differences = 0, first_difference = 255;
+  if (frozen) {
+    uint8_t second[255]{};
+    this->cmd_read_(OC_READ_BUFFER8, {start_ptr, payload_len}, second, payload_len);
+    uint8_t after[2]{};
+    this->cmd_read_(OC_GET_RXBUFFER_STATUS, {}, after, sizeof(after));
+    (void) this->get_irq_status_();
+    const uint32_t status = this->last_status_.load();
+    const bool stable = this->busy_timeouts_.load() == busy_before &&
+        this->status_fail_.load() == fail_before && this->status_perr_.load() == perr_before &&
+        ((status >> 1) & 7) == 2 && (((status >> 9) & 7) == 2 || ((status >> 9) & 7) == 3) &&
+        after[0] == payload_len && after[1] == start_ptr;
+    if (stable) {
+      for (uint16_t i = 0; i < payload_len; ++i) {
+        if (second[i] != this->rx_buffer_[i]) {
+          if (differences == 0) first_difference = i;
+          ++differences;
+        }
+      }
+      verify_result = differences == 0 ? 2 : 3;
+    }
+  }
+
   // Copy the actual FIFO before the upper pipeline trims/probes it. No extra
   // SPI transaction. Never wait for the diagnostic consumer or change RX.
   const uint32_t sample_now = millis();
-  if (this->raw_sample_queue_ != nullptr &&
-      (uint32_t) (sample_now - this->last_raw_sample_ms_) >= 5000) {
+  if (sample_due) {
     this->last_raw_sample_ms_ = sample_now;
     RawRxSample sample{};
     sample.captured_ms = sample_now;
     sample.irq = this->last_irq_.load();
     sample.rssi = this->last_rssi_dbm_;
     sample.length = (uint16_t) this->rx_buffer_.size();
+    sample.verify = verify_result;
+    sample.differing_bytes = differences;
+    sample.first_difference = first_difference;
     for (size_t i = 0; i < sample.length; ++i) sample.bytes[i] = this->rx_buffer_[i];
     (void) xQueueSend(this->raw_sample_queue_, &sample, 0);
   }

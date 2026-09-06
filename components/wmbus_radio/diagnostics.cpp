@@ -56,13 +56,19 @@ void Radio::publish_lr_pipeline_diag_(Packet *packet, bool valid) {
   auto *client = mqtt::global_mqtt_client;
   if (!this->diag_publish_summary_ || this->diag_topic_.empty() || client == nullptr || !client->is_connected()) return;
   if (packet == nullptr) {
-    char body[640];
+    char body[1024];
     snprintf(body, sizeof(body),
       "{\"schema\":1,\"boot_id\":\"%08X\",\"uptime_ms\":%u,\"converted\":%u,\"valid\":%u,"
-      "\"decode_failed\":%u,\"length_failed\":%u,\"crc_failed\":%u,\"other_failed\":%u}",
+      "\"decode_failed\":%u,\"length_failed\":%u,\"crc_failed\":%u,\"other_failed\":%u,"
+      "\"rx_entered\":%u,\"rx_queued\":%u,\"rx_queue_failed\":%u,\"rx_preamble_failed\":%u,"
+      "\"rx_weak_probe_aborted\":%u,\"rx_size_failed\":%u,\"rx_payload_failed\":%u,\"rx_s1_failed\":%u}",
       (unsigned) this->rx_boot_id_, (unsigned) now, (unsigned) this->lr_pipeline_total_,
       (unsigned) this->lr_pipeline_ok_, (unsigned) this->lr_pipeline_decode_,
-      (unsigned) this->lr_pipeline_length_, (unsigned) this->lr_pipeline_crc_, (unsigned) this->lr_pipeline_other_);
+      (unsigned) this->lr_pipeline_length_, (unsigned) this->lr_pipeline_crc_, (unsigned) this->lr_pipeline_other_,
+      (unsigned) this->lr_rx_outcomes_[0].load(), (unsigned) this->lr_rx_outcomes_[1].load(),
+      (unsigned) this->lr_rx_outcomes_[2].load(), (unsigned) this->lr_rx_outcomes_[3].load(),
+      (unsigned) this->lr_rx_outcomes_[4].load(), (unsigned) this->lr_rx_outcomes_[5].load(),
+      (unsigned) this->lr_rx_outcomes_[6].load(), (unsigned) this->lr_rx_outcomes_[7].load());
     client->publish(this->diag_topic_ + "/lr_pipeline", std::string(body), 1, true);
     return;
   }

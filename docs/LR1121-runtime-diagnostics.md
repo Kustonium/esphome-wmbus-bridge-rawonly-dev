@@ -66,3 +66,41 @@ old slots from earlier boots remain until overwritten. Always filter by boot ID
 and test time. Export all these topics after the test as well as `radio_runtime`,
 the existing diagnostic summary and receiver JSON. No data is published while
 MQTT is disconnected; these samples are not a durable recorder.
+
+## Early RX outcomes and optional SPI verification
+
+`lr_pipeline` now contains terminal RX-task counters since boot:
+`rx_entered`, `rx_queued`, `rx_queue_failed`, `rx_preamble_failed`,
+`rx_weak_probe_aborted`, `rx_size_failed`, `rx_payload_failed`, `rx_s1_failed`.
+At rest, entered equals the sum of all seven outcomes. During reception atomic
+snapshots may differ by an in-flight attempt. These count IRQ-woken receive
+attempts, not unique radio captures. Queue-to-conversion discrepancies can also
+include pending queue entries and listen-mode filtering. Existing wakeup uptime
+on dropped packets and capture uptime on FIFO samples remain the correlation
+keys; no exact one-to-one identity between independently sampled records is claimed.
+
+To run the intrusive buffer experiment on LR1121 only:
+
+```yaml
+wmbus_radio:
+  lr1121_verify_buffer: true
+```
+
+Default is false. For at most one sampled capture per 5 seconds, after RX_DONE:
+SetStandby(XOSC), wait BUSY, verify command success and standby mode, obtain
+buffer offset/length, read the FIFO twice at the same address, verify offset,
+length and mode again. No ClearRxBuffer or reset is issued. The original first
+copy continues through the unchanged decoder; the second copy is only compared.
+Existing restart_rx re-arms reception afterwards. This can interrupt a following
+packet and is NOT a passive sensitivity measurement. UM 2.2 pp.16,35,88 documents
+standby and addressable RX RAM accessible outside sleep.
+
+FIFO sample fields: `verify` = 0 disabled/not requested, 1 inconclusive (BUSY,
+command status, mode or pointer checks did not pass), 2 identical, 3 different.
+`differing_bytes` counts unequal bytes; `first_difference` is a zero-based byte
+offset, or 255 when none. The fields describe the full 255-byte capture, including
+possible trailing noise; equality does not prove correct RF demodulation, and a
+stable deterministic SPI error is not excluded. A mismatch under validated standby
+is evidence to investigate the read path, not automatic proof of bad RF reception.
+
+No automatic firmware deployment or experiment start is part of this change.

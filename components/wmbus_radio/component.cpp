@@ -475,10 +475,11 @@ void Radio::loop() {
       char body[1024];
       snprintf(body, sizeof(body),
         "{\"schema\":1,\"kind\":\"fifo_sample\",\"boot_id\":\"%08X\",\"sample\":%u,\"captured_ms\":%u,"
-        "\"irq\":%u,\"rssi\":%d,\"raw_length\":%u,\"raw\":\"%s\"}",
+        "\"irq\":%u,\"rssi\":%d,\"raw_length\":%u,\"verify\":%u,\"differing_bytes\":%u,\"first_difference\":%u,\"raw\":\"%s\"}",
         (unsigned) this->rx_boot_id_, (unsigned) ++this->lr_raw_sample_seq_,
         (unsigned) raw_sample.captured_ms, (unsigned) raw_sample.irq,
-        (int) raw_sample.rssi, (unsigned) raw_sample.length, hex);
+        (int) raw_sample.rssi, (unsigned) raw_sample.length, (unsigned) raw_sample.verify,
+        (unsigned) raw_sample.differing_bytes, (unsigned) raw_sample.first_difference, hex);
       mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_fifo/" +
         std::to_string((this->lr_raw_sample_seq_ - 1) % 8), std::string(body), 1, true);
     }
@@ -1283,13 +1284,20 @@ void Radio::receive_frame() {
   // intentionally not called an on-air start or RX_DONE timestamp: different
   // transceivers signal at different receive stages.
   const uint64_t rx_task_wakeup_us = (uint64_t) esp_timer_get_time();
+  struct OutcomeGuard {
+    std::array<std::atomic<uint32_t>, 8> *counts;
+    unsigned outcome{3};  // preamble/read failure until the next stage
+    ~OutcomeGuard() { if (counts != nullptr) (*counts)[outcome].fetch_add(1); }
+  } outcome{strcmp(this->radio->get_name(), "LR1121") == 0 ? &this->lr_rx_outcomes_ : nullptr};
+  if (outcome.counts != nullptr) this->lr_rx_outcomes_[0].fetch_add(1);
   auto packet = std::make_unique<Packet>();
   packet->set_rx_task_wakeup_us(rx_task_wakeup_us);
 
-  auto queue_packet = [this](std::unique_ptr<Packet> &pkt) -> bool {
+  auto queue_packet = [this, &outcome](std::unique_ptr<Packet> &pkt) -> bool {
     pkt->set_rssi(this->radio->get_rssi());
     auto packet_ptr = pkt.get();
     if (xQueueSend(this->packet_queue_, &packet_ptr, 0) == pdTRUE) {
+      outcome.outcome = 1;
       ESP_LOGV(TAG, "Queue items: %zu", uxQueueMessagesWaiting(this->packet_queue_));
       ESP_LOGV(TAG, "Queue send success");
       this->collect_radio_rx_diag_();
@@ -1297,6 +1305,7 @@ void Radio::receive_frame() {
       return true;
     }
 
+    outcome.outcome = 2;
     this->diag_rx_path_.queue_send_failed++;
     this->diag_15m_rx_path_.queue_send_failed++;
     this->diag_60min_rx_path_.queue_send_failed++;
@@ -1307,6 +1316,7 @@ void Radio::receive_frame() {
   };
 
   if (this->radio != nullptr && this->radio->get_listen_mode() == LISTEN_MODE_S1) {
+    outcome.outcome = 7;
     packet->set_forced_link_mode(LinkMode::S1);
     const size_t max_raw = WMBUS_RAW_DRAIN_MAX_BYTES;
     auto *raw = packet->append_space(max_raw);
@@ -1415,6 +1425,7 @@ void Radio::receive_frame() {
   }
 
   const bool is_c_mode = (preamble[0] == WMBUS_MODE_C_PREAMBLE);
+  outcome.outcome = 4;
   size_t already_read = WMBUS_PREAMBLE_SIZE;
   if (!is_c_mode) {
     const int current_rssi = this->radio->get_rssi();
@@ -1432,6 +1443,7 @@ void Radio::receive_frame() {
     }
   }
   if (!is_c_mode && WMBUS_T1_LEN_PROBE_BYTES > WMBUS_PREAMBLE_SIZE) {
+    outcome.outcome = 5;
     const size_t extra = WMBUS_T1_LEN_PROBE_BYTES - WMBUS_PREAMBLE_SIZE;
     auto *hdr = packet->append_space(extra);
     size_t got_hdr = 0;
@@ -1447,6 +1459,7 @@ void Radio::receive_frame() {
   }
 
   const size_t total_len = packet->expected_size();
+  outcome.outcome = 5;
   if (total_len == 0 || total_len < already_read) {
     this->diag_rx_path_.payload_size_unknown++;
     this->diag_15m_rx_path_.payload_size_unknown++;
@@ -1484,6 +1497,7 @@ void Radio::receive_frame() {
   }
 
   const size_t remaining = total_len - already_read;
+  outcome.outcome = 6;
   if (remaining > 0) {
     auto *rest = packet->append_space(remaining);
     if (!this->radio->read_in_task(rest, remaining)) {

@@ -118,6 +118,7 @@ class LR1121 : public RadioTransceiver {
   void set_preamble_detector(LR1121PreambleDetector d) { this->preamble_detector_ = d; }
   void set_payload_length(uint8_t len) { this->payload_length_ = len; }
   void set_rx_boosted(bool v) { this->rx_boosted_ = v; }
+  void set_verify_buffer(bool v) { this->verify_buffer_ = v; }
   void set_tcxo_voltage(LR1121TcxoVoltage v) { this->tcxo_voltage_ = v; }
   void set_tcxo_startup_ticks(uint32_t ticks) { this->tcxo_startup_ticks_ = ticks; }
 
@@ -222,6 +223,7 @@ class LR1121 : public RadioTransceiver {
   void observe_stat1_(uint8_t stat1);
   QueueHandle_t raw_sample_queue_{nullptr};
   uint32_t last_raw_sample_ms_{0};  // receiver task only; at most one sample / 5 s
+  bool verify_buffer_{false};
 
   // S1 probe: reported once, so a sync-without-packet condition is stated and
   // then stops repeating for every detector trigger.

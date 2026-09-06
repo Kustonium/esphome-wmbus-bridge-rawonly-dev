@@ -481,6 +481,7 @@ BASE_CONFIG_SCHEMA = (
             ),
             cv.Optional(CONF_PAYLOAD_LENGTH, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_PAYLOAD_LENGTH]): cv.int_range(min=16, max=255),
             cv.Optional(CONF_RX_BOOSTED, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_RX_BOOSTED]): cv.boolean,
+            cv.Optional("lr1121_verify_buffer", default=False): cv.boolean,
             cv.Optional(CONF_BITRATE, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_BITRATE]): cv.int_range(min=600, max=300000),
             cv.Optional(CONF_DEVIATION, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_DEVIATION]): cv.int_range(min=1000, max=200000),
 
@@ -1016,6 +1017,7 @@ async def to_code(config):
         ))
         cg.add(radio_var.set_payload_length(config[CONF_PAYLOAD_LENGTH]))
         cg.add(radio_var.set_rx_boosted(config[CONF_RX_BOOSTED]))
+        cg.add(radio_var.set_verify_buffer(config["lr1121_verify_buffer"]))
         cg.add(radio_var.set_bitrate(config[CONF_BITRATE]))
         cg.add(radio_var.set_deviation(config[CONF_DEVIATION]))
 
