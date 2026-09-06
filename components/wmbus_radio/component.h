@@ -301,6 +301,12 @@ protected:
   std::string rx_topic_{};
   std::string rssi_topic_{};
   uint32_t rx_boot_id_{0};
+  // Main-task-only LR1121 diagnostic counters and bounded retained sample slots.
+  uint32_t lr_pipeline_total_{0}, lr_pipeline_ok_{0}, lr_pipeline_decode_{0};
+  uint32_t lr_pipeline_length_{0}, lr_pipeline_crc_{0}, lr_pipeline_other_{0};
+  uint32_t lr_pipeline_report_ms_{0}, lr_drop_sample_ms_{0};
+  uint32_t lr_raw_sample_seq_{0}, lr_drop_sample_seq_{0};
+  void publish_lr_pipeline_diag_(Packet *packet, bool valid);
   uint32_t rx_publish_seq_{0};
   std::string target_meter_id_str_{};
   uint32_t target_meter_id_{0};

@@ -311,6 +311,9 @@ void LR1121::read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg) {
 // the calibrations.
 // ---------------------------------------------------------------------------
 void LR1121::setup() {
+  this->raw_sample_queue_ = xQueueCreate(2, sizeof(RawRxSample));
+  if (this->raw_sample_queue_ == nullptr)
+    ESP_LOGW(TAG, "Raw diagnostic queue unavailable; reception remains enabled");
   this->common_setup();
   this->reset();
 
@@ -599,6 +602,21 @@ bool LR1121::load_rx_buffer_() {
   this->rx_len_ = this->rx_buffer_.size();
   this->rx_loaded_ = true;
 
+  // Copy the actual FIFO before the upper pipeline trims/probes it. No extra
+  // SPI transaction. Never wait for the diagnostic consumer or change RX.
+  const uint32_t sample_now = millis();
+  if (this->raw_sample_queue_ != nullptr &&
+      (uint32_t) (sample_now - this->last_raw_sample_ms_) >= 5000) {
+    this->last_raw_sample_ms_ = sample_now;
+    RawRxSample sample{};
+    sample.captured_ms = sample_now;
+    sample.irq = this->last_irq_.load();
+    sample.rssi = this->last_rssi_dbm_;
+    sample.length = (uint16_t) this->rx_buffer_.size();
+    for (size_t i = 0; i < sample.length; ++i) sample.bytes[i] = this->rx_buffer_[i];
+    (void) xQueueSend(this->raw_sample_queue_, &sample, 0);
+  }
+
   if (!this->rssi_diag_reported_ || this->diag_verbose_) {
     this->rssi_diag_ = RssiDiag{};
     this->rssi_diag_.path = "fifo";
@@ -657,6 +675,10 @@ bool LR1121::read_channel_rssi_dbm(int8_t *out) {
 }
 
 const char *LR1121::get_name() { return TAG; }
+
+bool LR1121::take_raw_rx_sample(RawRxSample &out) {
+  return this->raw_sample_queue_ != nullptr && xQueueReceive(this->raw_sample_queue_, &out, 0) == pdTRUE;
+}
 
 void LR1121::observe_stat1_(uint8_t stat1) {
   this->status_samples_.fetch_add(1, std::memory_order_relaxed);

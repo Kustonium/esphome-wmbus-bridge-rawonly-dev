@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <atomic>
+#include "freertos/queue.h"
 
 // ---------------------------------------------------------------------------
 // Compile gate.
@@ -131,6 +132,7 @@ class LR1121 : public RadioTransceiver {
   void dump_debug_status(const char *reason) override;
   bool take_rssi_diag(RssiDiag &out) override;
   std::string runtime_diag_json() override;
+  bool take_raw_rx_sample(RawRxSample &out) override;
 
  protected:
   // --- SPI plumbing --------------------------------------------------------
@@ -218,6 +220,8 @@ class LR1121 : public RadioTransceiver {
   std::atomic<uint32_t> status_samples_{0}, packet_samples_{0};
   uint32_t last_runtime_report_ms_{0};  // main task only
   void observe_stat1_(uint8_t stat1);
+  QueueHandle_t raw_sample_queue_{nullptr};
+  uint32_t last_raw_sample_ms_{0};  // receiver task only; at most one sample / 5 s
 
   // S1 probe: reported once, so a sync-without-packet condition is stated and
   // then stops repeating for every detector trigger.

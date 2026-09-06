@@ -464,6 +464,29 @@ void Radio::loop() {
         mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
       }
     }
+    RadioTransceiver::RawRxSample raw_sample{};
+    while (this->radio->take_raw_rx_sample(raw_sample)) {
+      if (!this->diag_publish_summary_ || this->diag_topic_.empty() || mqtt::global_mqtt_client == nullptr ||
+          !mqtt::global_mqtt_client->is_connected()) continue;
+      char hex[511];
+      for (size_t i = 0; i < raw_sample.length; ++i)
+        snprintf(hex + i * 2, 3, "%02X", (unsigned) raw_sample.bytes[i]);
+      hex[raw_sample.length * 2] = 0;
+      char body[1024];
+      snprintf(body, sizeof(body),
+        "{\"schema\":1,\"kind\":\"fifo_sample\",\"boot_id\":\"%08X\",\"sample\":%u,\"captured_ms\":%u,"
+        "\"irq\":%u,\"rssi\":%d,\"raw_length\":%u,\"raw\":\"%s\"}",
+        (unsigned) this->rx_boot_id_, (unsigned) ++this->lr_raw_sample_seq_,
+        (unsigned) raw_sample.captured_ms, (unsigned) raw_sample.irq,
+        (int) raw_sample.rssi, (unsigned) raw_sample.length, hex);
+      mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_fifo/" +
+        std::to_string((this->lr_raw_sample_seq_ - 1) % 8), std::string(body), 1, true);
+    }
+    if (strcmp(this->radio->get_name(), "LR1121") == 0 &&
+        (uint32_t) (loop_now_ms - this->lr_pipeline_report_ms_) >= 60000) {
+      this->lr_pipeline_report_ms_ = loop_now_ms;
+      this->publish_lr_pipeline_diag_(nullptr, false);
+    }
   }
 
   // Report where a frame's RSSI came from. The receive path records this but
@@ -750,8 +773,11 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
 
   // The raw-hex capture inside convert_to_frame() is only ever read behind
   // diag_publish_raw_, so let the packet skip it when that's off.
-  p->set_capture_raw_hex(this->diag_publish_raw_);
+  const bool lr_diagnostic = this->radio != nullptr && strcmp(this->radio->get_name(), "LR1121") == 0;
+  p->set_capture_raw_hex(this->diag_publish_raw_ || (lr_diagnostic && this->diag_publish_summary_ &&
+    (uint32_t) (loop_now_ms - this->lr_drop_sample_ms_) >= 5000));
   auto frame = p->convert_to_frame();
+  if (lr_diagnostic) this->publish_lr_pipeline_diag_(p, frame.has_value());
 
   if (this->listen_mode_filter_after_parse_) {
     mode_idx = (uint8_t) p->get_link_mode();

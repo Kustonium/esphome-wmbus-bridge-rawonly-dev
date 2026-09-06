@@ -134,6 +134,14 @@ public:
   virtual bool take_rssi_diag(RssiDiag &out) { return false; }
   // Main-task, cached diagnostics only: implementations must not access SPI.
   virtual std::string runtime_diag_json() { return {}; }
+  struct RawRxSample {
+    uint32_t captured_ms{0};
+    uint32_t irq{0};
+    uint16_t length{0};
+    int8_t rssi{-127};
+    uint8_t bytes[255]{};
+  };
+  virtual bool take_raw_rx_sample(RawRxSample &out) { return false; }
 
   bool read_in_task(uint8_t *buffer, size_t length);
   bool read_in_task_partial(uint8_t *buffer, size_t max_length, size_t &out_read,

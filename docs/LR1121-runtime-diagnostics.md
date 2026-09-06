@@ -36,3 +36,33 @@ Known separate S1 issue: the existing SYNC_WORD_VALID constant incorrectly uses
 bit 2 (TX_DONE); the documented bit is 5. Intentionally not switched here: enabling
 the real early interrupt without fixing the receive dispatcher could abort packets.
 This does not affect the T1 IRQ mask used in the attenuation experiment.
+
+## Bounded FIFO and rejection samples
+
+With summary diagnostics enabled, LR1121 also publishes retained QoS 1 messages:
+
+- `<diagnostic_topic>/lr_pipeline`: cumulative main-task conversion counters,
+  every 60 seconds. `converted = valid + decode_failed + length_failed +
+  crc_failed + other_failed`. Counts precede the post-parse listen-mode filter.
+  They do NOT include packets rejected in the receiver task before conversion.
+  Compare against the existing summary `rx_path` counters for early rejection.
+- `.../lr_fifo/0` through `.../lr_fifo/7`: rolling eight samples of the full FIFO
+  read (up to 255 bytes), taken at most once per five seconds, regardless of
+  eventual success or failure. A two-element, nonblocking FreeRTOS queue transfers
+  copies from RX to main. If full, a sample is lost, never a received packet.
+  These bytes may include noise after a short actual telegram due to fixed-length
+  reception; do not count invalid trailing symbols as telegram corruption.
+- `.../lr_drop/0` through `.../lr_drop/7`: rolling eight failed conversions,
+  at most once per five seconds. Includes actual parser reason/stage, lengths,
+  3-of-6 symbol statistics and its raw input (up to 256 bytes). This input may
+  already be trimmed by the receiver task; it is not necessarily the full FIFO.
+
+No radio settings, restart policy or decoder decisions are changed. Sampling
+adds bounded CPU/memory/MQTT overhead; verify nominal control reception.
+Existing `diagnostic_publish_raw` and verbose logging need not be enabled.
+Raw FIFO and drop sampling run independently: do not pair them by slot number.
+Use boot ID and capture/wakeup uptime to correlate. Retained slots are overwritten;
+old slots from earlier boots remain until overwritten. Always filter by boot ID
+and test time. Export all these topics after the test as well as `radio_runtime`,
+the existing diagnostic summary and receiver JSON. No data is published while
+MQTT is disconnected; these samples are not a durable recorder.
