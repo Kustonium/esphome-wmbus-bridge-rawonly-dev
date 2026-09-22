@@ -217,7 +217,6 @@ class LR1121 : public RadioTransceiver {
   // every later probe sample is compared against.
   uint32_t probe_baseline_[4]{};
   uint16_t expected_len_override_{0};
-  bool expected_len_override_logged_{false};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

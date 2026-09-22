@@ -272,25 +272,13 @@ void LR1121::write_regmem32_mask_(uint32_t address, uint32_t mask, uint32_t data
 }
 
 void LR1121::apply_expected_len_override_() {
+  // Runs in the receiver task, so it does NOT log: output from that task never
+  // reaches the API log stream (see RadioTransceiver::RssiDiag). Saying
+  // "EXPERIMENT ACTIVE" from here printed nothing at all, which is the exact
+  // opposite of what an undocumented-register write must do. The loud line
+  // lives in the YAML sanity block instead, on the main task.
   if (this->expected_len_override_ == 0) return;
-  if (this->boot_fw_ != VERIFIED_RADIO_FW) {
-    if (!this->expected_len_override_logged_) {
-      this->expected_len_override_logged_ = true;
-      ESP_LOGW(TAG, "lr1121_expected_len_override ignored: verified only on radio FW 0x%04X, "
-                    "this chip reports 0x%04X. Refusing to write an undocumented register "
-                    "on an unverified firmware image.",
-               (unsigned) VERIFIED_RADIO_FW, (unsigned) this->boot_fw_);
-    }
-    return;
-  }
-  if (!this->expected_len_override_logged_) {
-    this->expected_len_override_logged_ = true;
-    ESP_LOGW(TAG, "EXPERIMENT ACTIVE: writing expected packet length %u into undocumented "
-                  "register 0x%08X [31:20], overriding the configured payload_length %u. "
-                  "This is bench work, not a supported configuration.",
-             (unsigned) this->expected_len_override_, (unsigned) REG_EXPECTED_LEN,
-             (unsigned) this->payload_length_);
-  }
+  if (this->boot_fw_ != VERIFIED_RADIO_FW) return;
   this->write_regmem32_mask_(REG_EXPECTED_LEN, REG_EXPECTED_LEN_MASK,
                              ((uint32_t) this->expected_len_override_) << REG_EXPECTED_LEN_SHIFT);
 }
@@ -979,6 +967,25 @@ void LR1121::log_reg_status() {
                   "NES telegrams arrive as 245 raw bytes / dluzsze ramki beda ucinane, "
                   "telegramy NES maja 245 bajtow surowych",
              (unsigned) this->payload_length_);
+  }
+
+  if (this->expected_len_override_ != 0) {
+    if (this->boot_fw_ != VERIFIED_RADIO_FW) {
+      ESP_LOGE(TAG, "  lr1121_expected_len_override: %u -> IGNORED. Verified only on radio "
+                    "firmware 0x%04X, this chip reports 0x%04X. Refusing to write an "
+                    "undocumented register on an unverified image / ODRZUCONE, niezweryfikowany "
+                    "firmware radia",
+               (unsigned) this->expected_len_override_, (unsigned) VERIFIED_RADIO_FW,
+               (unsigned) this->boot_fw_);
+    } else {
+      ESP_LOGW(TAG, "  lr1121_expected_len_override: %u -> EXPERIMENT ACTIVE(!): writing it into "
+                    "undocumented register 0x%08X [31:20] before every SetRx, overriding the "
+                    "configured payload_length %u. Reception will not behave normally. Bench "
+                    "work, not a supported configuration / EKSPERYMENT, odbior nie bedzie "
+                    "dzialal normalnie",
+               (unsigned) this->expected_len_override_, (unsigned) REG_EXPECTED_LEN,
+               (unsigned) this->payload_length_);
+    }
   }
 
   ESP_LOGI(TAG, "  rx_boosted: %s%s", this->rx_boosted_ ? "true" : "false",

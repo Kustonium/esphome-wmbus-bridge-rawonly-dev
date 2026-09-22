@@ -168,6 +168,8 @@ CONF_FREQUENCY = "frequency"
 # written from datasheet + schematic + vendor package, never run against
 # hardware. Gated the same way CC1101 is.
 CONF_LR1121_ALLOW_EXPERIMENTAL = "lr1121_allow_experimental"
+CONF_LR1121_VERIFY_BUFFER = "lr1121_verify_buffer"
+CONF_LR1121_EXPECTED_LEN_OVERRIDE = "lr1121_expected_len_override"
 CONF_TCXO_VOLTAGE = "tcxo_voltage"
 # Second TCXO knob. HF_XOSC_START does not distinguish "wrong voltage" from
 # "did not settle in time", so both have to be reachable from YAML.
@@ -481,12 +483,12 @@ BASE_CONFIG_SCHEMA = (
             ),
             cv.Optional(CONF_PAYLOAD_LENGTH, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_PAYLOAD_LENGTH]): cv.int_range(min=16, max=255),
             cv.Optional(CONF_RX_BOOSTED, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_RX_BOOSTED]): cv.boolean,
-            cv.Optional("lr1121_verify_buffer", default=False): cv.boolean,
+            cv.Optional(CONF_LR1121_VERIFY_BUFFER, default=False): cv.boolean,
             # 0 = off. Any other value is written into the undocumented
             # expected-packet-length register after each SetRx, overriding what
             # SetPacketParams declared. Bench experiment only; see
             # docs/LR1121-runtime-diagnostics.md.
-            cv.Optional("lr1121_expected_len_override", default=0): cv.int_range(min=0, max=4095),
+            cv.Optional(CONF_LR1121_EXPECTED_LEN_OVERRIDE, default=0): cv.int_range(min=0, max=4095),
             cv.Optional(CONF_BITRATE, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_BITRATE]): cv.int_range(min=600, max=300000),
             cv.Optional(CONF_DEVIATION, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_DEVIATION]): cv.int_range(min=1000, max=200000),
 
@@ -703,7 +705,8 @@ _REPORT_RADIO = {
     "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL,),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
                CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
-               CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION),
+               CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION,
+               CONF_LR1121_VERIFY_BUFFER, CONF_LR1121_EXPECTED_LEN_OVERRIDE),
 }
 
 _REPORT_OUTPUT = (CONF_TOPIC_NAME, CONF_TELEGRAM_TOPIC, CONF_PUBLISH_RSSI,
@@ -1022,8 +1025,8 @@ async def to_code(config):
         ))
         cg.add(radio_var.set_payload_length(config[CONF_PAYLOAD_LENGTH]))
         cg.add(radio_var.set_rx_boosted(config[CONF_RX_BOOSTED]))
-        cg.add(radio_var.set_verify_buffer(config["lr1121_verify_buffer"]))
-        cg.add(radio_var.set_expected_len_override(config["lr1121_expected_len_override"]))
+        cg.add(radio_var.set_verify_buffer(config[CONF_LR1121_VERIFY_BUFFER]))
+        cg.add(radio_var.set_expected_len_override(config[CONF_LR1121_EXPECTED_LEN_OVERRIDE]))
         cg.add(radio_var.set_bitrate(config[CONF_BITRATE]))
         cg.add(radio_var.set_deviation(config[CONF_DEVIATION]))
 
