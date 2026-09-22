@@ -120,6 +120,7 @@ class LR1121 : public RadioTransceiver {
   void set_rx_boosted(bool v) { this->rx_boosted_ = v; }
   void set_verify_buffer(bool v) { this->verify_buffer_ = v; }
   void set_expected_len_override(uint16_t v) { this->expected_len_override_ = v; }
+  void set_sync_probe(bool v) { this->sync_probe_ = v; }
   void set_tcxo_voltage(LR1121TcxoVoltage v) { this->tcxo_voltage_ = v; }
   void set_tcxo_startup_ticks(uint32_t ticks) { this->tcxo_startup_ticks_ = ticks; }
 
@@ -135,6 +136,7 @@ class LR1121 : public RadioTransceiver {
   bool take_rssi_diag(RssiDiag &out) override;
   std::string runtime_diag_json() override;
   std::string probe_baseline_json() override;
+  std::string sync_probe_json() override;
   bool take_raw_rx_sample(RawRxSample &out) override;
 
  protected:
@@ -217,6 +219,8 @@ class LR1121 : public RadioTransceiver {
   // every later probe sample is compared against.
   uint32_t probe_baseline_[4]{};
   uint16_t expected_len_override_{0};
+  bool sync_probe_{false};
+  std::atomic<uint32_t> sync_wakes_{0}, sync_ptr_last_{0}, sync_ptr_max_{0};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

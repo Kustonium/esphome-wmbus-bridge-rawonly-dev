@@ -509,6 +509,11 @@ void Radio::loop() {
         (uint32_t) (loop_now_ms - this->lr_pipeline_report_ms_) >= 60000) {
       this->lr_pipeline_report_ms_ = loop_now_ms;
       this->publish_lr_pipeline_diag_(nullptr, false);
+      const auto sync_probe = this->radio->sync_probe_json();
+      if (!sync_probe.empty() && this->diag_publish_summary_ && !this->diag_topic_.empty() &&
+          mqtt::global_mqtt_client != nullptr && mqtt::global_mqtt_client->is_connected()) {
+        mqtt::global_mqtt_client->publish(this->diag_topic_ + "/sync_probe", sync_probe, 1, true);
+      }
     }
   }
 

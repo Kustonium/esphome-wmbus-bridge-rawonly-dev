@@ -170,6 +170,7 @@ CONF_FREQUENCY = "frequency"
 CONF_LR1121_ALLOW_EXPERIMENTAL = "lr1121_allow_experimental"
 CONF_LR1121_VERIFY_BUFFER = "lr1121_verify_buffer"
 CONF_LR1121_EXPECTED_LEN_OVERRIDE = "lr1121_expected_len_override"
+CONF_LR1121_SYNC_PROBE = "lr1121_sync_probe"
 CONF_TCXO_VOLTAGE = "tcxo_voltage"
 # Second TCXO knob. HF_XOSC_START does not distinguish "wrong voltage" from
 # "did not settle in time", so both have to be reachable from YAML.
@@ -489,6 +490,9 @@ BASE_CONFIG_SCHEMA = (
             # SetPacketParams declared. Bench experiment only; see
             # docs/LR1121-runtime-diagnostics.md.
             cv.Optional(CONF_LR1121_EXPECTED_LEN_OVERRIDE, default=0): cv.int_range(min=0, max=4095),
+            # Early sync-word interrupt on T1/C1, so the live position counter can
+            # be sampled mid-frame. Diagnostic; inflates rx_preamble_failed.
+            cv.Optional(CONF_LR1121_SYNC_PROBE, default=False): cv.boolean,
             cv.Optional(CONF_BITRATE, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_BITRATE]): cv.int_range(min=600, max=300000),
             cv.Optional(CONF_DEVIATION, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_DEVIATION]): cv.int_range(min=1000, max=200000),
 
@@ -706,7 +710,8 @@ _REPORT_RADIO = {
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
                CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
                CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION,
-               CONF_LR1121_VERIFY_BUFFER, CONF_LR1121_EXPECTED_LEN_OVERRIDE),
+               CONF_LR1121_VERIFY_BUFFER, CONF_LR1121_EXPECTED_LEN_OVERRIDE,
+               CONF_LR1121_SYNC_PROBE),
 }
 
 _REPORT_OUTPUT = (CONF_TOPIC_NAME, CONF_TELEGRAM_TOPIC, CONF_PUBLISH_RSSI,
@@ -1027,6 +1032,7 @@ async def to_code(config):
         cg.add(radio_var.set_rx_boosted(config[CONF_RX_BOOSTED]))
         cg.add(radio_var.set_verify_buffer(config[CONF_LR1121_VERIFY_BUFFER]))
         cg.add(radio_var.set_expected_len_override(config[CONF_LR1121_EXPECTED_LEN_OVERRIDE]))
+        cg.add(radio_var.set_sync_probe(config[CONF_LR1121_SYNC_PROBE]))
         cg.add(radio_var.set_bitrate(config[CONF_BITRATE]))
         cg.add(radio_var.set_deviation(config[CONF_DEVIATION]))
 

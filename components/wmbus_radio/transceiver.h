@@ -136,6 +136,8 @@ public:
   virtual std::string runtime_diag_json() { return {}; }
   // Cached at setup(), published once. Main task, no SPI.
   virtual std::string probe_baseline_json() { return {}; }
+  // Empty unless the sync-word probe is enabled. Main task, no SPI.
+  virtual std::string sync_probe_json() { return {}; }
   struct RawRxSample {
     uint32_t captured_ms{0};
     uint32_t irq{0};

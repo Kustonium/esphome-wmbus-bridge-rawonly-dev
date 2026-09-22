@@ -115,12 +115,17 @@ static constexpr uint8_t RFSW_WIFI    = 0x00;
 static constexpr uint32_t IRQ_RX_DONE       = (1UL << 3);
 static constexpr uint32_t IRQ_TIMEOUT       = (1UL << 10);
 static constexpr uint32_t IRQ_FSK_LEN_ERROR = (1UL << 24);
-// Sync word detected. Not used to drive capture - the capture still starts on
-// RX_DONE. Enabled in S1 only, as a probe: it is the one bit that separates
-// "sync never matched" from "sync matched but the packet never completed", and
-// those two have completely different fixes. Kept out of T1/C1 so a proven
-// receive path is not disturbed by an extra interrupt source.
-static constexpr uint32_t IRQ_SYNC_WORD_VALID = (1UL << 2);
+// Sync word detected, UM 2.2 pp.37-39. Bit 5.
+//
+// This constant said (1UL << 2) until 2026-09-22. Bit 2 is TX_DONE, which in a
+// receive-only driver never fires, so the S1 mask that included it has been
+// carrying a dead bit and the "sync matched but no packet" diagnostic behind it
+// has never once run. Correcting the number is therefore not a behaviour change
+// for S1 - but *enabling* the real bit there would be, and the S1 receive
+// dispatcher is not ready for an early interrupt (it clears the whole IRQ latch
+// on this path, which would take RX_DONE with it). So S1 no longer asks for it
+// at all, and T1/C1 ask only when lr1121_sync_probe is set.
+static constexpr uint32_t IRQ_SYNC_WORD_VALID = (1UL << 5);
 static constexpr uint32_t IRQ_ALL           = 0xFFFFFFFFUL;
 
 // GetErrors bits. Bit 5 is the one that matters at bring-up: it is the chip
@@ -563,8 +568,11 @@ void LR1121::configure_gfsk_() {
   this->cmd_write_(OC_SET_RX_BOOSTED, {(uint8_t) (this->rx_boosted_ ? 0x01 : 0x00)});
 
   uint32_t mask = IRQ_RX_DONE | IRQ_TIMEOUT | IRQ_FSK_LEN_ERROR;
-  if (this->listen_mode_ == LISTEN_MODE_S1)
-    mask |= IRQ_SYNC_WORD_VALID;
+  // Step A of the long-packet work: ask for an early wake so the live position
+  // counter can be sampled while a frame is still arriving. Draining a frame
+  // longer than the buffer has to start before the ring wraps, and nothing in
+  // the normal path wakes early enough to even look.
+  if (this->sync_probe_) mask |= IRQ_SYNC_WORD_VALID;
   this->cmd_write_(OC_SET_DIO_IRQ_PARAMS, {(uint8_t) (mask >> 24), (uint8_t) (mask >> 16), (uint8_t) (mask >> 8),
                                            (uint8_t) (mask >> 0),
                                            0x00, 0x00, 0x00, 0x00});  // DIO2: nothing
@@ -654,6 +662,21 @@ bool LR1121::load_rx_buffer_() {
   const uint8_t payload_len = st[0];
   const uint8_t start_ptr = st[1];
   if (payload_len == 0) {
+    // Woken with no packet yet. With lr1121_sync_probe on, that is the
+    // sync-word interrupt and the one moment where the position counter can be
+    // caught mid-frame - after RX_DONE it reads 0. Sample and get out of the
+    // way: no IRQ is cleared here and no capture state is touched, so the
+    // RX_DONE that follows still produces a normal capture.
+    if (this->sync_probe_) {
+      const uint32_t raw = this->read_regmem32_(PROBE_ADDR[0]);
+      const uint32_t pos = (raw & 0x0FFF0000) >> 16;
+      this->sync_wakes_.fetch_add(1, std::memory_order_relaxed);
+      this->sync_ptr_last_.store(pos, std::memory_order_relaxed);
+      uint32_t prev = this->sync_ptr_max_.load(std::memory_order_relaxed);
+      while (pos > prev && !this->sync_ptr_max_.compare_exchange_weak(prev, pos)) {
+      }
+      if (this->listen_mode_ != LISTEN_MODE_S1) return false;
+    }
     // In S1 the IRQ line also carries SYNC_WORD_VALID, so landing here means the
     // sync word matched and no packet followed. That is the decisive observation
     // for whether a SYNC_WORD_VALID-driven capture path is needed at all - say it
@@ -860,6 +883,16 @@ std::string LR1121::runtime_diag_json() {
 // line past the logger's buffer, so the log showed a JSON object cut off
 // mid-key while MQTT carried the whole thing. A diagnostic that is silently
 // truncated in one of its two outputs is worse than one that is split in two.
+std::string LR1121::sync_probe_json() {
+  if (!this->sync_probe_) return {};
+  char out[192];
+  snprintf(out, sizeof(out),
+           "{\"schema\":1,\"sync_wakes\":%u,\"ptr_last\":%u,\"ptr_max\":%u}",
+           (unsigned) this->sync_wakes_.load(), (unsigned) this->sync_ptr_last_.load(),
+           (unsigned) this->sync_ptr_max_.load());
+  return out;
+}
+
 std::string LR1121::probe_baseline_json() {
   char out[160];
   snprintf(out, sizeof(out),

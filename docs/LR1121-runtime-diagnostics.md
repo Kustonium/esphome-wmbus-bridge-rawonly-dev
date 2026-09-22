@@ -196,4 +196,39 @@ buffer is 255 bytes and lowering the expectation cannot overrun it. Raising it
 past 255 is a separate step and needs a transmitter that actually sends more
 than 255 raw bytes; the longest telegram in normal field traffic here is 245.
 
+## Sampling the position counter mid-frame (bench experiment, default off)
+
+```yaml
+wmbus_radio:
+  lr1121_sync_probe: true
+```
+
+Adds `SYNC_WORD_VALID` to the T1/C1 interrupt mask so the receiver task wakes
+while a frame is still arriving, reads `0x00F20384` bits `[27:16]` once, and
+returns without touching capture state or clearing any interrupt. The
+`RX_DONE` that follows still produces a normal capture. Results go to
+`<diagnostic_topic>/sync_probe` every 60 s: `sync_wakes`, `ptr_last`,
+`ptr_max`.
+
+Why it exists: a frame longer than the 255-byte buffer wraps, and the bytes it
+overwrites are gone - after `RX_DONE` the start of such a frame no longer
+exists anywhere. Capturing one therefore means draining during reception, and
+that needs to know how much has arrived. `0x00F20384` reads 0 after `RX_DONE`;
+whether it is live mid-frame is exactly what this measures. A counter that
+stays 0 here means a drain would have to be timed off the bit rate instead.
+
+**`IRQ_SYNC_WORD_VALID` was wrong until 2026-09-22** - it said bit 2, which is
+`TX_DONE`. In a receive-only driver that bit never fires, so the S1 mask that
+included it carried a dead bit and the S1 "sync matched but no packet"
+diagnostic behind it never ran. The constant is now the documented bit 5 (UM
+2.2 pp.37-39). Correcting the number changes nothing for S1 in practice, but
+*enabling* the real interrupt there would: the S1 path clears the entire IRQ
+latch, which would take `RX_DONE` with it. S1 therefore no longer requests the
+bit at all, and enabling it for S1 needs dispatcher work first.
+
+**Known side effect while this is on:** each early wake runs the normal receive
+path, finds no packet and counts as `rx_preamble_failed`. That counter is
+inflated for as long as the probe is enabled and should not be compared against
+runs without it.
+
 No automatic firmware deployment or experiment start is part of this change.
