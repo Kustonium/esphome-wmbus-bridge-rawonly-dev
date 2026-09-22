@@ -802,7 +802,11 @@ std::string LR1121::runtime_diag_json() {
     "\"busy_timeouts\":%u,\"status_samples\":%u,\"cmd_fail_observations\":%u,\"cmd_perr_observations\":%u,"
     "\"irq_samples\":%u,\"rx_done_observations\":%u,\"timeout_observations\":%u,\"len_error_observations\":%u,"
     "\"read_without_rx_done\":%u,\"last_irq\":%u,\"stat1\":%u,\"stat2\":%u,\"chip_mode\":%u,\"reset_status\":%u,"
-    "\"packet_samples\":%u,\"packet_received_observations\":%u,\"packet_abort_observations\":%u,\"packet_length\":%u,\"packet_flags\":%u}",
+    "\"packet_samples\":%u,\"packet_received_observations\":%u,\"packet_abort_observations\":%u,\"packet_length\":%u,\"packet_flags\":%u,"
+    // Cached from setup(), no SPI here. Published because a setup() log line is
+    // unreachable over the API: component setup runs before WiFi and the API
+    // are up, so it never reaches `esphome logs`.
+    "\"probe_baseline\":{\"F20384\":%u,\"F20368\":%u,\"F30028\":%u,\"F30030\":%u}}",
     (unsigned) now, (unsigned) this->busy_timeouts_.load(), (unsigned) this->status_samples_.load(),
     (unsigned) this->status_fail_.load(), (unsigned) this->status_perr_.load(),
     (unsigned) this->irq_samples_.load(), (unsigned) this->irq_done_.load(),
@@ -811,7 +815,9 @@ std::string LR1121::runtime_diag_json() {
     (unsigned) (status >> 8), (unsigned) (status & 255), (unsigned) ((status >> 1) & 7),
     (unsigned) ((status >> 4) & 15), (unsigned) this->packet_samples_.load(),
     (unsigned) this->packet_received_.load(), (unsigned) this->packet_abort_.load(),
-    (unsigned) (packet >> 8), (unsigned) (packet & 255));
+    (unsigned) (packet >> 8), (unsigned) (packet & 255),
+    (unsigned) this->probe_baseline_[0], (unsigned) this->probe_baseline_[1],
+    (unsigned) this->probe_baseline_[2], (unsigned) this->probe_baseline_[3]);
   return out;
 }
 

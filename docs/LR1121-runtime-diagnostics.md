@@ -79,6 +79,12 @@ With summary diagnostics enabled, LR1121 also publishes retained QoS 1 messages:
   value that never moves off the baseline, or reads as all-zero or all-ones,
   is a result and not a malfunction.
 
+  That baseline is published in `radio_runtime` as `probe_baseline`, not only
+  logged. Component `setup()` runs before WiFi and the API are up, so a log
+  line emitted there never reaches `esphome logs` - restarting with the log
+  attached does not help, which is why the value is carried in a retained
+  topic instead.
+
   `packet_start` and `packet_len` carry the `GetRxBufferStatus` values for that
   capture, so the dump can be split into the declared packet
   (`[packet_start, packet_start + packet_len)`) and everything outside it.
