@@ -134,6 +134,8 @@ public:
   virtual bool take_rssi_diag(RssiDiag &out) { return false; }
   // Main-task, cached diagnostics only: implementations must not access SPI.
   virtual std::string runtime_diag_json() { return {}; }
+  // Cached at setup(), published once. Main task, no SPI.
+  virtual std::string probe_baseline_json() { return {}; }
   struct RawRxSample {
     uint32_t captured_ms{0};
     uint32_t irq{0};

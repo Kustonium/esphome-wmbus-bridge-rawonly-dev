@@ -79,11 +79,16 @@ With summary diagnostics enabled, LR1121 also publishes retained QoS 1 messages:
   value that never moves off the baseline, or reads as all-zero or all-ones,
   is a result and not a malfunction.
 
-  That baseline is published in `radio_runtime` as `probe_baseline`, not only
-  logged. Component `setup()` runs before WiFi and the API are up, so a log
-  line emitted there never reaches `esphome logs` - restarting with the log
-  attached does not help, which is why the value is carried in a retained
-  topic instead.
+  That baseline is published to its own retained topic,
+  `<diagnostic_topic>/probe_baseline`, and logged once from the main task as
+  `Register probe baseline (pre-RX, read-only)`. Two reasons it is not simply
+  logged from `setup()` and not folded into `radio_runtime`: component
+  `setup()` runs before WiFi and the API are up, so a line emitted there never
+  reaches `esphome logs` (restarting with the log attached does not help), and
+  appending the four values to the `radio_runtime` JSON pushed that line past
+  the logger's buffer - the log then printed the object cut off mid-key while
+  MQTT still carried all of it. A diagnostic silently truncated in one of its
+  two outputs is worse than one split across two lines.
 
   `packet_start` and `packet_len` carry the `GetRxBufferStatus` values for that
   capture, so the dump can be split into the declared packet

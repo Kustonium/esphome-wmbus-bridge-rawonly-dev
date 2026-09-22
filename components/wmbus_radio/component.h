@@ -307,6 +307,7 @@ protected:
   uint32_t lr_pipeline_length_{0}, lr_pipeline_crc_{0}, lr_pipeline_other_{0};
   uint32_t lr_pipeline_report_ms_{0}, lr_drop_sample_ms_{0};
   uint32_t lr_raw_sample_seq_{0}, lr_drop_sample_seq_{0};
+  bool probe_baseline_reported_{false};
   // Terminal outcomes for IRQ-woken receive attempts. RX task -> main task.
   std::array<std::atomic<uint32_t>, 8> lr_rx_outcomes_{};
   void publish_lr_pipeline_diag_(Packet *packet, bool valid);

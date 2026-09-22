@@ -133,6 +133,7 @@ class LR1121 : public RadioTransceiver {
   void dump_debug_status(const char *reason) override;
   bool take_rssi_diag(RssiDiag &out) override;
   std::string runtime_diag_json() override;
+  std::string probe_baseline_json() override;
   bool take_raw_rx_sample(RawRxSample &out) override;
 
  protected:

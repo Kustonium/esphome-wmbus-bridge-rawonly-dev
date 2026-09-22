@@ -463,6 +463,20 @@ void Radio::loop() {
           mqtt::global_mqtt_client->is_connected()) {
         mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
       }
+      if (!this->probe_baseline_reported_) {
+        const auto baseline = this->radio->probe_baseline_json();
+        if (!baseline.empty()) {
+          // Its own line and its own topic. setup() logging never reaches the
+          // API, and folding this into the runtime JSON pushed that line past
+          // the logger buffer, so it printed a JSON object cut off mid-key.
+          ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): %s", baseline.c_str());
+          if (this->diag_publish_summary_ && !this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
+              mqtt::global_mqtt_client->is_connected()) {
+            mqtt::global_mqtt_client->publish(this->diag_topic_ + "/probe_baseline", baseline, 1, true);
+            this->probe_baseline_reported_ = true;
+          }
+        }
+      }
     }
     RadioTransceiver::RawRxSample raw_sample{};
     while (this->radio->take_raw_rx_sample(raw_sample)) {
