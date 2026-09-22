@@ -138,6 +138,7 @@ class LR1121 : public RadioTransceiver {
   std::string runtime_diag_json() override;
   std::string probe_baseline_json() override;
   std::string sync_probe_json() override;
+  std::string drain_sample_json() override;
   bool take_raw_rx_sample(RawRxSample &out) override;
 
  protected:
@@ -228,6 +229,9 @@ class LR1121 : public RadioTransceiver {
   static constexpr uint16_t DRAIN_CAP = 512;
   uint8_t drain_buf_[DRAIN_CAP]{};
   uint16_t drain_len_{0};
+  uint8_t snap_buf_[DRAIN_CAP]{};
+  uint16_t snap_len_{0};
+  std::atomic<uint32_t> snap_seq_{0};
   std::atomic<uint32_t> drain_frames_{0}, drain_match_{0}, drain_mismatch_{0};
   std::atomic<uint32_t> drain_bytes_last_{0}, drain_diff_last_{0}, drain_first_diff_{0};
   uint16_t errors_after_xosc_{0};

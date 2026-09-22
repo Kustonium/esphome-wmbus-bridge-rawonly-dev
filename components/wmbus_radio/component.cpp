@@ -513,6 +513,9 @@ void Radio::loop() {
       if (!sync_probe.empty() && this->diag_publish_summary_ && !this->diag_topic_.empty() &&
           mqtt::global_mqtt_client != nullptr && mqtt::global_mqtt_client->is_connected()) {
         mqtt::global_mqtt_client->publish(this->diag_topic_ + "/sync_probe", sync_probe, 1, true);
+        const auto drain_sample = this->radio->drain_sample_json();
+        if (!drain_sample.empty())
+          mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_drain", drain_sample, 1, true);
       }
     }
   }

@@ -138,6 +138,8 @@ public:
   virtual std::string probe_baseline_json() { return {}; }
   // Empty unless the sync-word probe is enabled. Main task, no SPI.
   virtual std::string sync_probe_json() { return {}; }
+  // Last completed drain as hex, empty when draining is off.
+  virtual std::string drain_sample_json() { return {}; }
   struct RawRxSample {
     uint32_t captured_ms{0};
     uint32_t irq{0};

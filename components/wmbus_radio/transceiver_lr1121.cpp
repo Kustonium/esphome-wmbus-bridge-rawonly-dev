@@ -720,7 +720,15 @@ bool LR1121::load_rx_buffer_() {
     // RX_DONE fires at exactly the declared length in fixed-length mode, and
     // the counter reads 0 once it has, so the tail is taken on that basis
     // rather than from a final reading that no longer exists.
-    if (this->drain_ && (irq_now & IRQ_RX_DONE) != 0) this->drain_up_to_(expect);
+    if (this->drain_ && (irq_now & IRQ_RX_DONE) != 0) {
+      this->drain_up_to_(expect);
+      // Snapshot for publication. Above 255 the post-RX_DONE read is no longer
+      // a reference - the start of the frame is gone from the buffer - so the
+      // drained bytes have to leave the chip to be checked at all.
+      this->snap_len_ = this->drain_len_;
+      for (uint16_t i = 0; i < this->drain_len_; i++) this->snap_buf_[i] = this->drain_buf_[i];
+      this->snap_seq_.fetch_add(1, std::memory_order_release);
+    }
     if ((irq_now & IRQ_RX_DONE) == 0) {
       this->sync_timeouts_.fetch_add(1, std::memory_order_relaxed);
       return false;
@@ -960,6 +968,29 @@ std::string LR1121::runtime_diag_json() {
 // line past the logger's buffer, so the log showed a JSON object cut off
 // mid-key while MQTT carried the whole thing. A diagnostic that is silently
 // truncated in one of its two outputs is worse than one that is split in two.
+// Last completed drain, as hex. Main task, no SPI: it formats a buffer the
+// receiver task filled. The two are not interlocked, so a snapshot taken while
+// the next frame is being drained can tear - seq says which attempt it came
+// from, and a torn sample shows up immediately as a correlation failure rather
+// than as plausible wrong bytes.
+std::string LR1121::drain_sample_json() {
+  const uint16_t len = this->snap_len_;
+  if (!this->drain_ || len == 0) return {};
+  std::string out;
+  out.reserve((size_t) len * 2 + 64);
+  char head[64];
+  snprintf(head, sizeof(head), "{\"schema\":1,\"seq\":%u,\"len\":%u,\"raw\":\"",
+           (unsigned) this->snap_seq_.load(std::memory_order_acquire), (unsigned) len);
+  out += head;
+  static const char HEX[] = "0123456789ABCDEF";
+  for (uint16_t i = 0; i < len; i++) {
+    out += HEX[this->snap_buf_[i] >> 4];
+    out += HEX[this->snap_buf_[i] & 0x0F];
+  }
+  out += "\"}";
+  return out;
+}
+
 std::string LR1121::sync_probe_json() {
   if (!this->sync_probe_) return {};
   char out[352];

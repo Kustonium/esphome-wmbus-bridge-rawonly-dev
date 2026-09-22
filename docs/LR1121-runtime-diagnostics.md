@@ -286,4 +286,13 @@ longer contains the start of the frame - and these comparison counters stop
 meaning anything. That is exactly why the drain is proven below 255 before it
 is trusted above it.
 
+Above 255 the drain is published instead of compared: the last completed
+drain goes to `<diagnostic_topic>/lr_drain` as `{seq, len, raw}` every 60 s,
+because the post-`RX_DONE` read can no longer serve as a reference once the
+start of the frame has been overwritten. Checking it means correlating those
+bytes against a stream reconstructed outside the device. The snapshot and the
+receiver task are not interlocked, so a sample taken while the next frame is
+draining can tear; `seq` identifies the attempt, and a torn sample fails
+correlation outright rather than producing plausible wrong bytes.
+
 No automatic firmware deployment or experiment start is part of this change.
