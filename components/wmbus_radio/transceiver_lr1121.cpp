@@ -659,24 +659,40 @@ bool LR1121::load_rx_buffer_() {
   if (!this->cmd_read_(OC_GET_RXBUFFER_STATUS, {}, st, sizeof(st)))
     return false;
 
-  const uint8_t payload_len = st[0];
-  const uint8_t start_ptr = st[1];
-  if (payload_len == 0) {
-    // Woken with no packet yet. With lr1121_sync_probe on, that is the
-    // sync-word interrupt and the one moment where the position counter can be
-    // caught mid-frame - after RX_DONE it reads 0. Sample and get out of the
-    // way: no IRQ is cleared here and no capture state is touched, so the
-    // RX_DONE that follows still produces a normal capture.
-    if (this->sync_probe_) {
-      const uint32_t raw = this->read_regmem32_(PROBE_ADDR[0]);
-      const uint32_t pos = (raw & 0x0FFF0000) >> 16;
-      this->sync_wakes_.fetch_add(1, std::memory_order_relaxed);
-      this->sync_ptr_last_.store(pos, std::memory_order_relaxed);
-      uint32_t prev = this->sync_ptr_max_.load(std::memory_order_relaxed);
-      while (pos > prev && !this->sync_ptr_max_.compare_exchange_weak(prev, pos)) {
-      }
-      if (this->listen_mode_ != LISTEN_MODE_S1) return false;
+  uint8_t payload_len = st[0];
+  uint8_t start_ptr = st[1];
+  if (payload_len == 0 && this->sync_probe_ && this->listen_mode_ != LISTEN_MODE_S1) {
+    // Woken with no packet yet: the sync-word interrupt, and the one moment
+    // where the position counter can be caught mid-frame - after RX_DONE it
+    // reads 0.
+    const uint32_t raw = this->read_regmem32_(PROBE_ADDR[0]);
+    const uint32_t pos = (raw & 0x0FFF0000) >> 16;
+    this->sync_wakes_.fetch_add(1, std::memory_order_relaxed);
+    this->sync_ptr_last_.store(pos, std::memory_order_relaxed);
+    uint32_t prev = this->sync_ptr_max_.load(std::memory_order_relaxed);
+    while (pos > prev && !this->sync_ptr_max_.compare_exchange_weak(prev, pos)) {
     }
+
+    // Clearing exactly this latch is not optional, and leaving it set is what
+    // the first version of this probe got wrong: DIO1 is asserted while any
+    // unmasked IRQ stands, the pin is read on a RISING edge, so an uncleared
+    // sync-word latch holds the line high and RX_DONE never produces an edge.
+    // Measured: 59 sync wakes, zero captures. Clear only bit 5 - RX_DONE and
+    // the error bits must survive.
+    this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_SYNC_WORD_VALID >> 24), (uint8_t) (IRQ_SYNC_WORD_VALID >> 16),
+                                    (uint8_t) (IRQ_SYNC_WORD_VALID >> 8), (uint8_t) (IRQ_SYNC_WORD_VALID >> 0)});
+
+    // If the packet finished while we were sampling, the edge for it has
+    // already been and gone. Re-read rather than return: waiting for a second
+    // edge that is never coming would drop the frame.
+    const uint32_t irq_now = this->get_irq_status_();
+    if ((irq_now & IRQ_RX_DONE) == 0) return false;
+    uint8_t st2[2]{};
+    if (!this->cmd_read_(OC_GET_RXBUFFER_STATUS, {}, st2, sizeof(st2))) return false;
+    payload_len = st2[0];
+    start_ptr = st2[1];
+  }
+  if (payload_len == 0) {
     // In S1 the IRQ line also carries SYNC_WORD_VALID, so landing here means the
     // sync word matched and no packet followed. That is the decisive observation
     // for whether a SYNC_WORD_VALID-driven capture path is needed at all - say it

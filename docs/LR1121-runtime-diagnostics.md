@@ -204,11 +204,20 @@ wmbus_radio:
 ```
 
 Adds `SYNC_WORD_VALID` to the T1/C1 interrupt mask so the receiver task wakes
-while a frame is still arriving, reads `0x00F20384` bits `[27:16]` once, and
-returns without touching capture state or clearing any interrupt. The
-`RX_DONE` that follows still produces a normal capture. Results go to
+while a frame is still arriving, reads `0x00F20384` bits `[27:16]` once,
+clears **only** that latch, and returns. Results go to
 `<diagnostic_topic>/sync_probe` every 60 s: `sync_wakes`, `ptr_last`,
 `ptr_max`.
+
+Clearing that one bit is load-bearing. DIO1 stays asserted while any unmasked
+interrupt stands and the pin is read on a rising edge, so an uncleared
+sync-word latch holds the line high and `RX_DONE` never produces an edge at
+all. The first version of this probe deliberately cleared nothing, to "stay
+out of the way", and measured 59 sync wakes with zero captures - it had
+silently disabled reception. Only bit 5 is cleared; `RX_DONE` and the error
+bits must survive. If the packet happens to finish during the sample, the
+handler re-reads `GetRxBufferStatus` and continues into a normal capture
+rather than waiting for an edge that has already passed.
 
 Why it exists: a frame longer than the 255-byte buffer wraps, and the bytes it
 overwrites are gone - after `RX_DONE` the start of such a frame no longer
