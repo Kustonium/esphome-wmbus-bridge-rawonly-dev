@@ -662,31 +662,42 @@ bool LR1121::load_rx_buffer_() {
   uint8_t payload_len = st[0];
   uint8_t start_ptr = st[1];
   if (payload_len == 0 && this->sync_probe_ && this->listen_mode_ != LISTEN_MODE_S1) {
-    // Woken with no packet yet: the sync-word interrupt, and the one moment
-    // where the position counter can be caught mid-frame - after RX_DONE it
-    // reads 0.
-    const uint32_t raw = this->read_regmem32_(PROBE_ADDR[0]);
-    const uint32_t pos = (raw & 0x0FFF0000) >> 16;
+    // The sync-word wake: a frame is arriving and nothing has landed yet.
+    //
+    // This must NOT hand a failed attempt back to the caller. receive_frame()
+    // begins every attempt with restart_rx() - SetStandby(XOSC) + SetRx - so
+    // returning here aborts the frame that is still on air. Measured twice:
+    // 59 sync wakes per minute, zero captures, because every early wake threw
+    // away the packet it had just announced. The handoff of 2026-09-06 called
+    // this exactly ("przedwczesny odczyt/restart") and it was enabled anyway.
+    //
+    // So the wake is absorbed here: poll the position counter until the packet
+    // completes, then fall through into the ordinary capture. The caller never
+    // learns an early wake happened. This is also the shape the eventual drain
+    // needs, so it is not scaffolding.
     this->sync_wakes_.fetch_add(1, std::memory_order_relaxed);
-    this->sync_ptr_last_.store(pos, std::memory_order_relaxed);
-    uint32_t prev = this->sync_ptr_max_.load(std::memory_order_relaxed);
-    while (pos > prev && !this->sync_ptr_max_.compare_exchange_weak(prev, pos)) {
-    }
-
-    // Clearing exactly this latch is not optional, and leaving it set is what
-    // the first version of this probe got wrong: DIO1 is asserted while any
-    // unmasked IRQ stands, the pin is read on a RISING edge, so an uncleared
-    // sync-word latch holds the line high and RX_DONE never produces an edge.
-    // Measured: 59 sync wakes, zero captures. Clear only bit 5 - RX_DONE and
-    // the error bits must survive.
     this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_SYNC_WORD_VALID >> 24), (uint8_t) (IRQ_SYNC_WORD_VALID >> 16),
                                     (uint8_t) (IRQ_SYNC_WORD_VALID >> 8), (uint8_t) (IRQ_SYNC_WORD_VALID >> 0)});
 
-    // If the packet finished while we were sampling, the edge for it has
-    // already been and gone. Re-read rather than return: waiting for a second
-    // edge that is never coming would drop the frame.
-    const uint32_t irq_now = this->get_irq_status_();
-    if ((irq_now & IRQ_RX_DONE) == 0) return false;
+    const uint32_t expect = this->expected_len_override_ != 0 ? this->expected_len_override_
+                                                              : this->payload_length_;
+    const uint32_t air_ms = (expect * 8UL * 1000UL) / (this->bitrate_bps_ != 0 ? this->bitrate_bps_ : 100000UL);
+    const uint32_t deadline = millis() + air_ms + 50;
+    uint32_t irq_now = 0;
+    while ((int32_t) (millis() - deadline) < 0) {
+      const uint32_t pos = (this->read_regmem32_(PROBE_ADDR[0]) & 0x0FFF0000) >> 16;
+      this->sync_polls_.fetch_add(1, std::memory_order_relaxed);
+      this->sync_ptr_last_.store(pos, std::memory_order_relaxed);
+      uint32_t prev = this->sync_ptr_max_.load(std::memory_order_relaxed);
+      while (pos > prev && !this->sync_ptr_max_.compare_exchange_weak(prev, pos)) {
+      }
+      irq_now = this->get_irq_status_();
+      if ((irq_now & IRQ_RX_DONE) != 0) break;
+    }
+    if ((irq_now & IRQ_RX_DONE) == 0) {
+      this->sync_timeouts_.fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
     uint8_t st2[2]{};
     if (!this->cmd_read_(OC_GET_RXBUFFER_STATUS, {}, st2, sizeof(st2))) return false;
     payload_len = st2[0];
@@ -903,8 +914,9 @@ std::string LR1121::sync_probe_json() {
   if (!this->sync_probe_) return {};
   char out[192];
   snprintf(out, sizeof(out),
-           "{\"schema\":1,\"sync_wakes\":%u,\"ptr_last\":%u,\"ptr_max\":%u}",
-           (unsigned) this->sync_wakes_.load(), (unsigned) this->sync_ptr_last_.load(),
+           "{\"schema\":1,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u}",
+           (unsigned) this->sync_wakes_.load(), (unsigned) this->sync_polls_.load(),
+           (unsigned) this->sync_timeouts_.load(), (unsigned) this->sync_ptr_last_.load(),
            (unsigned) this->sync_ptr_max_.load());
   return out;
 }

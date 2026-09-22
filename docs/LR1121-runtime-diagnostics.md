@@ -209,7 +209,17 @@ clears **only** that latch, and returns. Results go to
 `<diagnostic_topic>/sync_probe` every 60 s: `sync_wakes`, `ptr_last`,
 `ptr_max`.
 
-Clearing that one bit is load-bearing. DIO1 stays asserted while any unmasked
+The wake is **absorbed inside the driver**: after sampling, it polls the
+counter until `RX_DONE` and then falls through into the ordinary capture, so
+the caller never learns an early wake happened. Returning instead is what the
+first two attempts did, and it disabled reception both times -
+`receive_frame()` opens every attempt with `restart_rx()`, i.e.
+`SetStandby(XOSC)` + `SetRx`, which aborts the frame still on air. Measured:
+59 sync wakes per minute, zero captures. `sync_polls` counts the readings taken
+inside that window and `sync_timeouts` the frames where `RX_DONE` never arrived
+within the frame's air time plus 50 ms.
+
+Clearing the sync-word bit is also load-bearing. DIO1 stays asserted while any unmasked
 interrupt stands and the pin is read on a rising edge, so an uncleared
 sync-word latch holds the line high and `RX_DONE` never produces an edge at
 all. The first version of this probe deliberately cleared nothing, to "stay

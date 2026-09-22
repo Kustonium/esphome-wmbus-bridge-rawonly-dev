@@ -221,6 +221,7 @@ class LR1121 : public RadioTransceiver {
   uint16_t expected_len_override_{0};
   bool sync_probe_{false};
   std::atomic<uint32_t> sync_wakes_{0}, sync_ptr_last_{0}, sync_ptr_max_{0};
+  std::atomic<uint32_t> sync_polls_{0}, sync_timeouts_{0};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};
