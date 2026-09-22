@@ -475,10 +475,14 @@ void Radio::loop() {
       char body[1024];
       snprintf(body, sizeof(body),
         "{\"schema\":1,\"kind\":\"fifo_sample\",\"boot_id\":\"%08X\",\"sample\":%u,\"captured_ms\":%u,"
-        "\"irq\":%u,\"rssi\":%d,\"raw_length\":%u,\"verify\":%u,\"differing_bytes\":%u,\"first_difference\":%u,\"raw\":\"%s\"}",
+        "\"irq\":%u,\"rssi\":%d,\"raw_length\":%u,\"fifo_dump\":%u,\"packet_start\":%u,"
+        "\"packet_len\":%u,\"verify\":%u,"
+        "\"differing_bytes\":%u,\"first_difference\":%u,\"raw\":\"%s\"}",
         (unsigned) this->rx_boot_id_, (unsigned) ++this->lr_raw_sample_seq_,
         (unsigned) raw_sample.captured_ms, (unsigned) raw_sample.irq,
-        (int) raw_sample.rssi, (unsigned) raw_sample.length, (unsigned) raw_sample.verify,
+        (int) raw_sample.rssi, (unsigned) raw_sample.length, (unsigned) raw_sample.fifo_dump,
+        (unsigned) raw_sample.packet_start, (unsigned) raw_sample.packet_len,
+        (unsigned) raw_sample.verify,
         (unsigned) raw_sample.differing_bytes, (unsigned) raw_sample.first_difference, hex);
       mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_fifo/" +
         std::to_string((this->lr_raw_sample_seq_ - 1) % 8), std::string(body), 1, true);

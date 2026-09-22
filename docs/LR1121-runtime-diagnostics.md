@@ -46,12 +46,37 @@ With summary diagnostics enabled, LR1121 also publishes retained QoS 1 messages:
   crc_failed + other_failed`. Counts precede the post-parse listen-mode filter.
   They do NOT include packets rejected in the receiver task before conversion.
   Compare against the existing summary `rx_path` counters for early rejection.
-- `.../lr_fifo/0` through `.../lr_fifo/7`: rolling eight samples of the full FIFO
-  read (up to 255 bytes), taken at most once per five seconds, regardless of
-  eventual success or failure. A two-element, nonblocking FreeRTOS queue transfers
-  copies from RX to main. If full, a sample is lost, never a received packet.
+- `.../lr_fifo/0` through `.../lr_fifo/7`: rolling eight samples of the RX
+  buffer, taken at most once per five seconds, regardless of eventual success or
+  failure. A two-element, nonblocking FreeRTOS queue transfers copies from RX to
+  main. If full, a sample is lost, never a received packet.
   These bytes may include noise after a short actual telegram due to fixed-length
   reception; do not count invalid trailing symbols as telegram corruption.
+
+  Since 2026-09-22 the sample is **the whole 255-byte buffer read from offset 0**
+  (`ReadBuffer8(0, 255)`, UM 2.2 p.35; RX RAM is addressable outside sleep, p.88),
+  not the packet-sized read the decoder consumes. `fifo_dump` is 1 for such a
+  sample and `raw_length` is 255. The reason: the packet-sized read takes
+  `payload_len` bytes as reported by `GetRxBufferStatus`, and that is the length
+  the packet engine was *declared* to expect - so it can never show whether the
+  engine kept writing past it. With `payload_length` set below 255, the bytes
+  past it are the only place that question can be answered. Cost is one extra
+  255-byte SPI read after `RX_DONE`, at most once per five seconds; the decoder
+  still receives the packet-sized read, unchanged.
+
+  `packet_start` and `packet_len` carry the `GetRxBufferStatus` values for that
+  capture, so the dump can be split into the declared packet
+  (`[packet_start, packet_start + packet_len)`) and everything outside it.
+  Without them the split would have to be assumed from the configured
+  `payload_length`, which is exactly the assumption this dump exists to test.
+  Bytes outside that range are not a decoded telegram and are not claimed to be
+  one - they are whatever the RX RAM held at read time, which may be this
+  capture, a previous one, or noise.
+
+  Consequence for `verify`: the double-read comparison still covers only
+  `payload_len` bytes, so `differing_bytes` and `first_difference` are indices
+  into the packet-sized read, **not** into the 255-byte dump they are published
+  next to. The dump is not the buffer that was compared.
 - `.../lr_drop/0` through `.../lr_drop/7`: rolling eight failed conversions,
   at most once per five seconds. Includes actual parser reason/stage, lengths,
   3-of-6 symbol statistics and its raw input (up to 256 bytes). This input may
@@ -95,12 +120,18 @@ Existing restart_rx re-arms reception afterwards. This can interrupt a following
 packet and is NOT a passive sensitivity measurement. UM 2.2 pp.16,35,88 documents
 standby and addressable RX RAM accessible outside sleep.
 
-FIFO sample fields: `verify` = 0 disabled/not requested, 1 inconclusive (BUSY,
-command status, mode or pointer checks did not pass), 2 identical, 3 different.
-`differing_bytes` counts unequal bytes; `first_difference` is a zero-based byte
-offset, or 255 when none. The fields describe the full 255-byte capture, including
-possible trailing noise; equality does not prove correct RF demodulation, and a
-stable deterministic SPI error is not excluded. A mismatch under validated standby
-is evidence to investigate the read path, not automatic proof of bad RF reception.
+FIFO sample fields: `fifo_dump` = 1 when `raw` is the whole 255-byte buffer read
+from offset 0, 0 when it is the packet-sized read (see above); `packet_start`
+and `packet_len` locate the declared packet inside that dump. `verify` = 0
+disabled/not requested, 1 inconclusive (BUSY, command status, mode or pointer
+checks did not pass), 2 identical, 3 different. `differing_bytes` counts unequal
+bytes; `first_difference` is a zero-based byte offset, or 255 when none.
+
+The `verify` fields describe **the packet-sized read of `payload_len` bytes**,
+which is not the same span as the `raw` dump published beside them, and is
+shorter than 255 whenever `payload_length` is configured below 255. Equality
+does not prove correct RF demodulation, and a stable deterministic SPI error is
+not excluded. A mismatch under validated standby is evidence to investigate the
+read path, not automatic proof of bad RF reception.
 
 No automatic firmware deployment or experiment start is part of this change.

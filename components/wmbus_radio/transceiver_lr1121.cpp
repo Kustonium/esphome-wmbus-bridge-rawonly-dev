@@ -652,11 +652,22 @@ bool LR1121::load_rx_buffer_() {
     sample.captured_ms = sample_now;
     sample.irq = this->last_irq_.load();
     sample.rssi = this->last_rssi_dbm_;
-    sample.length = (uint16_t) this->rx_buffer_.size();
     sample.verify = verify_result;
     sample.differing_bytes = differences;
     sample.first_difference = first_difference;
-    for (size_t i = 0; i < sample.length; ++i) sample.bytes[i] = this->rx_buffer_[i];
+    // The read above takes payload_len bytes from start_ptr - payload_len is the
+    // length the packet engine *declares*, so that read can never show whether
+    // the engine kept writing past it. Sample the whole buffer instead
+    // (UM 2.2 p.35 ReadBuffer8, p.88 RX RAM addressable outside sleep): with
+    // payload_length below 255, bytes past it are the only place an answer can
+    // appear. One extra 255-byte SPI read, at most once per 5 s, after RX_DONE.
+    // The decoder still receives rx_buffer_, untouched.
+    sample.fifo_dump = 1;
+    sample.length = 255;
+    sample.packet_start = start_ptr;
+    sample.packet_len = payload_len;
+    // cmd_read_ always returns true, so there is no status to branch on here.
+    this->cmd_read_(OC_READ_BUFFER8, {0x00, 0xFF}, sample.bytes, sizeof(sample.bytes));
     (void) xQueueSend(this->raw_sample_queue_, &sample, 0);
   }
 

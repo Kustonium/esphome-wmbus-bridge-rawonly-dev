@@ -140,6 +140,13 @@ public:
     uint16_t length{0};
     int8_t rssi{-127};
     uint8_t verify{0};  // 0 off, 1 inconclusive, 2 equal, 3 different
+    // 1 = bytes[] is the whole 255-byte RX buffer read from offset 0, which is
+    // wider than the packet the decoder received. 0 = packet-sized read.
+    uint8_t fifo_dump{0};
+    // Where the declared packet sits inside a fifo_dump, from GetRxBufferStatus.
+    // Without these the dump cannot be split into "packet" and "past the packet".
+    uint8_t packet_start{0};
+    uint8_t packet_len{0};
     uint16_t differing_bytes{0};
     uint16_t first_difference{255};
     uint8_t bytes[255]{};
