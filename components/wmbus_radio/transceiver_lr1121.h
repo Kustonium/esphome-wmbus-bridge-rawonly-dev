@@ -121,6 +121,7 @@ class LR1121 : public RadioTransceiver {
   void set_verify_buffer(bool v) { this->verify_buffer_ = v; }
   void set_expected_len_override(uint16_t v) { this->expected_len_override_ = v; }
   void set_sync_probe(bool v) { this->sync_probe_ = v; }
+  void set_drain(bool v) { this->drain_ = v; }
   void set_tcxo_voltage(LR1121TcxoVoltage v) { this->tcxo_voltage_ = v; }
   void set_tcxo_startup_ticks(uint32_t ticks) { this->tcxo_startup_ticks_ = ticks; }
 
@@ -165,6 +166,7 @@ class LR1121 : public RadioTransceiver {
   // ReadRegMem32 of one word. Read-only; see PROBE_ADDR in the .cpp.
   uint32_t read_regmem32_(uint32_t address);
   void probe_registers_(uint32_t out[4]);
+  void drain_up_to_(uint32_t target);
   void write_regmem32_mask_(uint32_t address, uint32_t mask, uint32_t data);
   // Writes expected_len_override_ into the expected-packet-length register.
   // No-op when the override is 0 or the radio firmware is not the verified one.
@@ -222,6 +224,12 @@ class LR1121 : public RadioTransceiver {
   bool sync_probe_{false};
   std::atomic<uint32_t> sync_wakes_{0}, sync_ptr_last_{0}, sync_ptr_max_{0};
   std::atomic<uint32_t> sync_polls_{0}, sync_timeouts_{0};
+  bool drain_{false};
+  static constexpr uint16_t DRAIN_CAP = 512;
+  uint8_t drain_buf_[DRAIN_CAP]{};
+  uint16_t drain_len_{0};
+  std::atomic<uint32_t> drain_frames_{0}, drain_match_{0}, drain_mismatch_{0};
+  std::atomic<uint32_t> drain_bytes_last_{0}, drain_diff_last_{0}, drain_first_diff_{0};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

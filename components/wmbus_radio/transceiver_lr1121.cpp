@@ -262,6 +262,22 @@ uint32_t LR1121::read_regmem32_(uint32_t address) {
          (uint32_t) raw[3];
 }
 
+// Copy out everything received up to `target`, wrap-aware. Only ever moves
+// forward: drain_len_ is how much of this frame is already in hand.
+void LR1121::drain_up_to_(uint32_t target) {
+  if (target > DRAIN_CAP) target = DRAIN_CAP;
+  while (this->drain_len_ < target) {
+    const uint16_t off = (uint16_t) (this->drain_len_ % 256);
+    uint16_t chunk = (uint16_t) (target - this->drain_len_);
+    if (chunk > (uint16_t) (256 - off)) chunk = (uint16_t) (256 - off);  // stop at the ring seam
+    if (chunk > 255) chunk = 255;                                        // ReadBuffer8 length is 8-bit
+    uint8_t tmp[255];
+    this->cmd_read_(OC_READ_BUFFER8, {(uint8_t) off, (uint8_t) chunk}, tmp, chunk);
+    for (uint16_t i = 0; i < chunk; i++) this->drain_buf_[this->drain_len_ + i] = tmp[i];
+    this->drain_len_ = (uint16_t) (this->drain_len_ + chunk);
+  }
+}
+
 void LR1121::probe_registers_(uint32_t out[4]) {
   for (size_t i = 0; i < 4; i++) out[i] = this->read_regmem32_(PROBE_ADDR[i]);
 }
@@ -684,6 +700,7 @@ bool LR1121::load_rx_buffer_() {
     const uint32_t air_ms = (expect * 8UL * 1000UL) / (this->bitrate_bps_ != 0 ? this->bitrate_bps_ : 100000UL);
     const uint32_t deadline = millis() + air_ms + 50;
     uint32_t irq_now = 0;
+    this->drain_len_ = 0;
     while ((int32_t) (millis() - deadline) < 0) {
       const uint32_t pos = (this->read_regmem32_(PROBE_ADDR[0]) & 0x0FFF0000) >> 16;
       this->sync_polls_.fetch_add(1, std::memory_order_relaxed);
@@ -691,9 +708,19 @@ bool LR1121::load_rx_buffer_() {
       uint32_t prev = this->sync_ptr_max_.load(std::memory_order_relaxed);
       while (pos > prev && !this->sync_ptr_max_.compare_exchange_weak(prev, pos)) {
       }
+      // The counter is an absolute count of bytes received in this frame: it
+      // reached 325 on a 326-byte frame, so it does not wrap at 256 even though
+      // the buffer does. Byte k therefore sits at buffer position k % 256 and
+      // survives until byte k+256 arrives. Measured margin at 100 kb/s: one
+      // poll every ~2.8 ms against a 20.5 ms overwrite deadline.
+      if (this->drain_) this->drain_up_to_(pos);
       irq_now = this->get_irq_status_();
       if ((irq_now & IRQ_RX_DONE) != 0) break;
     }
+    // RX_DONE fires at exactly the declared length in fixed-length mode, and
+    // the counter reads 0 once it has, so the tail is taken on that basis
+    // rather than from a final reading that no longer exists.
+    if (this->drain_ && (irq_now & IRQ_RX_DONE) != 0) this->drain_up_to_(expect);
     if ((irq_now & IRQ_RX_DONE) == 0) {
       this->sync_timeouts_.fetch_add(1, std::memory_order_relaxed);
       return false;
@@ -753,6 +780,29 @@ bool LR1121::load_rx_buffer_() {
   this->rx_idx_ = 0;
   this->rx_len_ = this->rx_buffer_.size();
   this->rx_loaded_ = true;
+
+  // Self-check, and the whole reason the drain is tested first on a frame that
+  // does NOT wrap: the ordinary post-RX_DONE read is then a complete and
+  // correct copy of the same bytes, so the drain can be judged against it with
+  // no offline reconstruction at all. Once a frame wraps this reference is
+  // destroyed and the comparison stops meaning anything, which is precisely
+  // why the drain has to be proven here before it is trusted there.
+  if (this->drain_ && !this->rx_buffer_.empty() &&
+      this->drain_len_ >= start_ptr + this->rx_buffer_.size()) {
+    this->drain_frames_.fetch_add(1, std::memory_order_relaxed);
+    this->drain_bytes_last_.store(this->drain_len_, std::memory_order_relaxed);
+    uint16_t diff = 0, first = 0xFFFF;
+    for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
+      if (this->drain_buf_[start_ptr + i] != this->rx_buffer_[i]) {
+        if (diff == 0) first = (uint16_t) i;
+        diff++;
+      }
+    }
+    this->drain_diff_last_.store(diff, std::memory_order_relaxed);
+    this->drain_first_diff_.store(first, std::memory_order_relaxed);
+    if (diff == 0) this->drain_match_.fetch_add(1, std::memory_order_relaxed);
+    else this->drain_mismatch_.fetch_add(1, std::memory_order_relaxed);
+  }
 
   uint8_t verify_result = verify_requested ? 1 : 0;
   uint16_t differences = 0, first_difference = 255;
@@ -912,12 +962,17 @@ std::string LR1121::runtime_diag_json() {
 // truncated in one of its two outputs is worse than one that is split in two.
 std::string LR1121::sync_probe_json() {
   if (!this->sync_probe_) return {};
-  char out[192];
+  char out[352];
   snprintf(out, sizeof(out),
-           "{\"schema\":1,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u}",
+           "{\"schema\":1,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u,"
+           "\"drain_frames\":%u,\"drain_match\":%u,\"drain_mismatch\":%u,"
+           "\"drain_bytes_last\":%u,\"drain_diff_last\":%u,\"drain_first_diff\":%u}",
            (unsigned) this->sync_wakes_.load(), (unsigned) this->sync_polls_.load(),
            (unsigned) this->sync_timeouts_.load(), (unsigned) this->sync_ptr_last_.load(),
-           (unsigned) this->sync_ptr_max_.load());
+           (unsigned) this->sync_ptr_max_.load(),
+           (unsigned) this->drain_frames_.load(), (unsigned) this->drain_match_.load(),
+           (unsigned) this->drain_mismatch_.load(), (unsigned) this->drain_bytes_last_.load(),
+           (unsigned) this->drain_diff_last_.load(), (unsigned) this->drain_first_diff_.load());
   return out;
 }
 

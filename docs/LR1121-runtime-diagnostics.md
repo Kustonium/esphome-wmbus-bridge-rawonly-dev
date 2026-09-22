@@ -250,4 +250,40 @@ path, finds no packet and counts as `rx_preamble_failed`. That counter is
 inflated for as long as the probe is enabled and should not be compared against
 runs without it.
 
+## Draining the frame while it arrives (bench experiment, default off)
+
+```yaml
+wmbus_radio:
+  lr1121_sync_probe: true     # required - no early wake, no window to read in
+  lr1121_drain: true
+```
+
+Inside the sync-word window the driver now also copies the frame out as it
+lands. `0x00F20384` counts bytes received in the current frame **absolutely** -
+it reached 325 on a 326-byte frame, so it does not wrap at 256 even though the
+buffer does. Byte *k* therefore sits at buffer position *k* mod 256 and stays
+readable until byte *k*+256 arrives. Measured margin at 100 kb/s: one poll
+every ~2.8 ms against a 20.5 ms overwrite deadline, about 9 polls per frame.
+
+Reads stop at the ring seam so a single `ReadBuffer8` never straddles the wrap,
+and its length field is 8-bit so no read exceeds 255 bytes. Capture is capped
+at 512 bytes.
+
+**Test it on a frame that does not wrap first.** With an expected length at or
+below 255 the ordinary post-`RX_DONE` read is a complete, correct copy of the
+same bytes, so the drain is checked against it on-device, byte for byte, with
+no offline reconstruction:
+
+| field | meaning |
+|---|---|
+| `drain_frames` | frames where a comparison was possible |
+| `drain_match` / `drain_mismatch` | how those comparisons came out |
+| `drain_bytes_last` | bytes drained from the last frame |
+| `drain_diff_last`, `drain_first_diff` | size and position of the last disagreement |
+
+Once a frame wraps that reference is destroyed - the post-`RX_DONE` read no
+longer contains the start of the frame - and these comparison counters stop
+meaning anything. That is exactly why the drain is proven below 255 before it
+is trusted above it.
+
 No automatic firmware deployment or experiment start is part of this change.
