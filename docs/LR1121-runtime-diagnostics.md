@@ -160,4 +160,40 @@ does not prove correct RF demodulation, and a stable deterministic SPI error is
 not excluded. A mismatch under validated standby is evidence to investigate the
 read path, not automatic proof of bad RF reception.
 
+## Writing the expected packet length (bench experiment, default off)
+
+```yaml
+wmbus_radio:
+  lr1121_expected_len_override: 64   # 0 = off, the default
+```
+
+Non-zero writes that value into bits `[31:20]` of `0x00F20368` after every
+`SetStandby(XOSC)` and before `SetRx`, overriding the length `SetPacketParams`
+declared. **This is the first write to an undocumented register in this
+component.** It is bench work, not a supported configuration, and it logs one
+loud warning when it engages.
+
+What makes the address usable rather than a guess, measured 2026-09-22: the
+field read 255 with the radio configured for 255 and *nothing yet received*,
+and 64 after `payload_length` was changed to 64. The pre-RX baseline is what
+separates "mirrors `SetPacketParams`" from "holds the last packet's length" -
+in fixed-length mode those two are otherwise always equal. The field is
+12-bit, so it can express up to 4095, past the 8-bit `pld_len_in_bytes` of the
+public API.
+
+The write is gated on the radio firmware version and refuses, with a warning,
+on anything other than the image it was verified against (`0x0101` here). An
+undocumented register is a property of a firmware image, not a promise.
+
+**Reading the result:** `packet_len` in the FIFO samples comes from
+`GetRxBufferStatus`. If it follows the override rather than the configured
+`payload_length`, the engine obeys the register and the write is effective.
+If it keeps reporting the configured value, the register is not the control
+path from this direction - which closes the question rather than failing.
+
+Start in the safe direction, override *below* the configured length: the
+buffer is 255 bytes and lowering the expectation cannot overrun it. Raising it
+past 255 is a separate step and needs a transmitter that actually sends more
+than 255 raw bytes; the longest telegram in normal field traffic here is 245.
+
 No automatic firmware deployment or experiment start is part of this change.

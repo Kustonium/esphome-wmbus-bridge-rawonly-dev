@@ -119,6 +119,7 @@ class LR1121 : public RadioTransceiver {
   void set_payload_length(uint8_t len) { this->payload_length_ = len; }
   void set_rx_boosted(bool v) { this->rx_boosted_ = v; }
   void set_verify_buffer(bool v) { this->verify_buffer_ = v; }
+  void set_expected_len_override(uint16_t v) { this->expected_len_override_ = v; }
   void set_tcxo_voltage(LR1121TcxoVoltage v) { this->tcxo_voltage_ = v; }
   void set_tcxo_startup_ticks(uint32_t ticks) { this->tcxo_startup_ticks_ = ticks; }
 
@@ -162,6 +163,10 @@ class LR1121 : public RadioTransceiver {
   // ReadRegMem32 of one word. Read-only; see PROBE_ADDR in the .cpp.
   uint32_t read_regmem32_(uint32_t address);
   void probe_registers_(uint32_t out[4]);
+  void write_regmem32_mask_(uint32_t address, uint32_t mask, uint32_t data);
+  // Writes expected_len_override_ into the expected-packet-length register.
+  // No-op when the override is 0 or the radio firmware is not the verified one.
+  void apply_expected_len_override_();
 
   // --- chip helpers --------------------------------------------------------
   bool get_version_(uint8_t &hw, uint8_t &type, uint16_t &fw);
@@ -211,6 +216,8 @@ class LR1121 : public RadioTransceiver {
   // Probe values read once at boot, before RX was ever armed. The reference
   // every later probe sample is compared against.
   uint32_t probe_baseline_[4]{};
+  uint16_t expected_len_override_{0};
+  bool expected_len_override_logged_{false};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

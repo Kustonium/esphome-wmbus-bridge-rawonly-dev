@@ -30,6 +30,7 @@ static constexpr uint16_t OC_SET_DIO_AS_RFSW    = 0x0112;
 static constexpr uint16_t OC_SET_DIO_IRQ_PARAMS = 0x0113;
 static constexpr uint16_t OC_CLEAR_IRQ          = 0x0114;
 static constexpr uint16_t OC_READ_REGMEM32      = 0x0106;
+static constexpr uint16_t OC_WRITE_REGMEM32_MASK = 0x010C;
 static constexpr uint16_t OC_CFG_LFCLK          = 0x0116;
 static constexpr uint16_t OC_SET_TCXO_MODE      = 0x0117;
 static constexpr uint16_t OC_SET_STANDBY        = 0x011C;
@@ -46,6 +47,22 @@ static constexpr uint16_t OC_SET_STANDBY        = 0x011C;
 // Nothing here writes. A value that never changes, or reads as all-zero or
 // all-ones, is a result and not a failure.
 static constexpr uint32_t PROBE_ADDR[4] = {0x00F20384, 0x00F20368, 0x00F30028, 0x00F30030};
+
+// Expected-packet-length register, established on hardware 2026-09-22: its
+// [31:20] field read 255 with the radio configured for 255 and NOTHING yet
+// received, then 64 after payload_length was changed to 64 - so it mirrors
+// SetPacketParams rather than holding the last packet's length. The field is
+// 12-bit and can express 4095, far past the 8-bit pld_len_in_bytes of the
+// public API. Same register Semtech's Sidewalk driver patches mid-reception.
+static constexpr uint32_t REG_EXPECTED_LEN = 0x00F20368;
+static constexpr uint32_t REG_EXPECTED_LEN_MASK = 0xFFF00000;
+static constexpr uint8_t REG_EXPECTED_LEN_SHIFT = 20;
+
+// The override is verified against exactly one radio firmware. An undocumented
+// register is a property of the firmware image, not a promise, so a different
+// image must disable the path loudly rather than write blind (see the
+// firmware-pinning rule in the investigation note).
+static constexpr uint16_t VERIFIED_RADIO_FW = 0x0101;
 
 static constexpr uint16_t OC_GET_RXBUFFER_STATUS = 0x0203;
 static constexpr uint16_t OC_GET_PKT_STATUS      = 0x0204;
@@ -242,6 +259,40 @@ uint32_t LR1121::read_regmem32_(uint32_t address) {
 
 void LR1121::probe_registers_(uint32_t out[4]) {
   for (size_t i = 0; i < 4; i++) out[i] = this->read_regmem32_(PROBE_ADDR[i]);
+}
+
+// WriteRegMem32Mask, opcode 0x010C: address, mask and data, all big-endian,
+// no response. Format from SWDR001 2.4.1 lr11xx_regmem.c.
+void LR1121::write_regmem32_mask_(uint32_t address, uint32_t mask, uint32_t data) {
+  const uint8_t args[12] = {
+      (uint8_t) (address >> 24), (uint8_t) (address >> 16), (uint8_t) (address >> 8), (uint8_t) address,
+      (uint8_t) (mask >> 24),    (uint8_t) (mask >> 16),    (uint8_t) (mask >> 8),    (uint8_t) mask,
+      (uint8_t) (data >> 24),    (uint8_t) (data >> 16),    (uint8_t) (data >> 8),    (uint8_t) data};
+  this->cmd_write_buf_(OC_WRITE_REGMEM32_MASK, args, sizeof(args));
+}
+
+void LR1121::apply_expected_len_override_() {
+  if (this->expected_len_override_ == 0) return;
+  if (this->boot_fw_ != VERIFIED_RADIO_FW) {
+    if (!this->expected_len_override_logged_) {
+      this->expected_len_override_logged_ = true;
+      ESP_LOGW(TAG, "lr1121_expected_len_override ignored: verified only on radio FW 0x%04X, "
+                    "this chip reports 0x%04X. Refusing to write an undocumented register "
+                    "on an unverified firmware image.",
+               (unsigned) VERIFIED_RADIO_FW, (unsigned) this->boot_fw_);
+    }
+    return;
+  }
+  if (!this->expected_len_override_logged_) {
+    this->expected_len_override_logged_ = true;
+    ESP_LOGW(TAG, "EXPERIMENT ACTIVE: writing expected packet length %u into undocumented "
+                  "register 0x%08X [31:20], overriding the configured payload_length %u. "
+                  "This is bench work, not a supported configuration.",
+             (unsigned) this->expected_len_override_, (unsigned) REG_EXPECTED_LEN,
+             (unsigned) this->payload_length_);
+  }
+  this->write_regmem32_mask_(REG_EXPECTED_LEN, REG_EXPECTED_LEN_MASK,
+                             ((uint32_t) this->expected_len_override_) << REG_EXPECTED_LEN_SHIFT);
 }
 
 // ---------------------------------------------------------------------------
@@ -580,6 +631,8 @@ void LR1121::restart_rx() {
   this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_ALL >> 24), (uint8_t) (IRQ_ALL >> 16), (uint8_t) (IRQ_ALL >> 8),
                                   (uint8_t) (IRQ_ALL >> 0)});
   this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+  // In standby, after SetPacketParams has had its say and before RX is armed.
+  this->apply_expected_len_override_();
   this->cmd_write_buf_(OC_SET_RX, RX_CONTINUOUS, sizeof(RX_CONTINUOUS));
 
   this->rx_loaded_ = false;
