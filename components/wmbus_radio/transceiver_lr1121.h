@@ -158,6 +158,9 @@ class LR1121 : public RadioTransceiver {
   void cmd_write_(uint16_t opcode, std::initializer_list<uint8_t> args);
   void cmd_write_buf_(uint16_t opcode, const uint8_t *args, size_t len);
   bool cmd_read_(uint16_t opcode, std::initializer_list<uint8_t> args, uint8_t *out, size_t out_len);
+  // ReadRegMem32 of one word. Read-only; see PROBE_ADDR in the .cpp.
+  uint32_t read_regmem32_(uint32_t address);
+  void probe_registers_(uint32_t out[4]);
 
   // --- chip helpers --------------------------------------------------------
   bool get_version_(uint8_t &hw, uint8_t &type, uint16_t &fw);
@@ -204,6 +207,9 @@ class LR1121 : public RadioTransceiver {
   uint8_t boot_type_{0};
   uint16_t boot_fw_{0};
   uint16_t boot_errors_{0};
+  // Probe values read once at boot, before RX was ever armed. The reference
+  // every later probe sample is compared against.
+  uint32_t probe_baseline_[4]{};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

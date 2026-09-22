@@ -147,6 +147,9 @@ public:
     // Without these the dump cannot be split into "packet" and "past the packet".
     uint8_t packet_start{0};
     uint8_t packet_len{0};
+    // Read-only probe of four undocumented addresses, taken right after
+    // RX_DONE. Meaningful only against the at-rest baseline logged at boot.
+    uint32_t probe[4]{};
     uint16_t differing_bytes{0};
     uint16_t first_difference{255};
     uint8_t bytes[255]{};

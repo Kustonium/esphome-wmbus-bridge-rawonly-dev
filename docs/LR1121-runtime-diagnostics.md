@@ -64,6 +64,21 @@ With summary diagnostics enabled, LR1121 also publishes retained QoS 1 messages:
   255-byte SPI read after `RX_DONE`, at most once per five seconds; the decoder
   still receives the packet-sized read, unchanged.
 
+  `probe` carries a **read-only** sample of four undocumented register
+  addresses, taken right after `RX_DONE` in the same pass. `F20384` and
+  `F20368` are the position-counter / end-of-packet pair that Semtech's own
+  Sidewalk driver polls and writes on LR11xx with no named macro in the public
+  SDK; `F30028` and `F30030` are the Rx FIFO base address and size registers
+  documented for the LR20xx successor in the LR2021 datasheet rev 2.2, Tables
+  5-2 and 5-3. Whether LR1121 has anything wired up at those addresses is the
+  open question these values exist to answer. **Nothing is written to any of
+  them.** Values are only interpretable against the `Register probe baseline
+  (pre-RX, read-only)` line logged once at boot, taken after the radio is
+  configured but before RX is ever armed - at that moment nothing has been
+  received, so a position counter cannot legitimately hold a byte count. A
+  value that never moves off the baseline, or reads as all-zero or all-ones,
+  is a result and not a malfunction.
+
   `packet_start` and `packet_len` carry the `GetRxBufferStatus` values for that
   capture, so the dump can be split into the declared packet
   (`[packet_start, packet_start + packet_len)`) and everything outside it.

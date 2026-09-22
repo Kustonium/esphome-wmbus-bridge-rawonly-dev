@@ -29,9 +29,23 @@ static constexpr uint16_t OC_CALIBRATE_IMAGE    = 0x0111;
 static constexpr uint16_t OC_SET_DIO_AS_RFSW    = 0x0112;
 static constexpr uint16_t OC_SET_DIO_IRQ_PARAMS = 0x0113;
 static constexpr uint16_t OC_CLEAR_IRQ          = 0x0114;
+static constexpr uint16_t OC_READ_REGMEM32      = 0x0106;
 static constexpr uint16_t OC_CFG_LFCLK          = 0x0116;
 static constexpr uint16_t OC_SET_TCXO_MODE      = 0x0117;
 static constexpr uint16_t OC_SET_STANDBY        = 0x011C;
+
+// Read-only probe of four undocumented addresses, to establish whether they
+// respond on this part at all before anything is ever written to one.
+//   0x00F20384, 0x00F20368 - the position counter / end-of-packet pair that
+//     Semtech's own Sidewalk driver (Lora-net/SWDR007, SWSD006,
+//     lr11xx_radio_fsk.c) polls and writes on LR11xx, with no named macro
+//     anywhere in the public SDK.
+//   0x00F30028, 0x00F30030 - Rx FIFO base address and size on the LR20xx
+//     successor, documented in the LR2021 datasheet rev 2.2 Tables 5-2/5-3.
+//     Whether LR1121 has anything wired up there is exactly the question.
+// Nothing here writes. A value that never changes, or reads as all-zero or
+// all-ones, is a result and not a failure.
+static constexpr uint32_t PROBE_ADDR[4] = {0x00F20384, 0x00F20368, 0x00F30028, 0x00F30030};
 
 static constexpr uint16_t OC_GET_RXBUFFER_STATUS = 0x0203;
 static constexpr uint16_t OC_GET_PKT_STATUS      = 0x0204;
@@ -211,6 +225,23 @@ bool LR1121::cmd_read_(uint16_t opcode, std::initializer_list<uint8_t> args, uin
     out[i] = this->delegate_->transfer((uint8_t) 0x00);
   this->delegate_->end_transaction();
   return true;
+}
+
+// ReadRegMem32, one word. Wire format taken from SWDR001 2.4.1 lr11xx_regmem.c:
+// opcode 0x0106, then the address big-endian, then the word count; the response
+// words come back big-endian too.
+uint32_t LR1121::read_regmem32_(uint32_t address) {
+  uint8_t raw[4]{};
+  this->cmd_read_(OC_READ_REGMEM32,
+                  {(uint8_t) (address >> 24), (uint8_t) (address >> 16), (uint8_t) (address >> 8),
+                   (uint8_t) (address >> 0), 1},
+                  raw, sizeof(raw));
+  return ((uint32_t) raw[0] << 24) | ((uint32_t) raw[1] << 16) | ((uint32_t) raw[2] << 8) |
+         (uint32_t) raw[3];
+}
+
+void LR1121::probe_registers_(uint32_t out[4]) {
+  for (size_t i = 0; i < 4; i++) out[i] = this->read_regmem32_(PROBE_ADDR[i]);
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +445,19 @@ void LR1121::setup() {
   this->cmd_write_(OC_CLEAR_ERRORS, {});
 
   this->configure_gfsk_();
+
+  // At-rest baseline, deliberately taken after the radio is configured but
+  // before RX is ever armed: nothing has been received yet, so whatever these
+  // addresses hold now cannot be a position counter's value. Every later probe
+  // in the FIFO samples is only interpretable against this line. Read-only.
+  this->probe_registers_(this->probe_baseline_);
+  ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): "
+                "%08X=0x%08X %08X=0x%08X %08X=0x%08X %08X=0x%08X",
+           (unsigned) PROBE_ADDR[0], (unsigned) this->probe_baseline_[0],
+           (unsigned) PROBE_ADDR[1], (unsigned) this->probe_baseline_[1],
+           (unsigned) PROBE_ADDR[2], (unsigned) this->probe_baseline_[2],
+           (unsigned) PROBE_ADDR[3], (unsigned) this->probe_baseline_[3]);
+
   this->restart_rx();
 
   this->log_reg_status();
@@ -668,6 +712,10 @@ bool LR1121::load_rx_buffer_() {
     sample.packet_len = payload_len;
     // cmd_read_ always returns true, so there is no status to branch on here.
     this->cmd_read_(OC_READ_BUFFER8, {0x00, 0xFF}, sample.bytes, sizeof(sample.bytes));
+    // Taken after RX_DONE, i.e. after the engine finished writing. A live
+    // position counter should differ from the at-rest baseline logged at boot,
+    // and should differ between captures of different lengths.
+    this->probe_registers_(sample.probe);
     (void) xQueueSend(this->raw_sample_queue_, &sample, 0);
   }
 
