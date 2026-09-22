@@ -265,12 +265,20 @@ uint32_t LR1121::read_regmem32_(uint32_t address) {
 // Copy out everything received up to `target`, wrap-aware. Only ever moves
 // forward: drain_len_ is how much of this frame is already in hand.
 void LR1121::drain_up_to_(uint32_t target) {
+  uint8_t status[2]{};
+  this->cmd_read_(OC_GET_RXBUFFER_STATUS, {}, status, sizeof(status));
   if (target > DRAIN_CAP) target = DRAIN_CAP;
   while (this->drain_len_ < target) {
     const uint16_t off = (uint16_t) (this->drain_len_ % 256);
     uint16_t chunk = (uint16_t) (target - this->drain_len_);
     if (chunk > (uint16_t) (256 - off)) chunk = (uint16_t) (256 - off);  // stop at the ring seam
     if (chunk > 255) chunk = 255;                                        // ReadBuffer8 length is 8-bit
+    this->drain_sample_.trace_total++;
+    if (this->drain_sample_.trace_count < DRAIN_TRACE_CAP) {
+      auto &trace = this->drain_sample_.trace[this->drain_sample_.trace_count++];
+      trace = {micros() - this->drain_started_us_, (uint16_t) target, this->drain_len_,
+               status[0], status[1], (uint8_t) off, (uint8_t) chunk};
+    }
     uint8_t tmp[255];
     this->cmd_read_(OC_READ_BUFFER8, {(uint8_t) off, (uint8_t) chunk}, tmp, chunk);
     for (uint16_t i = 0; i < chunk; i++) this->drain_buf_[this->drain_len_ + i] = tmp[i];
@@ -403,6 +411,11 @@ void LR1121::read_packet_status_rssi_(uint8_t &raw_sync, uint8_t &raw_avg) {
 // ---------------------------------------------------------------------------
 void LR1121::setup() {
   this->raw_sample_queue_ = xQueueCreate(2, sizeof(RawRxSample));
+  if (this->drain_) {
+    this->drain_sample_queue_ = xQueueCreate(1, sizeof(DrainSample));
+    if (this->drain_sample_queue_ == nullptr)
+      ESP_LOGW(TAG, "Drain diagnostic queue allocation failed");
+  }
   if (this->raw_sample_queue_ == nullptr)
     ESP_LOGW(TAG, "Raw diagnostic queue unavailable; reception remains enabled");
   this->common_setup();
@@ -701,6 +714,9 @@ bool LR1121::load_rx_buffer_() {
     const uint32_t deadline = millis() + air_ms + 50;
     uint32_t irq_now = 0;
     this->drain_len_ = 0;
+    this->drain_started_us_ = micros();
+    this->drain_sample_.trace_count = 0;
+    this->drain_sample_.trace_total = 0;
     while ((int32_t) (millis() - deadline) < 0) {
       const uint32_t pos = (this->read_regmem32_(PROBE_ADDR[0]) & 0x0FFF0000) >> 16;
       this->sync_polls_.fetch_add(1, std::memory_order_relaxed);
@@ -725,9 +741,11 @@ bool LR1121::load_rx_buffer_() {
       // Snapshot for publication. Above 255 the post-RX_DONE read is no longer
       // a reference - the start of the frame is gone from the buffer - so the
       // drained bytes have to leave the chip to be checked at all.
-      this->snap_len_ = this->drain_len_;
-      for (uint16_t i = 0; i < this->drain_len_; i++) this->snap_buf_[i] = this->drain_buf_[i];
-      this->snap_seq_.fetch_add(1, std::memory_order_release);
+      this->drain_sample_.len = this->drain_len_;
+      for (uint16_t i = 0; i < this->drain_len_; i++) this->drain_sample_.raw[i] = this->drain_buf_[i];
+      this->drain_sample_.seq++;
+      if (this->drain_sample_queue_ != nullptr)
+        xQueueOverwrite(this->drain_sample_queue_, &this->drain_sample_);
     }
     if ((irq_now & IRQ_RX_DONE) == 0) {
       this->sync_timeouts_.fetch_add(1, std::memory_order_relaxed);
@@ -974,20 +992,32 @@ std::string LR1121::runtime_diag_json() {
 // from, and a torn sample shows up immediately as a correlation failure rather
 // than as plausible wrong bytes.
 std::string LR1121::drain_sample_json() {
-  const uint16_t len = this->snap_len_;
-  if (!this->drain_ || len == 0) return {};
+  DrainSample sample;
+  if (this->drain_sample_queue_ == nullptr ||
+      xQueueReceive(this->drain_sample_queue_, &sample, 0) != pdTRUE) return {};
+  const uint16_t len = sample.len;
   std::string out;
   out.reserve((size_t) len * 2 + 64);
   char head[64];
-  snprintf(head, sizeof(head), "{\"schema\":1,\"seq\":%u,\"len\":%u,\"raw\":\"",
-           (unsigned) this->snap_seq_.load(std::memory_order_acquire), (unsigned) len);
+  snprintf(head, sizeof(head), "{\"schema\":2,\"seq\":%u,\"len\":%u,\"raw\":\"",
+           (unsigned) sample.seq, (unsigned) len);
   out += head;
   static const char HEX[] = "0123456789ABCDEF";
   for (uint16_t i = 0; i < len; i++) {
-    out += HEX[this->snap_buf_[i] >> 4];
-    out += HEX[this->snap_buf_[i] & 0x0F];
+    out += HEX[sample.raw[i] >> 4];
+    out += HEX[sample.raw[i] & 0x0F];
   }
-  out += "\"}";
+  out += "\",\"trace_fields\":[\"us\",\"target\",\"copied\",\"packet_len\",\"start\",\"offset\",\"size\"],\"trace\":[";
+  for (uint8_t i = 0; i < sample.trace_count; i++) {
+    const auto &t = sample.trace[i];
+    char row[96];
+    snprintf(row, sizeof(row), "%s[%u,%u,%u,%u,%u,%u,%u]", i == 0 ? "" : ",",
+             (unsigned) t.us, (unsigned) t.target, (unsigned) t.copied,
+             (unsigned) t.packet_len, (unsigned) t.start, (unsigned) t.offset, (unsigned) t.size);
+    out += row;
+  }
+  snprintf(head, sizeof(head), "],\"trace_total\":%u}", (unsigned) sample.trace_total);
+  out += head;
   return out;
 }
 

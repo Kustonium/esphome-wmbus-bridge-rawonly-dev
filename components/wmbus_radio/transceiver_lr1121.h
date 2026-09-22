@@ -229,9 +229,24 @@ class LR1121 : public RadioTransceiver {
   static constexpr uint16_t DRAIN_CAP = 512;
   uint8_t drain_buf_[DRAIN_CAP]{};
   uint16_t drain_len_{0};
-  uint8_t snap_buf_[DRAIN_CAP]{};
-  uint16_t snap_len_{0};
-  std::atomic<uint32_t> snap_seq_{0};
+  // RX owns the working sample; a one-element queue transfers a coherent
+  // copy to main without blocking reception or racing the next frame.
+  struct DrainTrace {
+    uint32_t us;
+    uint16_t target, copied;
+    uint8_t packet_len, start, offset, size;
+  };
+  static constexpr uint8_t DRAIN_TRACE_CAP = 16;
+  struct DrainSample {
+    uint32_t seq;
+    uint16_t len, trace_total;
+    uint8_t trace_count;
+    uint8_t raw[DRAIN_CAP];
+    DrainTrace trace[DRAIN_TRACE_CAP];
+  };
+  DrainSample drain_sample_{};
+  uint32_t drain_started_us_{0};
+  QueueHandle_t drain_sample_queue_{nullptr};
   std::atomic<uint32_t> drain_frames_{0}, drain_match_{0}, drain_mismatch_{0};
   std::atomic<uint32_t> drain_bytes_last_{0}, drain_diff_last_{0}, drain_first_diff_{0};
   uint16_t errors_after_xosc_{0};

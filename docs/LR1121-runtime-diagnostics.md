@@ -296,3 +296,37 @@ draining can tear; `seq` identifies the attempt, and a torn sample fails
 correlation outright rather than producing plausible wrong bytes.
 
 No automatic firmware deployment or experiment start is part of this change.
+# Long-packet offset experiment (2026-09-22)
+
+With `lr1121_drain: true`, `lr_drain` now uses schema 2 and includes a
+bounded trace of ReadBuffer8 calls alongside the raw frame. Each row follows
+`trace_fields`: `us`, `target`, `copied`, `packet_len`, `start`, `offset`, `size`.
+`us` is elapsed time before the buffer read, relative to entering the drain
+loop; `target` is the sampled absolute counter (or expected length for the
+RX_DONE tail), `copied` is the number already drained. `packet_len` and `start`
+come from GetRxBufferStatus just before draining that target. A split at the
+ring boundary shares that status sample. At most 16 read calls are stored;
+`trace_total` reports the total, so truncation is visible.
+
+Addressing remains `copied % 256`. This experiment measures whether the start
+pointer changes or is nonzero; it does not assume that adding it is correct.
+The additional status transaction changes polling timing. If content improves,
+that alone cannot distinguish a pointer issue from a write-visibility delay.
+No trace row is added when there are no new bytes to copy.
+
+The RX task transfers the raw bytes and trace together through a one-element
+overwrite queue. Main publishes the latest complete sample; this is not an
+archive of every frame. This also removes the previous unsynchronized shared
+snapshot. Only completed captures are published.
+
+Run with the existing 326-byte test frame, override 326, sync probe and drain
+enabled. Confirm a new boot and `lr_drain.schema == 2`, export retained MQTT,
+then correlate bytes at the recorded chunk boundaries. A zero `start` at all
+observed reads weakens the proposed start-pointer correction. For wrapping
+frames, do not use `drain_mismatch` as a correctness verdict. RF settings, IRQ
+handling and the parser input are unchanged. An OTA and hardware result are
+still required before claiming a fix.
+
+Wire layouts were checked against Semtech's reference implementation:
+[GetRxBufferStatus](https://github.com/Lora-net/SWDR001/blob/master/src/lr11xx_radio.c)
+and [ReadBuffer8](https://github.com/Lora-net/SWDR001/blob/master/src/lr11xx_regmem.c).
