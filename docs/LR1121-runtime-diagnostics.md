@@ -340,15 +340,25 @@ from a wrong read address: both collapse to chance at a single point.
 ## S1: the probe runs there too, as a measurement
 
 Since 2026-09-23 the sync-word probe and the drain also run in `listen_mode: s1`.
-This is not a fix. In S1 the sync word matches and `RX_DONE` never arrives, and
-capture behaviour is unchanged: the attempt ends in the same failure as before.
-What changes is that `0x00F20384` is now sampled while the frame is on air, which
-separates two explanations nothing could previously tell apart:
+**Corrected 2026-09-23, same day:** this was written as a measurement and it is
+not one - it changes S1 capture behaviour, and S1 now receives.
 
-| `ptr_max` | reading |
-|---|---|
-| stays 0 | the modem hears nothing - the fault is in modulation or detection |
-| advances | bytes are landing in the buffer and only the packet engine's end condition is missing |
+The IRQ mask sets `SYNC_WORD_VALID` whenever `lr1121_sync_probe` is on,
+*regardless of mode*, while the branch that absorbs that wake used to exclude
+S1. So in S1 with the probe on, the driver woke on the sync word, read
+`GetRxBufferStatus`, saw `payload_len == 0`, returned a failed attempt - and
+`receive_frame()` answered with `restart_rx()`, aborting the frame that was
+still arriving. That is the same trap documented above for T1, latent in S1
+because nobody ran S1 with the probe until now.
+
+Measured immediately after the change: `converted` 323, `valid` 311 (96%),
+`decode_failed` 0, `rx_preamble_failed` 0, `sync_timeouts` 0, and
+**`drain_match` 323 against `drain_mismatch` 0** - the on-device self-check,
+which is authoritative here because a 255-byte frame does not wrap the ring.
+
+`ptr_max` still answers the original question when S1 fails for another reason:
+0 means the modem hears nothing, advancing means bytes are landing and only the
+packet engine's end condition is absent.
 
 Two details this depends on. The air-time deadline uses the bitrate S1 actually
 runs at: `bitrate_bps_` still holds the T-mode default of 100000 while S1 runs at
