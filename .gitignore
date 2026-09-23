@@ -31,4 +31,7 @@ _bmad-output/
 
 # ESPHome build output and local device configs
 /.esphome/
+# ...and anywhere else: tests/tools/ configs are compiled in place, which
+# drops a build tree next to them that the rooted pattern above misses.
+.esphome/
 /secrets.yaml
