@@ -631,15 +631,28 @@ void LR1121::restart_rx() {
   // C-mode exists in two format variants that differ only in the second sync
   // byte (A = 0x3D, B = 0xCD). Listening on one of them silently drops the
   // other, so `both` and `c1` rotate 3:1 in favour of A.
+  // S1 returns early because its sync word is three bytes rather than two. Every
+  // other step below has to be repeated here by hand, which is exactly how the
+  // expected-length register came to be skipped in this mode until 2026-09-23:
+  // the override was written on the path below and nowhere else, so in S1 the
+  // engine kept stopping at payload_length_ while the drain was told to expect
+  // more. Symptom was specific and readable - ptr_max stuck at 254 on a
+  // 580-byte frame while drain_bytes_last said 580, i.e. the counter stopped at
+  // the real end and the tail read was blind. Anything added below belongs here
+  // too.
   if (this->listen_mode_ == LISTEN_MODE_S1) {
     this->set_s1_sync_word_();
     this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_ALL >> 24), (uint8_t) (IRQ_ALL >> 16),
                                     (uint8_t) (IRQ_ALL >> 8), (uint8_t) (IRQ_ALL >> 0)});
     this->cmd_write_(OC_SET_STANDBY, {STANDBY_XOSC});
+    // In standby, after SetPacketParams has had its say and before RX is armed -
+    // same placement and same reason as on the path below.
+    this->apply_expected_len_override_();
     this->cmd_write_buf_(OC_SET_RX, RX_CONTINUOUS, sizeof(RX_CONTINUOUS));
     this->rx_loaded_ = false;
     this->rx_idx_ = 0;
     this->rx_len_ = 0;
+    this->drain_ready_ = 0;
     this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
     return;
   }
