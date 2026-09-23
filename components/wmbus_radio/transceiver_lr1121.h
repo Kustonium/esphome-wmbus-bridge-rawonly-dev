@@ -249,6 +249,12 @@ class LR1121 : public RadioTransceiver {
   QueueHandle_t drain_sample_queue_{nullptr};
   std::atomic<uint32_t> drain_frames_{0}, drain_match_{0}, drain_mismatch_{0};
   std::atomic<uint32_t> drain_bytes_last_{0}, drain_diff_last_{0}, drain_first_diff_{0};
+  // Set when a drain completed and drain_buf_ therefore holds the whole frame,
+  // which is the only condition under which the decoder may be fed from it.
+  // Zero means "fall back to the ordinary post-RX_DONE read", so a drain that
+  // ran short can never be served as if it were complete.
+  uint16_t drain_ready_{0};
+  std::atomic<uint32_t> drain_served_{0};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

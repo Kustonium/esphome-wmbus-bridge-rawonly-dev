@@ -663,10 +663,15 @@ void LR1121::restart_rx() {
   this->rx_loaded_ = false;
   this->rx_idx_ = 0;
   this->rx_len_ = 0;
+  this->drain_ready_ = 0;
   this->last_rssi_dbm_ = RSSI_NOT_MEASURED;
 }
 
 bool LR1121::load_rx_buffer_() {
+  // Cleared on entry, not only in restart_rx(): serving the decoder a stale
+  // drain from the previous frame would be indistinguishable from a decode
+  // failure, so this must not depend on who called us or in what order.
+  this->drain_ready_ = 0;
   const bool sample_due = this->raw_sample_queue_ != nullptr &&
       (uint32_t) (millis() - this->last_raw_sample_ms_) >= 5000;
   const bool verify_requested = this->verify_buffer_ && sample_due &&
@@ -714,6 +719,7 @@ bool LR1121::load_rx_buffer_() {
     const uint32_t deadline = millis() + air_ms + 50;
     uint32_t irq_now = 0;
     this->drain_len_ = 0;
+    this->drain_ready_ = 0;
     this->drain_started_us_ = micros();
     this->drain_sample_.trace_count = 0;
     this->drain_sample_.trace_total = 0;
@@ -738,6 +744,11 @@ bool LR1121::load_rx_buffer_() {
     // rather than from a final reading that no longer exists.
     if (this->drain_ && (irq_now & IRQ_RX_DONE) != 0) {
       this->drain_up_to_(expect);
+      // Only a drain that reached the declared length is a whole frame. Short
+      // of that (DRAIN_CAP, or polls that fell behind the write pointer) the
+      // bytes are a fragment, and a fragment handed to the decoder would read
+      // as a corrupt frame rather than as a failed drain.
+      if (expect != 0 && this->drain_len_ >= expect) this->drain_ready_ = (uint16_t) expect;
       // Snapshot for publication. Above 255 the post-RX_DONE read is no longer
       // a reference - the start of the frame is gone from the buffer - so the
       // drained bytes have to leave the chip to be checked at all.
@@ -854,6 +865,29 @@ bool LR1121::load_rx_buffer_() {
     }
   }
 
+  // Step D: hand the decoder the drained frame instead of the buffer read.
+  //
+  // Past 255 bytes the post-RX_DONE read above cannot be the frame: the buffer
+  // is a ring, GetRxBufferStatus reports `expect mod 256` (70 on a 326-byte
+  // frame), and the start of the telegram has already been overwritten by its
+  // own tail. The drained copy is the only complete one.
+  //
+  // Deliberately placed AFTER the self-check and the verify block, which both
+  // compare against rx_buffer_ as read over SPI. Substituting earlier would
+  // make drain_match_ compare the drain against itself - an instrument that
+  // reports success by construction is worse than no instrument.
+  //
+  // Below 255 this changes nothing observable: the two are the same bytes,
+  // measured 57/57 byte-for-byte on non-wrapping frames before this was
+  // enabled. The substitution is unconditional on length so that the path the
+  // long frames take is the path the short frames exercise every day.
+  if (this->drain_ready_ != 0) {
+    this->rx_buffer_.assign(this->drain_buf_, this->drain_buf_ + this->drain_ready_);
+    this->rx_idx_ = 0;
+    this->rx_len_ = this->rx_buffer_.size();
+    this->drain_served_.fetch_add(1, std::memory_order_relaxed);
+  }
+
   // Copy the actual FIFO before the upper pipeline trims/probes it. No extra
   // SPI transaction. Never wait for the diagnostic consumer or change RX.
   const uint32_t sample_now = millis();
@@ -872,7 +906,9 @@ bool LR1121::load_rx_buffer_() {
     // (UM 2.2 p.35 ReadBuffer8, p.88 RX RAM addressable outside sleep): with
     // payload_length below 255, bytes past it are the only place an answer can
     // appear. One extra 255-byte SPI read, at most once per 5 s, after RX_DONE.
-    // The decoder still receives rx_buffer_, untouched.
+    // This stays a picture of the chip's buffer, which is no longer what the
+    // decoder gets once a drain has been served - compare it against lr_drain,
+    // not against what was decoded.
     sample.fifo_dump = 1;
     sample.length = 255;
     sample.packet_start = start_ptr;
@@ -1025,15 +1061,17 @@ std::string LR1121::sync_probe_json() {
   if (!this->sync_probe_) return {};
   char out[352];
   snprintf(out, sizeof(out),
-           "{\"schema\":1,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u,"
+           "{\"schema\":2,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u,"
            "\"drain_frames\":%u,\"drain_match\":%u,\"drain_mismatch\":%u,"
-           "\"drain_bytes_last\":%u,\"drain_diff_last\":%u,\"drain_first_diff\":%u}",
+           "\"drain_bytes_last\":%u,\"drain_diff_last\":%u,\"drain_first_diff\":%u,"
+           "\"drain_served\":%u}",
            (unsigned) this->sync_wakes_.load(), (unsigned) this->sync_polls_.load(),
            (unsigned) this->sync_timeouts_.load(), (unsigned) this->sync_ptr_last_.load(),
            (unsigned) this->sync_ptr_max_.load(),
            (unsigned) this->drain_frames_.load(), (unsigned) this->drain_match_.load(),
            (unsigned) this->drain_mismatch_.load(), (unsigned) this->drain_bytes_last_.load(),
-           (unsigned) this->drain_diff_last_.load(), (unsigned) this->drain_first_diff_.load());
+           (unsigned) this->drain_diff_last_.load(), (unsigned) this->drain_first_diff_.load(),
+           (unsigned) this->drain_served_.load());
   return out;
 }
 

@@ -280,6 +280,9 @@ no offline reconstruction:
 | `drain_match` / `drain_mismatch` | how those comparisons came out |
 | `drain_bytes_last` | bytes drained from the last frame |
 | `drain_diff_last`, `drain_first_diff` | size and position of the last disagreement |
+| `drain_served` | frames the decoder was fed from the drain instead of the buffer read |
+
+`sync_probe` is schema 2 since `drain_served` was added.
 
 Once a frame wraps that reference is destroyed - the post-`RX_DONE` read no
 longer contains the start of the frame - and these comparison counters stop
@@ -323,9 +326,44 @@ Run with the existing 326-byte test frame, override 326, sync probe and drain
 enabled. Confirm a new boot and `lr_drain.schema == 2`, export retained MQTT,
 then correlate bytes at the recorded chunk boundaries. A zero `start` at all
 observed reads weakens the proposed start-pointer correction. For wrapping
-frames, do not use `drain_mismatch` as a correctness verdict. RF settings, IRQ
-handling and the parser input are unchanged. An OTA and hardware result are
-still required before claiming a fix.
+frames, do not use `drain_mismatch` as a correctness verdict.
+
+**Outcome (2026-09-22/23).** `start` was zero in every recorded read, so the
+start-pointer correction was dropped. With an insert/delete-aware alignment
+rather than a byte-aligned correlation the drain is correct: a 326-byte frame
+came back bit-exact, 2604/2604, through the wrap. The residual differences are
+extra bits inserted by the *transmitter* - a software DCLK loop preempted about
+every 1 ms - confirmed from the transmitter's own timestamps, not inferred from
+the received stream. A byte-aligned comparison cannot tell one inserted bit
+from a wrong read address: both collapse to chance at a single point.
+
+## Feeding the drained frame to the decoder
+
+Once a drain completes, the decoder is fed from it instead of from the
+post-`RX_DONE` buffer read. Past 255 bytes that read cannot be the frame:
+the buffer is a ring, `GetRxBufferStatus` reports `expected mod 256` (70 on a
+326-byte frame), and the start of the telegram has been overwritten by its own
+tail. The drained copy is the only complete one.
+
+The substitution happens only when the drain reached the declared length. A
+drain that ran short - past the 512-byte cap, or polls that fell behind the
+write pointer - leaves the ordinary read in place, because a fragment handed to
+the decoder would read as a corrupt frame rather than as a failed drain.
+
+It is applied **after** the on-device self-check and the `lr1121_verify_buffer`
+comparison, both of which read `rx_buffer_` over SPI. Substituting earlier would
+make `drain_match` compare the drain against itself - an instrument that reports
+success by construction is worse than none.
+
+Below 255 bytes nothing observable changes: the two are the same bytes, measured
+57/57 byte-for-byte before this was enabled. The substitution is not conditional
+on length, so the path long frames take is the one short frames exercise daily.
+
+`lr_fifo` still samples the chip's buffer, which is no longer what the decoder
+receives once a drain has been served - compare it against `lr_drain`, not
+against what was decoded.
+
+An OTA and a hardware result are still required before claiming a decode.
 
 Wire layouts were checked against Semtech's reference implementation:
 [GetRxBufferStatus](https://github.com/Lora-net/SWDR001/blob/master/src/lr11xx_radio.c)
