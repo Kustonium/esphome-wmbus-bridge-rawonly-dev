@@ -337,6 +337,31 @@ every 1 ms - confirmed from the transmitter's own timestamps, not inferred from
 the received stream. A byte-aligned comparison cannot tell one inserted bit
 from a wrong read address: both collapse to chance at a single point.
 
+## S1: the probe runs there too, as a measurement
+
+Since 2026-09-23 the sync-word probe and the drain also run in `listen_mode: s1`.
+This is not a fix. In S1 the sync word matches and `RX_DONE` never arrives, and
+capture behaviour is unchanged: the attempt ends in the same failure as before.
+What changes is that `0x00F20384` is now sampled while the frame is on air, which
+separates two explanations nothing could previously tell apart:
+
+| `ptr_max` | reading |
+|---|---|
+| stays 0 | the modem hears nothing - the fault is in modulation or detection |
+| advances | bytes are landing in the buffer and only the packet engine's end condition is missing |
+
+Two details this depends on. The air-time deadline uses the bitrate S1 actually
+runs at: `bitrate_bps_` still holds the T-mode default of 100000 while S1 runs at
+32768, and the unadjusted value gives a deadline three times too short, turning
+every frame into a timeout that means nothing. And the timeout path clears all
+IRQs in S1, because DIO1 stays asserted while any latch is set and the pin is
+read on the rising edge - the non-probe S1 path clears them for that reason and
+returning early would otherwise skip it.
+
+`DRAIN_CAP` is 640, which covers the longest frame any mode can produce: S1 is
+Manchester, so its maximum is 2 x 290 = 580 raw bytes, against 435 for T1 and
+292 for C1.
+
 ## Feeding the drained frame to the decoder
 
 Once a drain completes, the decoder is fed from it instead of from the

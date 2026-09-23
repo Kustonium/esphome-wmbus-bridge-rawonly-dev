@@ -695,8 +695,17 @@ bool LR1121::load_rx_buffer_() {
 
   uint8_t payload_len = st[0];
   uint8_t start_ptr = st[1];
-  if (payload_len == 0 && this->sync_probe_ && this->listen_mode_ != LISTEN_MODE_S1) {
+  if (payload_len == 0 && this->sync_probe_) {
     // The sync-word wake: a frame is arriving and nothing has landed yet.
+    //
+    // S1 is included since 2026-09-23, as a measurement rather than a fix. In
+    // S1 the sync word matches and RX_DONE never arrives, and nothing so far
+    // could tell "the modem hears nothing" from "the modem hears it and only
+    // the completion is missing". Polling 0x00F20384 here separates the two:
+    // a counter that advances means bytes are landing in the buffer and only
+    // the packet engine's end condition is absent, which is a different bug
+    // with a different fix. Capture behaviour is unchanged - the attempt still
+    // ends in the same failure it did before, just with the counter recorded.
     //
     // This must NOT hand a failed attempt back to the caller. receive_frame()
     // begins every attempt with restart_rx() - SetStandby(XOSC) + SetRx - so
@@ -715,7 +724,13 @@ bool LR1121::load_rx_buffer_() {
 
     const uint32_t expect = this->expected_len_override_ != 0 ? this->expected_len_override_
                                                               : this->payload_length_;
-    const uint32_t air_ms = (expect * 8UL * 1000UL) / (this->bitrate_bps_ != 0 ? this->bitrate_bps_ : 100000UL);
+    // Same substitution restart_rx() makes: S1 runs at 32768 b/s unless the
+    // YAML overrode it, and bitrate_bps_ still holds the T-mode default. Using
+    // it unadjusted would give a deadline three times too short and turn every
+    // S1 frame into a timeout that says nothing.
+    uint32_t eff_bitrate = this->bitrate_bps_ != 0 ? this->bitrate_bps_ : 100000UL;
+    if (this->listen_mode_ == LISTEN_MODE_S1 && eff_bitrate == 100000UL) eff_bitrate = 32768UL;
+    const uint32_t air_ms = (expect * 8UL * 1000UL) / eff_bitrate;
     const uint32_t deadline = millis() + air_ms + 50;
     uint32_t irq_now = 0;
     this->drain_len_ = 0;
@@ -760,6 +775,14 @@ bool LR1121::load_rx_buffer_() {
     }
     if ((irq_now & IRQ_RX_DONE) == 0) {
       this->sync_timeouts_.fetch_add(1, std::memory_order_relaxed);
+      // In S1 this is the expected path for now, and it must not leave the line
+      // asserted: DIO1 stays high while any unmasked IRQ is latched and the pin
+      // is read on the rising edge, so an uncleared latch blocks the next
+      // frame's edge. The non-probe S1 path below clears everything for exactly
+      // this reason; returning from here would otherwise skip it.
+      if (this->listen_mode_ == LISTEN_MODE_S1)
+        this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_ALL >> 24), (uint8_t) (IRQ_ALL >> 16),
+                                        (uint8_t) (IRQ_ALL >> 8), (uint8_t) (IRQ_ALL >> 0)});
       return false;
     }
     uint8_t st2[2]{};

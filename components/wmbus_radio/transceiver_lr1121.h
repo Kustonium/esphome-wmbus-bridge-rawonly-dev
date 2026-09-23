@@ -226,7 +226,10 @@ class LR1121 : public RadioTransceiver {
   std::atomic<uint32_t> sync_wakes_{0}, sync_ptr_last_{0}, sync_ptr_max_{0};
   std::atomic<uint32_t> sync_polls_{0}, sync_timeouts_{0};
   bool drain_{false};
-  static constexpr uint16_t DRAIN_CAP = 512;
+  // 640 covers the longest frame any wM-Bus mode can produce: S1 is Manchester,
+  // so its maximum is 2 x 290 = 580 raw bytes, against 435 for T1 and 292 for
+  // C1. Costs 2 x 128 bytes of RAM - drain_buf_ and the queued sample.
+  static constexpr uint16_t DRAIN_CAP = 640;
   uint8_t drain_buf_[DRAIN_CAP]{};
   uint16_t drain_len_{0};
   // RX owns the working sample; a one-element queue transfers a coherent
