@@ -309,9 +309,10 @@ dokładnie tyle bajtów, a host przycina. `lr1121_auto_length` zastępuje go pol
 L samej ramki, czytanym w trakcie jej odbioru, co znosi limit 255 bajtów —
 zmierzone 326 B surowych w T1, 434 w S1 i 219 w C1, wszystkie z tego samego
 telegramu. Domyślnie wyłączone, bo zapisuje niezadokumentowany rejestr
-zweryfikowany wobec jednego firmware radia. Patrz
-[`LR1121-runtime-diagnostics.md`](LR1121-runtime-diagnostics.md). Gdzie stoi wobec
-pozostałych radiów — [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md); okablowanie —
+zweryfikowany wobec jednego firmware radia; pomiary są
+w [`LR1121-runtime-diagnostics_PL.md`](LR1121-runtime-diagnostics_PL.md).
+
+Gdzie stoi wobec pozostałych radiów — [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md); okablowanie —
 [`RADIO_OPTIONS_MINIMAL_PL.md`](RADIO_OPTIONS_MINIMAL_PL.md).
 
 ## Dokumentacja

@@ -308,9 +308,10 @@ that many bytes and the host trims. `lr1121_auto_length` replaces it with the
 frame's own L-field, read while the frame is still arriving, which lifts the
 255-byte limit - measured at 326 raw bytes in T1, 434 in S1 and 219 in C1, all
 from the same telegram. It is off by default because it writes an undocumented
-register verified against one radio firmware. See
-[`LR1121-runtime-diagnostics.md`](LR1121-runtime-diagnostics.md). See
-[`CHIP_SELECTION.md`](CHIP_SELECTION.md) for where it stands against the others,
+register verified against one radio firmware; the measurements are in
+[`LR1121-runtime-diagnostics.md`](LR1121-runtime-diagnostics.md).
+
+See [`CHIP_SELECTION.md`](CHIP_SELECTION.md) for where it stands against the others,
 and [`RADIO_OPTIONS_MINIMAL.md`](RADIO_OPTIONS_MINIMAL.md) for the wiring.
 
 ## Documentation

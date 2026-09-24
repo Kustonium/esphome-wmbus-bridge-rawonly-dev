@@ -1,5 +1,7 @@
 # LR1121 runtime diagnostics (2026-09-06)
 
+[Polska wersja](LR1121-runtime-diagnostics_PL.md)
+
 Diagnostic-only change; modulation, IRQ masks, BUSY timeout policy and RX restart
 decisions are unchanged. Other radio drivers return no runtime diagnostic.
 
@@ -282,7 +284,8 @@ no offline reconstruction:
 | `drain_diff_last`, `drain_first_diff` | size and position of the last disagreement |
 | `drain_served` | frames the decoder was fed from the drain instead of the buffer read |
 
-`sync_probe` is schema 2 since `drain_served` was added.
+`sync_probe` was schema 2 when `drain_served` was added and is schema 3 now;
+see the auto-length section below.
 
 Once a frame wraps that reference is destroyed - the post-`RX_DONE` read no
 longer contains the start of the frame - and these comparison counters stop
@@ -420,7 +423,7 @@ frame repeatedly, so three modes give three numbers but not three lengths within
 one mode. Real traffic with mixed meters is what would settle that - watch
 `auto_len_last` change between frames.
 
-## S1: the probe runs there too, as a measurement
+## S1: the probe runs there too - and it turned out to be a fix
 
 Since 2026-09-23 the sync-word probe and the drain also run in `listen_mode: s1`.
 **Corrected 2026-09-23, same day:** this was written as a measurement and it is
@@ -480,8 +483,6 @@ on length, so the path long frames take is the one short frames exercise daily.
 `lr_fifo` still samples the chip's buffer, which is no longer what the decoder
 receives once a drain has been served - compare it against `lr_drain`, not
 against what was decoded.
-
-An OTA and a hardware result are still required before claiming a decode.
 
 Wire layouts were checked against Semtech's reference implementation:
 [GetRxBufferStatus](https://github.com/Lora-net/SWDR001/blob/master/src/lr11xx_radio.c)
