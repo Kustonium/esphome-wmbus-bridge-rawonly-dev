@@ -456,14 +456,21 @@ void Radio::dump_config() {
 void Radio::loop() {
   const uint32_t loop_now_ms = (uint32_t) esphome::millis();
   if (this->radio != nullptr) {
-    // Behind the diagnostics opt-in, all of it. The log line used to be outside
-    // it: only the MQTT publishes below were gated, so every node printed this
-    // JSON once a minute forever, including nodes with diagnostics switched
-    // off entirely. Nobody asked those nodes for a register dump.
+    // Two different audiences, two different gates.
+    //
+    // MQTT carries this from `low` upward: it is archivable, it is what the
+    // diagnostics documentation tells you to export after a test, and nobody
+    // is watching the topic in real time.
+    //
+    // The log copy is `dev` only. A register and counter dump once a minute is
+    // not an event a human should be reading past; it was bench instrumentation
+    // and on a working node it says nothing that the summary does not. It used
+    // to print unconditionally, on every node, including ones with diagnostics
+    // off entirely.
     if (this->diag_publish_summary_) {
       const auto diagnostic = this->radio->runtime_diag_json();
       if (!diagnostic.empty()) {
-        ESP_LOGI(TAG, "Radio runtime: %s", diagnostic.c_str());
+        if (this->diag_verbose_) ESP_LOGI(TAG, "Radio runtime: %s", diagnostic.c_str());
         if (!this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
             mqtt::global_mqtt_client->is_connected()) {
           mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
@@ -474,7 +481,11 @@ void Radio::loop() {
             // Its own line and its own topic. setup() logging never reaches the
             // API, and folding this into the runtime JSON pushed that line past
             // the logger buffer, so it printed a JSON object cut off mid-key.
-            ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): %s", baseline.c_str());
+            // Same split: the log line is `dev`, the topic is not. This one is
+            // once per boot rather than once a minute, but it is still four raw
+            // undocumented register values, which is bench reading.
+            if (this->diag_verbose_)
+              ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): %s", baseline.c_str());
             if (!this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
                 mqtt::global_mqtt_client->is_connected()) {
               mqtt::global_mqtt_client->publish(this->diag_topic_ + "/probe_baseline", baseline, 1, true);

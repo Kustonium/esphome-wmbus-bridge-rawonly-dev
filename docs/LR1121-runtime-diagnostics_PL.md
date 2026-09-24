@@ -6,9 +6,13 @@ Zmiana wyłącznie diagnostyczna; modulacja, maski przerwań, polityka timeoutu
 BUSY i decyzje o restarcie RX pozostają bez zmian. Pozostałe sterowniki radiowe
 nie zwracają diagnostyki czasu pracy.
 
-Co 60 sekund zadanie główne loguje migawkę JSON, a przy włączonej diagnostyce
-zbiorczej i MQTT publikuje ją jako retained z QoS 1 na
-`<diagnostic_topic>/radio_runtime`. Liczniki są kumulatywne od startu
+Co 60 sekund zadanie główne publikuje migawkę JSON jako retained z QoS 1 na
+`<diagnostic_topic>/radio_runtime`, od `diagnostic_mode: low` w górę. Ta sama
+migawka trafia do logu **wyłącznie przy `diagnostic_mode: dev`**: zrzut
+rejestrów i liczników raz na minutę to instrumentacja stanowiskowa, a na
+działającym węźle nie mówi nic, czego nie mówi podsumowanie. MQTT jest
+właściwym miejscem — archiwizowalnym i tym, które ten dokument każe
+eksportować po teście. Liczniki są kumulatywne od startu
 urządzenia. Archiwizuj ten temat w trakcie testów: retained zachowuje wyłącznie
 najnowszą migawkę. `uptime_ms` zeruje się przy restarcie i przepełnia po około
 49 dniach.

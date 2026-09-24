@@ -5,9 +5,12 @@
 Diagnostic-only change; modulation, IRQ masks, BUSY timeout policy and RX restart
 decisions are unchanged. Other radio drivers return no runtime diagnostic.
 
-Every 60 seconds the main task logs a JSON snapshot and, when summary diagnostics
-and MQTT are enabled, publishes it retained with QoS 1 to
-`<diagnostic_topic>/radio_runtime`. Counters are cumulative since device boot.
+Every 60 seconds the main task publishes a JSON snapshot retained with QoS 1 to
+`<diagnostic_topic>/radio_runtime`, from `diagnostic_mode: low` upward. The same
+snapshot is written to the log **only at `diagnostic_mode: dev`**: a register and
+counter dump once a minute is bench instrumentation, and on a working node it
+says nothing the summary does not. MQTT is where it belongs - archivable, and
+what this document tells you to export after a test. Counters are cumulative since device boot.
 Archive this topic during tests: retained preserves only the latest snapshot.
 `uptime_ms` restarts on reboot and wraps after about 49 days.
 
