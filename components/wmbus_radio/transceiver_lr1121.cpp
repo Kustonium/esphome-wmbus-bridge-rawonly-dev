@@ -535,13 +535,19 @@ void LR1121::setup() {
   // before RX is ever armed: nothing has been received yet, so whatever these
   // addresses hold now cannot be a position counter's value. Every later probe
   // in the FIFO samples is only interpretable against this line. Read-only.
-  this->probe_registers_(this->probe_baseline_);
-  ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): "
-                "%08X=0x%08X %08X=0x%08X %08X=0x%08X %08X=0x%08X",
-           (unsigned) PROBE_ADDR[0], (unsigned) this->probe_baseline_[0],
-           (unsigned) PROBE_ADDR[1], (unsigned) this->probe_baseline_[1],
-           (unsigned) PROBE_ADDR[2], (unsigned) this->probe_baseline_[2],
-           (unsigned) PROBE_ADDR[3], (unsigned) this->probe_baseline_[3]);
+  //
+  // Only when something actually uses those registers. On an ordinary node the
+  // baseline calibrates nothing, so reading four undocumented addresses there
+  // buys nobody anything.
+  if (this->undocumented_register_work_()) {
+    this->probe_registers_(this->probe_baseline_);
+    ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): "
+                  "%08X=0x%08X %08X=0x%08X %08X=0x%08X %08X=0x%08X",
+             (unsigned) PROBE_ADDR[0], (unsigned) this->probe_baseline_[0],
+             (unsigned) PROBE_ADDR[1], (unsigned) this->probe_baseline_[1],
+             (unsigned) PROBE_ADDR[2], (unsigned) this->probe_baseline_[2],
+             (unsigned) PROBE_ADDR[3], (unsigned) this->probe_baseline_[3]);
+  }
 
   this->restart_rx();
 
@@ -1171,6 +1177,11 @@ std::string LR1121::sync_probe_json() {
 }
 
 std::string LR1121::probe_baseline_json() {
+  // Gated like sync_probe_json() below, which it should have been from the
+  // start. Without a gate this published four raw undocumented register values
+  // to the log and to MQTT on every LR1121 node with diagnostics on, including
+  // the ones running none of the experiments those values calibrate.
+  if (!this->undocumented_register_work_()) return {};
   char out[160];
   snprintf(out, sizeof(out),
            "{\"schema\":1,\"F20384\":%u,\"F20368\":%u,\"F30028\":%u,\"F30030\":%u}",

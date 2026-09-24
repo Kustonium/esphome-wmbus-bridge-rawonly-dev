@@ -172,6 +172,16 @@ class LR1121 : public RadioTransceiver {
   void write_regmem32_mask_(uint32_t address, uint32_t mask, uint32_t data);
   // Writes expected_len_override_ into the expected-packet-length register.
   // No-op when the override is 0 or the radio firmware is not the verified one.
+  // True when the configuration asked for something that uses the
+  // undocumented 0x00F2xxxx registers. Nothing may read or write them
+  // otherwise: they are not in any datasheet, they are verified against one
+  // firmware image, and a user who did not opt into the bench work should not
+  // have them touched on their radio - nor read four raw values in their log
+  // that mean nothing without the experiment they exist to calibrate.
+  bool undocumented_register_work_() const {
+    return this->sync_probe_ || this->drain_ || this->auto_length_ ||
+           this->expected_len_override_ != 0;
+  }
   void apply_expected_len_override_();
   void write_expected_len_(uint16_t len);
 
