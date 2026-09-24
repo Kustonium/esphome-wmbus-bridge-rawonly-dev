@@ -122,6 +122,7 @@ class LR1121 : public RadioTransceiver {
   void set_expected_len_override(uint16_t v) { this->expected_len_override_ = v; }
   void set_sync_probe(bool v) { this->sync_probe_ = v; }
   void set_drain(bool v) { this->drain_ = v; }
+  void set_auto_length(bool v) { this->auto_length_ = v; }
   void set_tcxo_voltage(LR1121TcxoVoltage v) { this->tcxo_voltage_ = v; }
   void set_tcxo_startup_ticks(uint32_t ticks) { this->tcxo_startup_ticks_ = ticks; }
 
@@ -172,6 +173,7 @@ class LR1121 : public RadioTransceiver {
   // Writes expected_len_override_ into the expected-packet-length register.
   // No-op when the override is 0 or the radio firmware is not the verified one.
   void apply_expected_len_override_();
+  void write_expected_len_(uint16_t len);
 
   // --- chip helpers --------------------------------------------------------
   bool get_version_(uint8_t &hw, uint8_t &type, uint16_t &fw);
@@ -258,6 +260,22 @@ class LR1121 : public RadioTransceiver {
   // ran short can never be served as if it were complete.
   uint16_t drain_ready_{0};
   std::atomic<uint32_t> drain_served_{0};
+  // Derive the frame's real length from its L-field while it is still
+  // arriving, and tell the packet engine to stop there. Replaces the manual
+  // expected_len_override_, which is bench scaffolding: with a fixed number
+  // every capture becomes that long, so ordinary meters stop decoding.
+  bool auto_length_{false};
+  // What the engine is told to expect before a length is known. It has to be
+  // larger than any real frame, and it also has to be drainable: the poll loop
+  // copies the buffer out as it fills, and anything past DRAIN_CAP could not be
+  // kept anyway. 640 is the longest frame wM-Bus can produce (S1, Manchester).
+  static constexpr uint16_t AUTO_LEN_CEILING = DRAIN_CAP;
+  // Give up deriving a length after this many drained bytes and fall back to
+  // payload_length_, i.e. to exactly what the board does today. Every mode
+  // needs at most 4 raw bytes, so reaching 48 without an answer means the
+  // header did not decode, not that we were early.
+  static constexpr uint16_t AUTO_LEN_GIVEUP = 48;
+  std::atomic<uint32_t> auto_len_resolved_{0}, auto_len_fallback_{0}, auto_len_last_{0};
   uint16_t errors_after_xosc_{0};
   uint16_t errors_after_image_{0};
   uint16_t errors_after_calibrate_{0};

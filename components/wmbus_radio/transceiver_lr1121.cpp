@@ -3,6 +3,8 @@
 
 #ifdef USE_WMBUS_RADIO_LR1121
 
+#include "frame_length.h"
+
 #include "esphome/core/log.h"
 
 #include <cstdio>
@@ -300,16 +302,26 @@ void LR1121::write_regmem32_mask_(uint32_t address, uint32_t mask, uint32_t data
   this->cmd_write_buf_(OC_WRITE_REGMEM32_MASK, args, sizeof(args));
 }
 
+// Writes the expected-packet-length field. Callers outside setup must check
+// boot_fw_ themselves - an undocumented register is a property of one firmware
+// image, not a promise.
+void LR1121::write_expected_len_(uint16_t len) {
+  this->write_regmem32_mask_(REG_EXPECTED_LEN, REG_EXPECTED_LEN_MASK,
+                             ((uint32_t) len) << REG_EXPECTED_LEN_SHIFT);
+}
+
 void LR1121::apply_expected_len_override_() {
   // Runs in the receiver task, so it does NOT log: output from that task never
   // reaches the API log stream (see RadioTransceiver::RssiDiag). Saying
   // "EXPERIMENT ACTIVE" from here printed nothing at all, which is the exact
   // opposite of what an undocumented-register write must do. The loud line
   // lives in the YAML sanity block instead, on the main task.
-  if (this->expected_len_override_ == 0) return;
+  // auto_length_ arms the engine with a ceiling instead of a fixed length; the
+  // real length replaces it mid-frame once the L-field has been read.
+  const uint16_t value = this->auto_length_ ? AUTO_LEN_CEILING : this->expected_len_override_;
+  if (value == 0) return;
   if (this->boot_fw_ != VERIFIED_RADIO_FW) return;
-  this->write_regmem32_mask_(REG_EXPECTED_LEN, REG_EXPECTED_LEN_MASK,
-                             ((uint32_t) this->expected_len_override_) << REG_EXPECTED_LEN_SHIFT);
+  this->write_expected_len_(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -735,8 +747,13 @@ bool LR1121::load_rx_buffer_() {
     this->cmd_write_(OC_CLEAR_IRQ, {(uint8_t) (IRQ_SYNC_WORD_VALID >> 24), (uint8_t) (IRQ_SYNC_WORD_VALID >> 16),
                                     (uint8_t) (IRQ_SYNC_WORD_VALID >> 8), (uint8_t) (IRQ_SYNC_WORD_VALID >> 0)});
 
-    const uint32_t expect = this->expected_len_override_ != 0 ? this->expected_len_override_
-                                                              : this->payload_length_;
+    // With auto_length_ the engine was armed with the ceiling, so that is what
+    // to expect until the L-field says otherwise. `expect` stops being const:
+    // resolving the length is the whole point.
+    uint32_t expect = this->auto_length_        ? AUTO_LEN_CEILING
+                      : this->expected_len_override_ != 0 ? this->expected_len_override_
+                                                          : this->payload_length_;
+    bool len_resolved = !this->auto_length_;
     // Same substitution restart_rx() makes: S1 runs at 32768 b/s unless the
     // YAML overrode it, and bitrate_bps_ still holds the T-mode default. Using
     // it unadjusted would give a deadline three times too short and turn every
@@ -764,6 +781,46 @@ bool LR1121::load_rx_buffer_() {
       // survives until byte k+256 arrives. Measured margin at 100 kb/s: one
       // poll every ~2.8 ms against a 20.5 ms overwrite deadline.
       if (this->drain_) this->drain_up_to_(pos);
+      if (!len_resolved && this->drain_len_ >= 4) {
+        // Read the L-field out of what has landed and tell the engine where the
+        // frame really ends. This is how Semtech's own Sidewalk driver uses
+        // this register - it writes an end-of-packet value mid-reception - and
+        // it is the only way a fixed-length engine can stop at a length it
+        // could not know when RX was armed.
+        const std::vector<uint8_t> head(this->drain_buf_,
+                                        this->drain_buf_ + (this->drain_len_ < 32 ? this->drain_len_ : 32));
+        size_t n = 0;
+        switch (this->listen_mode_) {
+          case LISTEN_MODE_S1: n = expected_raw_len_s1(head); break;
+          case LISTEN_MODE_C1: n = expected_raw_len_c1(head); break;
+          default:
+            // `both` listens on the C-mode sync words too, so a capture here can
+            // be either; the mode-C indicator in the first bytes is what tells
+            // them apart, and expected_raw_len_c1() returns 0 when it is absent.
+            n = expected_raw_len_c1(head);
+            if (n == 0) n = expected_raw_len_t1(head);
+            break;
+        }
+        // Never ask for a length already passed: the engine would be told the
+        // packet ended before it did, and there is no recovering that.
+        if (n > this->drain_len_ && n <= AUTO_LEN_CEILING) {
+          this->write_expected_len_((uint16_t) n);
+          expect = (uint32_t) n;
+          len_resolved = true;
+          this->auto_len_resolved_.fetch_add(1, std::memory_order_relaxed);
+          this->auto_len_last_.store((uint32_t) n, std::memory_order_relaxed);
+        } else if (this->drain_len_ >= AUTO_LEN_GIVEUP) {
+          // No length from the header. Fall back to payload_length_, which is
+          // what the board would have captured anyway without this path - so a
+          // failed derivation is never worse than not having tried.
+          if (this->payload_length_ > this->drain_len_) {
+            this->write_expected_len_(this->payload_length_);
+            expect = this->payload_length_;
+          }
+          len_resolved = true;
+          this->auto_len_fallback_.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
       irq_now = this->get_irq_status_();
       if ((irq_now & IRQ_RX_DONE) != 0) break;
     }
@@ -1095,19 +1152,21 @@ std::string LR1121::drain_sample_json() {
 
 std::string LR1121::sync_probe_json() {
   if (!this->sync_probe_) return {};
-  char out[352];
+  char out[480];
   snprintf(out, sizeof(out),
-           "{\"schema\":2,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u,"
+           "{\"schema\":3,\"sync_wakes\":%u,\"sync_polls\":%u,\"sync_timeouts\":%u,\"ptr_last\":%u,\"ptr_max\":%u,"
            "\"drain_frames\":%u,\"drain_match\":%u,\"drain_mismatch\":%u,"
            "\"drain_bytes_last\":%u,\"drain_diff_last\":%u,\"drain_first_diff\":%u,"
-           "\"drain_served\":%u}",
+           "\"drain_served\":%u,\"auto_len_resolved\":%u,\"auto_len_fallback\":%u,"
+           "\"auto_len_last\":%u}",
            (unsigned) this->sync_wakes_.load(), (unsigned) this->sync_polls_.load(),
            (unsigned) this->sync_timeouts_.load(), (unsigned) this->sync_ptr_last_.load(),
            (unsigned) this->sync_ptr_max_.load(),
            (unsigned) this->drain_frames_.load(), (unsigned) this->drain_match_.load(),
            (unsigned) this->drain_mismatch_.load(), (unsigned) this->drain_bytes_last_.load(),
            (unsigned) this->drain_diff_last_.load(), (unsigned) this->drain_first_diff_.load(),
-           (unsigned) this->drain_served_.load());
+           (unsigned) this->drain_served_.load(), (unsigned) this->auto_len_resolved_.load(),
+           (unsigned) this->auto_len_fallback_.load(), (unsigned) this->auto_len_last_.load());
   return out;
 }
 
@@ -1236,6 +1295,25 @@ void LR1121::log_reg_status() {
                     "dzialal normalnie",
                (unsigned) this->expected_len_override_, (unsigned) REG_EXPECTED_LEN,
                (unsigned) this->payload_length_);
+    }
+  }
+
+  if (this->auto_length_) {
+    if (this->boot_fw_ != VERIFIED_RADIO_FW) {
+      ESP_LOGE(TAG, "  lr1121_auto_length: IGNORED. Verified only on radio firmware 0x%04X, this "
+                    "chip reports 0x%04X. Refusing to write an undocumented register on an "
+                    "unverified image; reception falls back to payload_length %u / ODRZUCONE, "
+                    "niezweryfikowany firmware radia",
+               (unsigned) VERIFIED_RADIO_FW, (unsigned) this->boot_fw_,
+               (unsigned) this->payload_length_);
+    } else {
+      ESP_LOGW(TAG, "  lr1121_auto_length: ON -> the frame's own L-field sets where the packet "
+                    "engine stops, written into undocumented register 0x%08X [31:20] while the "
+                    "frame is still arriving. Lifts the %u-byte ceiling (max is %u), and a header "
+                    "that will not decode falls back to that ceiling. Uses an undocumented "
+                    "register / dlugosc z pola L ramki, rejestr niezadokumentowany",
+               (unsigned) REG_EXPECTED_LEN, (unsigned) this->payload_length_,
+               (unsigned) AUTO_LEN_CEILING);
     }
   }
 

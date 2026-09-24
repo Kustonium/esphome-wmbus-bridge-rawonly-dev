@@ -337,6 +337,60 @@ every 1 ms - confirmed from the transmitter's own timestamps, not inferred from
 the received stream. A byte-aligned comparison cannot tell one inserted bit
 from a wrong read address: both collapse to chance at a single point.
 
+## Deriving the length from the frame itself
+
+```yaml
+wmbus_radio:
+  lr1121_sync_probe: true     # required - no early wake, no window
+  lr1121_drain: true          # required - the header has to be in hand to read
+  lr1121_auto_length: true
+```
+
+Off by default, and the three options only work together: setting
+`lr1121_auto_length` alone would arm the engine with a ceiling and never narrow
+it, so the configuration is rejected rather than silently doing the wrong thing.
+It is also refused alongside `lr1121_expected_len_override`, which does the same
+job by the opposite means - pinning every capture to one length.
+
+RX is armed with a ceiling of `DRAIN_CAP` bytes instead of a fixed length. As
+soon as four bytes have been drained the driver reads the L-field out of them,
+computes how many raw bytes the frame really occupies, and writes that into
+`0x00F20368[31:20]` **while the frame is still arriving**, so `RX_DONE` fires at
+the real end. That mid-reception write is how Semtech's own Sidewalk driver uses
+this register, and it is the only way a fixed-length engine can stop at a length
+it could not know when RX was armed.
+
+The arithmetic is the same one the SX1262 has used since its AN1200.53 path was
+written, moved to `frame_length.h` so there is one copy:
+`expected_raw_len_t1()` (3-of-6, L-field from the first two raw bytes),
+`expected_raw_len_c1()` (no coding, L at index 2 behind the mode-C indicator)
+and `expected_raw_len_s1()` (Manchester, with the polarity search and the
+tolerances measured at the sensitivity threshold).
+
+Two rules the implementation keeps:
+
+**It never shortens backwards.** A length is only written when it is greater
+than what has already been drained. Telling the engine a packet ended before it
+did is not recoverable.
+
+**A failed derivation is never worse than not trying.** If no length can be read
+by 48 drained bytes, `payload_length_` is written - exactly what the board
+captures today without this path. Compare with the SX1262, where a failed
+derivation runs to a 512-byte cap and costs 125 ms of deafness.
+
+| field in `sync_probe` | meaning |
+|---|---|
+| `auto_len_resolved` | frames whose length came from their own L-field |
+| `auto_len_fallback` | frames where it could not be read, so `payload_length` was used |
+| `auto_len_last` | the last length derived, in raw bytes |
+
+`sync_probe` is schema 3 since these were added.
+
+**Not yet confirmed on hardware:** that the LR1121 honours a write to this
+register *during* reception. Sidewalk uses it that way, but that is inference
+from source, not a measurement on this chip. It is the first thing a bench run
+will show - `auto_len_resolved` rising with frames decoding is the confirmation.
+
 ## S1: the probe runs there too, as a measurement
 
 Since 2026-09-23 the sync-word probe and the drain also run in `listen_mode: s1`.

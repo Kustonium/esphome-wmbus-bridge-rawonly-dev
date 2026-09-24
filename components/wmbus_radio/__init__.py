@@ -172,6 +172,7 @@ CONF_LR1121_VERIFY_BUFFER = "lr1121_verify_buffer"
 CONF_LR1121_EXPECTED_LEN_OVERRIDE = "lr1121_expected_len_override"
 CONF_LR1121_SYNC_PROBE = "lr1121_sync_probe"
 CONF_LR1121_DRAIN = "lr1121_drain"
+CONF_LR1121_AUTO_LENGTH = "lr1121_auto_length"
 CONF_TCXO_VOLTAGE = "tcxo_voltage"
 # Second TCXO knob. HF_XOSC_START does not distinguish "wrong voltage" from
 # "did not settle in time", so both have to be reachable from YAML.
@@ -498,6 +499,15 @@ BASE_CONFIG_SCHEMA = (
             # Needs lr1121_sync_probe: without the early wake there is no
             # window in which to read anything.
             cv.Optional(CONF_LR1121_DRAIN, default=False): cv.boolean,
+            # Derive each frame's real length from its L-field while it is still
+            # arriving and stop the packet engine there. Needs lr1121_sync_probe
+            # and lr1121_drain: without the early wake there is no window, and
+            # without the drain the header is not in hand to read.
+            #
+            # Off by default because it depends on the undocumented register
+            # 0x00F20368, verified against one radio firmware. Below 255 bytes
+            # nothing needs that register, which is exactly where this line sits.
+            cv.Optional(CONF_LR1121_AUTO_LENGTH, default=False): cv.boolean,
             cv.Optional(CONF_BITRATE, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_BITRATE]): cv.int_range(min=600, max=300000),
             cv.Optional(CONF_DEVIATION, default=BASE_CONFIG_DEFAULTS_LR1121[CONF_DEVIATION]): cv.int_range(min=1000, max=200000),
 
@@ -716,7 +726,7 @@ _REPORT_RADIO = {
                CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
                CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION,
                CONF_LR1121_VERIFY_BUFFER, CONF_LR1121_EXPECTED_LEN_OVERRIDE,
-               CONF_LR1121_SYNC_PROBE, CONF_LR1121_DRAIN),
+               CONF_LR1121_SYNC_PROBE, CONF_LR1121_DRAIN, CONF_LR1121_AUTO_LENGTH),
 }
 
 _REPORT_OUTPUT = (CONF_TOPIC_NAME, CONF_TELEGRAM_TOPIC, CONF_PUBLISH_RSSI,
@@ -913,7 +923,36 @@ def _validate_radio_pins(config):
     return config
 
 
-CONFIG_SCHEMA = cv.All(BASE_CONFIG_SCHEMA, _validate_radio_pins)
+def _validate_lr1121_auto_length(config):
+    """lr1121_auto_length without its two prerequisites does nothing at all.
+
+    The length is read out of bytes the drain has copied, and the drain only
+    runs inside the window the sync-word probe opens. Setting the option alone
+    would arm the packet engine with a ceiling and then never narrow it, so
+    every capture would run to that ceiling - worse than leaving it off, and
+    silent. Three options that only work together are worth one error message.
+    """
+    if not config.get(CONF_LR1121_AUTO_LENGTH):
+        return config
+    missing = [name for name, key in ((CONF_LR1121_SYNC_PROBE, CONF_LR1121_SYNC_PROBE),
+                                      (CONF_LR1121_DRAIN, CONF_LR1121_DRAIN))
+               if not config.get(key)]
+    if missing:
+        raise cv.Invalid(
+            f"{CONF_LR1121_AUTO_LENGTH} needs {' and '.join(missing)} as well: the length is read "
+            f"from bytes the drain copied, inside the window the sync probe opens / "
+            f"{CONF_LR1121_AUTO_LENGTH} wymaga takze {' i '.join(missing)}: dlugosc czytana jest "
+            f"z bajtow skopiowanych przez drenaz, w oknie otwartym przez sonde")
+    if config.get(CONF_LR1121_EXPECTED_LEN_OVERRIDE):
+        raise cv.Invalid(
+            f"{CONF_LR1121_AUTO_LENGTH} and {CONF_LR1121_EXPECTED_LEN_OVERRIDE} do the same job by "
+            f"opposite means; the override pins every capture to one length. Pick one / "
+            f"{CONF_LR1121_AUTO_LENGTH} i {CONF_LR1121_EXPECTED_LEN_OVERRIDE} robia to samo "
+            f"odwrotnymi sposobami; override przypina kazde przechwycenie do jednej dlugosci")
+    return config
+
+
+CONFIG_SCHEMA = cv.All(BASE_CONFIG_SCHEMA, _validate_radio_pins, _validate_lr1121_auto_length)
 
 
 def _validate_framework(config):
@@ -1039,6 +1078,7 @@ async def to_code(config):
         cg.add(radio_var.set_expected_len_override(config[CONF_LR1121_EXPECTED_LEN_OVERRIDE]))
         cg.add(radio_var.set_sync_probe(config[CONF_LR1121_SYNC_PROBE]))
         cg.add(radio_var.set_drain(config[CONF_LR1121_DRAIN]))
+        cg.add(radio_var.set_auto_length(config[CONF_LR1121_AUTO_LENGTH]))
         cg.add(radio_var.set_bitrate(config[CONF_BITRATE]))
         cg.add(radio_var.set_deviation(config[CONF_DEVIATION]))
 
