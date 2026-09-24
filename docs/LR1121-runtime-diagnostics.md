@@ -386,10 +386,39 @@ derivation runs to a 512-byte cap and costs 125 ms of deafness.
 
 `sync_probe` is schema 3 since these were added.
 
-**Not yet confirmed on hardware:** that the LR1121 honours a write to this
-register *during* reception. Sidewalk uses it that way, but that is inference
-from source, not a measurement on this chip. It is the first thing a bench run
-will show - `auto_len_resolved` rising with frames decoding is the confirmation.
+**Confirmed on hardware 2026-09-24, in all three modes.** The open question was
+whether the LR1121 honours a write to this register *during* reception - Sidewalk
+uses it that way, but that was inference from source. It does: `drain_bytes_last`
+comes back as the derived length rather than the ceiling RX was armed with.
+
+One L=0xBE telegram, three modes, three different lengths, each computed from the
+same L-field by that mode's own arithmetic:
+
+| mode | `auto_len_last` | resolved / fallback | note |
+|---|---:|---|---|
+| T1 | **326** | 57 / 1 | 3-of-6, x1.5 |
+| S1 | **434** | **44 / 0** | Manchester, x2 |
+| C1 | **219** | 59 / 59 | no coding, + 2 indicator bytes |
+
+None of those numbers appears in the source, so an implementation returning a
+constant or reusing a previous answer could not have produced them.
+
+S1 was tested first on purpose. `transceiver_sx1262.cpp` records that on *that*
+chip every S1 capture ends at `buffer_cap` because the frame does not begin at
+chip 0 of the buffer, so a length is never derived. On the LR1121 it is derived
+44 times out of 44 - the assumption holds here. S1 also resolves better than T1
+for the same reason it decodes better: derivation needs four clean leading bytes,
+and at 32768 b/s a transmitter inserts bits far less often.
+
+The even split in C1 is not an auto-length defect. It is the C-mode sync cycling
+false-syncing on the mode-C indicator, so those captures start at `FF 44` instead
+of `54 CD` and no length can be read from them. They fall back, which is the
+designed behaviour, not a failure of it.
+
+**Still not shown:** that it adapts to *varying* lengths. The bench transmits one
+frame repeatedly, so three modes give three numbers but not three lengths within
+one mode. Real traffic with mixed meters is what would settle that - watch
+`auto_len_last` change between frames.
 
 ## S1: the probe runs there too, as a measurement
 
