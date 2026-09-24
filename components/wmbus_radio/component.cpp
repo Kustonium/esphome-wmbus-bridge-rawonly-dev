@@ -456,23 +456,32 @@ void Radio::dump_config() {
 void Radio::loop() {
   const uint32_t loop_now_ms = (uint32_t) esphome::millis();
   if (this->radio != nullptr) {
-    const auto diagnostic = this->radio->runtime_diag_json();
-    if (!diagnostic.empty()) {
-      ESP_LOGI(TAG, "Radio runtime: %s", diagnostic.c_str());
-      if (this->diag_publish_summary_ && !this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
-          mqtt::global_mqtt_client->is_connected()) {
-        mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
-      }
-      if (!this->probe_baseline_reported_) {
-        const auto baseline = this->radio->probe_baseline_json();
-        if (!baseline.empty()) {
-          // Its own line and its own topic. setup() logging never reaches the
-          // API, and folding this into the runtime JSON pushed that line past
-          // the logger buffer, so it printed a JSON object cut off mid-key.
-          ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): %s", baseline.c_str());
-          if (this->diag_publish_summary_ && !this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
-              mqtt::global_mqtt_client->is_connected()) {
-            mqtt::global_mqtt_client->publish(this->diag_topic_ + "/probe_baseline", baseline, 1, true);
+    // Behind the diagnostics opt-in, all of it. The log line used to be outside
+    // it: only the MQTT publishes below were gated, so every node printed this
+    // JSON once a minute forever, including nodes with diagnostics switched
+    // off entirely. Nobody asked those nodes for a register dump.
+    if (this->diag_publish_summary_) {
+      const auto diagnostic = this->radio->runtime_diag_json();
+      if (!diagnostic.empty()) {
+        ESP_LOGI(TAG, "Radio runtime: %s", diagnostic.c_str());
+        if (!this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
+            mqtt::global_mqtt_client->is_connected()) {
+          mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
+        }
+        if (!this->probe_baseline_reported_) {
+          const auto baseline = this->radio->probe_baseline_json();
+          if (!baseline.empty()) {
+            // Its own line and its own topic. setup() logging never reaches the
+            // API, and folding this into the runtime JSON pushed that line past
+            // the logger buffer, so it printed a JSON object cut off mid-key.
+            ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): %s", baseline.c_str());
+            if (!this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
+                mqtt::global_mqtt_client->is_connected()) {
+              mqtt::global_mqtt_client->publish(this->diag_topic_ + "/probe_baseline", baseline, 1, true);
+            }
+            // Marked reported whether or not MQTT took it. It used to be set
+            // only inside the publish branch, so with the broker away the
+            // "once at boot" line repeated every minute instead.
             this->probe_baseline_reported_ = true;
           }
         }
