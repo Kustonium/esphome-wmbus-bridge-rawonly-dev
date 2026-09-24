@@ -10,12 +10,12 @@ Co 60 sekund zadanie główne publikuje migawkę JSON jako retained z QoS 1 na
 `<diagnostic_topic>/radio_runtime`, od `diagnostic_mode: low` w górę. Ta sama
 migawka trafia do logu **wyłącznie przy `diagnostic_mode: dev`**: zrzut
 rejestrów i liczników raz na minutę to instrumentacja stanowiskowa, a na
-działającym węźle nie mówi nic, czego nie mówi podsumowanie. MQTT jest
-właściwym miejscem — archiwizowalnym i tym, które ten dokument każe
-eksportować po teście. Liczniki są kumulatywne od startu
-urządzenia. Archiwizuj ten temat w trakcie testów: retained zachowuje wyłącznie
-najnowszą migawkę. `uptime_ms` zeruje się przy restarcie i przepełnia po około
-49 dniach.
+działającym węźle nie mówi nic, czego nie mówi podsumowanie.
+
+Liczniki są kumulatywne od startu urządzenia. Archiwizuj ten temat w trakcie
+testu — retained zachowuje wyłącznie najnowszą migawkę, więc przebieg, na
+którym Ci zależało, znika w chwili nadejścia kolejnego. `uptime_ms` zeruje się
+przy restarcie i przepełnia po około 49 dniach.
 
 - `busy_timeouts`: nieudane oczekiwania, łącznie z tymi przy starcie i przy
   odczytach bezpośrednich.

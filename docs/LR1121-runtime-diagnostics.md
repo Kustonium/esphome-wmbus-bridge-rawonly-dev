@@ -9,10 +9,12 @@ Every 60 seconds the main task publishes a JSON snapshot retained with QoS 1 to
 `<diagnostic_topic>/radio_runtime`, from `diagnostic_mode: low` upward. The same
 snapshot is written to the log **only at `diagnostic_mode: dev`**: a register and
 counter dump once a minute is bench instrumentation, and on a working node it
-says nothing the summary does not. MQTT is where it belongs - archivable, and
-what this document tells you to export after a test. Counters are cumulative since device boot.
-Archive this topic during tests: retained preserves only the latest snapshot.
-`uptime_ms` restarts on reboot and wraps after about 49 days.
+says nothing the summary does not.
+
+Counters are cumulative since device boot. Archive the topic during a test -
+retained preserves only the latest snapshot, so the run you wanted is gone the
+moment the next one lands. `uptime_ms` restarts on reboot and wraps after about
+49 days.
 
 - `busy_timeouts`: failed waits, including boot and direct-read waits.
 - `status_samples`, `cmd_fail_observations`, `cmd_perr_observations`: sampled Stat1
