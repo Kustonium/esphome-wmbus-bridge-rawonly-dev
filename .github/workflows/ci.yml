@@ -14,7 +14,26 @@ on:
 
 jobs:
   host-tests:
-    runs-on: ubuntu-latest
+    # `ubuntu-latest` migrates to Ubuntu 26.04 between 2026-10-19 and 2026-11-19
+    # (actions/runner-images#14748). This job is the only one whose result the
+    # image can actually change: it compiles tests/host/test_core.cpp with the
+    # runner's own g++, while firmware-build pins Python via setup-python and
+    # lets ESPHome bring its own toolchain. So the new image is tested here and
+    # not there - doubling eight firmware builds would cost a lot to learn
+    # nothing.
+    #
+    # continue-on-error on purpose, and only until the migration completes: a
+    # red badge would say the component is broken, when what it would mean is
+    # that an image nobody is on yet behaves differently. Drop both this and the
+    # matrix entry once `ubuntu-latest` is 26.04 - at that point the plain entry
+    # covers it.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, "ubuntu-26.04"]
+    name: host tests (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.runner == 'ubuntu-26.04' }}
 
     steps:
       - name: Check out repository
