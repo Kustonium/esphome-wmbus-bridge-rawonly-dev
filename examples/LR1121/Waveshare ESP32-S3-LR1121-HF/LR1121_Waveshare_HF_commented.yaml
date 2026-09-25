@@ -278,9 +278,9 @@ wmbus_radio:
   # alongside lr1121_expected_len_override, which pins every capture to one
   # fixed length and stops ordinary meters decoding.
   #
-  # lr1121_sync_probe: true
-  # lr1121_drain: true
-  # lr1121_auto_length: true
+  # lr1121_sync_probe: true   # default: false
+  # lr1121_drain: true        # default: false
+  # lr1121_auto_length: true  # default: false
 
   # ---------------------------------------------------------------------------
   # RF PARAMETERS
