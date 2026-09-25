@@ -610,6 +610,22 @@ protected:
     // the only counter that separates "never triggered" from "triggered and
     // then lost downstream".
     uint32_t irq_fired{0};
+    // irq_fired split by what the receiver actually started on, judged from the
+    // first bytes after the sync word (before any decoding). The sync word alone
+    // cannot say it: T1 and C1 share 0x543D, so a C1-only receiver that fires
+    // but never decodes looks the same in irq_fired as one catching T1 traffic.
+    //   t1       first byte is not 0x54 - read as a T1 (3-of-6) start
+    //   c1a/c1b  0x54 0xCD / 0x54 0x3D - C-mode frame format A / B
+    //   c_other  0x54 then anything else - C-mode prefix, unknown format byte
+    //   s1       S1 listen mode (Manchester, no early classification)
+    //   no_data  interrupt, but not enough bytes arrived to classify
+    // The six always add up to irq_fired.
+    uint32_t irq_start_t1{0};
+    uint32_t irq_start_c1a{0};
+    uint32_t irq_start_c1b{0};
+    uint32_t irq_start_c_other{0};
+    uint32_t irq_start_s1{0};
+    uint32_t irq_start_no_data{0};
     uint32_t irq_timeout{0};
     uint32_t preamble_read_failed{0};
     uint32_t preamble_retry_recovered{0};

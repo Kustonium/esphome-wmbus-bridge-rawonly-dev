@@ -1343,6 +1343,13 @@ void Radio::receive_frame() {
   auto packet = std::make_unique<Packet>();
   packet->set_rx_task_wakeup_us(rx_task_wakeup_us);
 
+  // Exactly one call per irq_fired, see RxPathCounters::irq_start_*.
+  auto count_irq_start = [this](uint32_t RxPathCounters::*field) {
+    this->diag_rx_path_.*field += 1;
+    this->diag_15m_rx_path_.*field += 1;
+    this->diag_60min_rx_path_.*field += 1;
+  };
+
   auto queue_packet = [this, &outcome](std::unique_ptr<Packet> &pkt) -> bool {
     pkt->set_rssi(this->radio->get_rssi());
     auto packet_ptr = pkt.get();
@@ -1373,6 +1380,7 @@ void Radio::receive_frame() {
     size_t got_raw = 0;
     this->radio->read_in_task_partial(raw, max_raw, got_raw, WMBUS_NOTIFY_WAIT_MS, 3);
     packet->resize(got_raw);
+    count_irq_start(got_raw == 0 ? &RxPathCounters::irq_start_no_data : &RxPathCounters::irq_start_s1);
     if (got_raw == 0) {
       this->diag_rx_path_.preamble_read_failed++;
       this->diag_15m_rx_path_.preamble_read_failed++;
@@ -1452,6 +1460,7 @@ void Radio::receive_frame() {
   }
 
   if (got_preamble < WMBUS_PREAMBLE_SIZE) {
+    count_irq_start(&RxPathCounters::irq_start_no_data);
     packet->resize(got_preamble);
     this->diag_rx_path_.preamble_read_failed++;
     this->diag_15m_rx_path_.preamble_read_failed++;
@@ -1475,6 +1484,15 @@ void Radio::receive_frame() {
   }
 
   const bool is_c_mode = (preamble[0] == WMBUS_MODE_C_PREAMBLE);
+  if (!is_c_mode) {
+    count_irq_start(&RxPathCounters::irq_start_t1);
+  } else if (preamble[1] == WMBUS_MODE_C_FORMAT_A) {
+    count_irq_start(&RxPathCounters::irq_start_c1a);
+  } else if (preamble[1] == WMBUS_MODE_C_FORMAT_B) {
+    count_irq_start(&RxPathCounters::irq_start_c1b);
+  } else {
+    count_irq_start(&RxPathCounters::irq_start_c_other);
+  }
   outcome.outcome = 4;
   size_t already_read = WMBUS_PREAMBLE_SIZE;
   if (!is_c_mode) {
