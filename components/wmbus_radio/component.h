@@ -293,6 +293,13 @@ protected:
   uint32_t rx_total_lifetime_{0};   // monotonic count of received (filtered) frames
   uint32_t last_rx_ms_{0};          // millis() of the last received frame
   bool any_rx_{false};              // false until the first frame is received
+  // A T1 frame whose own L-field needs more raw bytes than the radio's fixed
+  // capture holds (SX1262 with long_gfsk_packets: false). The same length seen
+  // twice confirms it is a meter, not one damaged L-field; lifetime, feeds the
+  // ENABLE_LONG_GFSK_PACKETS suggestion.
+  uint16_t over_capture_len_{0};
+  uint8_t over_capture_repeats_{0};
+  bool over_capture_confirmed_{false};
   uint32_t last_health_ms_{0};      // last health/meters publish (0 = publish ASAP)
   static constexpr uint32_t HEALTH_INTERVAL_MS_ = 60000;
   void maybe_publish_health_(uint32_t now_ms);

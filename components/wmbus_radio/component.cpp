@@ -1564,6 +1564,29 @@ void Radio::receive_frame() {
     return;
   }
 
+  // A meter that sends more than the radio's fixed capture can hold looks
+  // like any other failed read ("payload read short") unless someone does the
+  // arithmetic. T1 only: its length comes out of a fully valid 3-of-6 decode,
+  // which random data practically never passes, whereas the C1 L-field is one
+  // raw byte. First seen in the field 2026-09-25 on a Heltec V4-R8: the same
+  // total_len=353 every minute for a day, with nothing pointing at the option.
+  const size_t capture_limit = this->radio->fixed_capture_limit();
+  if (!is_c_mode && capture_limit > 0 && total_len > capture_limit) {
+    if (total_len == this->over_capture_len_) {
+      if (this->over_capture_repeats_ < 255) this->over_capture_repeats_++;
+    } else {
+      this->over_capture_len_ = (uint16_t) total_len;
+      this->over_capture_repeats_ = 1;
+    }
+    if (this->over_capture_repeats_ >= 2 && !this->over_capture_confirmed_) {
+      this->over_capture_confirmed_ = true;
+      ESP_LOGW(TAG, "Frame longer than the receive path: a meter sends %u raw bytes, the capture holds %u - "
+                    "set long_gfsk_packets: true to receive it / ramka dluzsza niz tor odbioru: licznik wysyla %u "
+                    "bajtow, odbiornik miesci %u - ustaw long_gfsk_packets: true",
+               (unsigned) total_len, (unsigned) capture_limit, (unsigned) total_len, (unsigned) capture_limit);
+    }
+  }
+
   const size_t remaining = total_len - already_read;
   outcome.outcome = 6;
   if (remaining > 0) {

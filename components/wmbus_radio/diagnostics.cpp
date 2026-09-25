@@ -216,6 +216,18 @@ void Radio::maybe_publish_suggestion_(uint32_t now_ms) {
   const uint32_t t1_sym_inv_pct = (this->diag_t1_symbols_total_ > 0)
       ? ((this->diag_t1_symbols_invalid_ * 100U) / this->diag_t1_symbols_total_) : 0U;
 
+  // A meter whose frames cannot fit the radio's fixed capture. Checked before
+  // everything else: those frames never reach `total`, so a board hearing
+  // nothing but that meter would otherwise only ever be told to check wiring.
+  if (this->over_capture_confirmed_) {
+    publish_suggestion_(mqtt, topic, this->last_suggestion_ms_, now_ms, SUGGESTION_THROTTLE_MS_, this->diag_qos_,
+        this->radio != nullptr ? this->radio->get_name() : chip, "ENABLE_LONG_GFSK_PACKETS",
+        "long_gfsk_packets", "true",
+        "long_gfsk_packets: true",
+        "A meter here sends frames longer than the receive path holds (payload read short on every transmission). Set long_gfsk_packets: true; it costs some sensitivity on weak meters.",
+        "Licznik w zasięgu wysyła ramki dłuższe niż mieści tor odbioru (payload read short przy każdym nadaniu). Ustaw long_gfsk_packets: true; kosztuje to trochę czułości na słabych licznikach.");
+  }
+
   // ── STAGE 1: orientation ────────────────────────────────────────────────────
   // An empty window says nothing on its own: `total` is diag_total_, which is a
   // per-summary-window counter reset immediately after this call. A receiver
