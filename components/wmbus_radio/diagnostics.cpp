@@ -70,7 +70,7 @@ void Radio::publish_lr_pipeline_diag_(Packet *packet, bool valid) {
       (unsigned) this->lr_rx_outcomes_[2].load(), (unsigned) this->lr_rx_outcomes_[3].load(),
       (unsigned) this->lr_rx_outcomes_[4].load(), (unsigned) this->lr_rx_outcomes_[5].load(),
       (unsigned) this->lr_rx_outcomes_[6].load(), (unsigned) this->lr_rx_outcomes_[7].load());
-    client->publish(this->diag_topic_ + "/lr_pipeline", std::string(body), 1, true);
+    client->publish(this->diag_topic_ + "/lr_pipeline", std::string(body), 1, false);
     return;
   }
   if (valid || packet->raw_hex().empty() || (uint32_t) (now - this->lr_drop_sample_ms_) < 5000) return;
@@ -85,7 +85,7 @@ void Radio::publish_lr_pipeline_diag_(Packet *packet, bool valid) {
     (int) packet->get_rssi(), (unsigned) packet->want_len(), (unsigned) packet->got_len(),
     (unsigned) packet->raw_got_len(), (unsigned) packet->decoded_len(),
     (unsigned) packet->t1_symbols_total(), (unsigned) packet->t1_symbols_invalid(), packet->raw_hex().c_str());
-  client->publish(this->diag_topic_ + "/lr_drop/" + std::to_string((this->lr_drop_sample_seq_ - 1) % 8), std::string(body), 1, true);
+  client->publish(this->diag_topic_ + "/lr_drop/" + std::to_string((this->lr_drop_sample_seq_ - 1) % 8), std::string(body), 1, false);
 }
 
 Radio::DropBucket Radio::bucket_for_reason_(const std::string &reason) {

@@ -472,7 +472,7 @@ void Radio::loop() {
         if (this->diag_verbose_) ESP_LOGI(TAG, "Radio runtime: %s", diagnostic.c_str());
         if (!this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
             mqtt::global_mqtt_client->is_connected()) {
-          mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, true);
+          mqtt::global_mqtt_client->publish(this->diag_topic_ + "/radio_runtime", diagnostic, 1, false);
         }
         if (!this->probe_baseline_reported_) {
           const auto baseline = this->radio->probe_baseline_json();
@@ -487,7 +487,7 @@ void Radio::loop() {
               ESP_LOGI(TAG, "Register probe baseline (pre-RX, read-only): %s", baseline.c_str());
             if (!this->diag_topic_.empty() && mqtt::global_mqtt_client != nullptr &&
                 mqtt::global_mqtt_client->is_connected()) {
-              mqtt::global_mqtt_client->publish(this->diag_topic_ + "/probe_baseline", baseline, 1, true);
+              mqtt::global_mqtt_client->publish(this->diag_topic_ + "/probe_baseline", baseline, 1, false);
             }
             // Marked reported whether or not MQTT took it. It used to be set
             // only inside the publish branch, so with the broker away the
@@ -522,7 +522,7 @@ void Radio::loop() {
         (unsigned) raw_sample.probe[0], (unsigned) raw_sample.probe[1],
         (unsigned) raw_sample.probe[2], (unsigned) raw_sample.probe[3], hex);
       mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_fifo/" +
-        std::to_string((this->lr_raw_sample_seq_ - 1) % 8), std::string(body), 1, true);
+        std::to_string((this->lr_raw_sample_seq_ - 1) % 8), std::string(body), 1, false);
     }
     if (strcmp(this->radio->get_name(), "LR1121") == 0 &&
         (uint32_t) (loop_now_ms - this->lr_pipeline_report_ms_) >= 60000) {
@@ -531,10 +531,10 @@ void Radio::loop() {
       const auto sync_probe = this->radio->sync_probe_json();
       if (!sync_probe.empty() && this->diag_publish_summary_ && !this->diag_topic_.empty() &&
           mqtt::global_mqtt_client != nullptr && mqtt::global_mqtt_client->is_connected()) {
-        mqtt::global_mqtt_client->publish(this->diag_topic_ + "/sync_probe", sync_probe, 1, true);
+        mqtt::global_mqtt_client->publish(this->diag_topic_ + "/sync_probe", sync_probe, 1, false);
         const auto drain_sample = this->radio->drain_sample_json();
         if (!drain_sample.empty())
-          mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_drain", drain_sample, 1, true);
+          mqtt::global_mqtt_client->publish(this->diag_topic_ + "/lr_drain", drain_sample, 1, false);
       }
     }
   }
