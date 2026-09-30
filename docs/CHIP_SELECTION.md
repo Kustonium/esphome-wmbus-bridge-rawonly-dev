@@ -156,6 +156,12 @@ Practical takeaway:
   went from 119 to 108. On these two chips that is far more than the time share
   given to C1, and together with the C1 result above it means `both` buys them
   almost nothing - one night, one building,
+- **these numbers need re-measuring.** Until 2026-09-30 every driver armed on
+  the wrong sync word (0x54CD) every fourth time in `c1` and `both`, which made
+  the receiver deaf to T1 and to C1 format B for that stretch - a cost of the
+  implementation, not of the chips. On top of that the T-Beam's figure for that
+  night was lowered by a neighbouring antenna on the bench. The C1 results
+  above were measured with the same bug,
 - if you actually care about reliable mixed-mode reception, use **two devices**.
 
 `both` is T1/C1 only on every radio. **S1 never participates in `both`** and must

@@ -2,6 +2,14 @@
 
 [English version](RELEASE_NOTES.md)
 
+## Poprawka: `c1` i `both` słuchają na jednym słowie synchronizacji, 0x543D
+
+- **Każdy sterownik (SX1262, SX1276, LR1121, CC1101) w `listen_mode: c1` i `both` - czyli w trybie domyślnym - co czwarte uzbrojenie ustawiał synchronizację na 0x54CD.** Według EN 13757-4 nagłówek trybu C to 0x543D, a po nim 0x54CD (format A) albo 0x543D (format B); nagłówek trybu T też kończy się na 0x543D. Samo 0x543D łapie więc T1 i oba formaty C1, a rozróżniają je dopiero bajty za nim. Uzbrojenie na 0x54CD nie słyszało ani T1, ani C1 formatu B, a ramka formatu A złapana na drugim słowie była potem brana za T1 i ginęła.
+- Na SX1262 i LR1121, które wyzwalają się tylko na prawdziwej preambule, takie uzbrojenie zwykle czekało całe 5 s, więc głucha część czasu była wyraźnie większa niż ćwierć. To najbardziej prawdopodobna przyczyna, dla której `both` kosztował te układy 40-50% liczników T1, i część powodu, dla którego słyszały tak mało C1. Tryby `t1` i `s1` nigdy nie były dotknięte.
+- Liczby dla `both` i C1 w `CHIP_SELECTION_PL.md` zmierzono z tym błędem i są oznaczone do ponownego pomiaru.
+
+---
+
 ## Mniej diagnostyki poza `diagnostic_mode: dev`
 
 - **Przyrządy stanowiskowe nie działają już w `low` i `normal`.** To tryby zalecane użytkownikom; zostaje w nich podsumowanie, podpowiedzi i migawka liczników. Do `dev` przeniesione:

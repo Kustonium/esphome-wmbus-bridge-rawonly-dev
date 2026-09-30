@@ -2,6 +2,14 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## Fix: `c1` and `both` listen on one sync word, 0x543D
+
+- **Every driver (SX1262, SX1276, LR1121, CC1101) armed on 0x54CD every fourth time in `listen_mode: c1` and `both`** - the default mode. Per EN 13757-4 the C-mode header is 0x543D followed by 0x54CD (format A) or 0x543D (format B), and the T-mode header ends in 0x543D too, so 0x543D alone catches T1 and both C1 formats; the bytes after it tell them apart. An arm on 0x54CD heard no T1 and no C1 format B at all, and a format-A frame caught on its second word was then parsed as T1 and lost.
+- On the SX1262 and LR1121, which trigger only on real preamble, such an arm usually waited out its whole 5 s window, so the deaf share was well above a quarter. This is the most likely reason `both` cost those chips 40-50% of their T1 meters, and part of why they heard so little C1. `t1` and `s1` were never affected.
+- The `both` and C1 figures in `CHIP_SELECTION.md` were measured with this bug and are marked for re-measurement.
+
+---
+
 ## Less diagnostics outside `diagnostic_mode: dev`
 
 - **Bench instruments no longer run in `low` and `normal`.** Those are the modes users are told to run; they keep the summary, the hints and the meter snapshot. Moved to `dev`:

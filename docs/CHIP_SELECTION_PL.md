@@ -158,6 +158,11 @@ Praktyczny wniosek:
   119 do 108. Na tych dwóch układach to dużo więcej niż udział czasu oddany C1, a
   razem z wynikiem C1 powyżej oznacza, że `both` prawie nic im nie daje - jedna
   noc, jeden budynek,
+- **te liczby trzeba zmierzyć ponownie.** Do 30.09.2026 każdy sterownik w `c1` i
+  `both` co czwarte uzbrojenie ustawiał złe słowo synchronizacji (0x54CD), przez
+  co odbiornik był wtedy głuchy na T1 i na C1 formatu B - to koszt implementacji,
+  nie układów. Do tego wynik T-Beama z tamtej nocy obniżała sąsiednia antena na
+  stanowisku. Wyniki C1 powyżej zmierzono z tym samym błędem,
 - jeśli naprawdę zależy Ci na niezawodnym odbiorze mieszanym, użyj **dwóch urządzeń**.
 
 `both` na każdym radiu obejmuje wyłącznie T1/C1. **S1 nigdy nie bierze udziału
