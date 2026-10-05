@@ -26,9 +26,41 @@ changing a key is a click, with no firmware reflash.
 | Heltec WiFi LoRa 32 V4-R8 | [`examples/SX1262/Heltec V4-R8/`](../examples/SX1262/Heltec%20V4-R8/) |
 | Heltec WiFi LoRa 32 V3 | [`examples/SX1262/Heltec V3/`](../examples/SX1262/Heltec%20V3/) |
 | Heltec V2 / LilyGO T3 (SX1276) | [`examples/SX1276/`](../examples/SX1276/) |
+| ESP32 + CC1101 module (experimental, see below) | [`examples/CC1101/CC1101_clean.yaml`](../examples/CC1101/CC1101_clean.yaml) |
 
 Pins, RF switches and module power are already set in the examples. Do not copy them from another
 board — a Heltec V4 is not a V3.
+
+### CC1101: cheap, works, experimental
+
+A CC1101 module on any ESP32 works with this project, and the rest of this guide is the same for it.
+Know three things before you buy or wire one:
+
+1. **Buy the 868 MHz version.** Many cheap CC1101 modules are built for 433 MHz - the chip tunes to
+   868 MHz, but their antenna and matching parts do not, and the board ends up nearly deaf. Look
+   for "868 MHz" on the module itself, not only in the listing title.
+2. **Wire both GDO0 and GDO2**, plus SPI and CS, at 3.3 V. The example uses an ESP32-C3:
+
+   | CC1101 | ESP32-C3 (example) |
+   |---|---|
+   | SCK | GPIO5 |
+   | MOSI (SI) | GPIO6 |
+   | MISO (SO) | GPIO7 |
+   | CSN | GPIO4 |
+   | GDO0 | GPIO3 |
+   | GDO2 | GPIO2 |
+   | VCC / GND | 3.3 V / GND |
+
+   Any ESP32 works; change the pins in the YAML to match your wiring.
+3. **The driver has to be enabled explicitly** with `cc1101_allow_experimental: true` (already in
+   the example). It is experimental because it has had less testing time than the other radios,
+   not because it is known to be broken.
+
+What to expect: it works on **T1** for a few meters that do not transmit too often. It is the
+slowest of the four radios at reading frames, so in a block of flats with many fast meters it loses
+noticeably more than an SX1262, and S1 on CC1101 is a raw sniffer rather than a receive path. If you are buying new
+hardware anyway, see [`CHIP_SELECTION.md`](CHIP_SELECTION.md) first; if you already have a CC1101,
+use it.
 
 ## 1. MQTT broker
 
