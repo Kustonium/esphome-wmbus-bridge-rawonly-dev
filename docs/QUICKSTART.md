@@ -51,14 +51,19 @@ Know three things before you buy or wire one:
    | GDO2 | GPIO2 |
    | VCC / GND | 3.3 V / GND |
 
-   Any ESP32 works; change the pins in the YAML to match your wiring.
+   Other ESP32 variants should work with the pins changed in the YAML, but only the ESP32-C3 build
+   is checked in CI. Give the module a solid 3.3 V: a module running at 2.93 V lost most of its
+   register writes until the driver learned to retry them.
 3. **The driver has to be enabled explicitly** with `cc1101_allow_experimental: true` (already in
-   the example). It is experimental because it has had less testing time than the other radios,
-   not because it is known to be broken.
+   the example). It is experimental because it has not been measured on this project's bench: the
+   hardware evidence so far comes from users' logs. A register-write problem found that way has
+   been fixed.
 
-What to expect: it works on **T1** for a few meters that do not transmit too often. It is the
-slowest of the four radios at reading frames, so in a block of flats with many fast meters it loses
-noticeably more than an SX1262, and S1 on CC1101 is a raw sniffer rather than a receive path. If you are buying new
+What to expect: users run it on **T1**, but there is no benchmark of the CC1101 against the other
+radios here, so there are no numbers to promise. It is the slowest of the four radios at reading
+frames (1800 µs FIFO deadline against 1000 µs on the SX1276), which matters most with many fast
+meters, and S1 on CC1101 is a raw sniffer rather than a receive path. A report with your results
+in Discussions helps more than anything else. If you are buying new
 hardware anyway, see [`CHIP_SELECTION.md`](CHIP_SELECTION.md) first; if you already have a CC1101,
 use it.
 

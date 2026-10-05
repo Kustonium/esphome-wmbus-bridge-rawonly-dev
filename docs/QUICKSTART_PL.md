@@ -51,14 +51,19 @@ taka sama. Przed zakupem albo podłączeniem trzeba wiedzieć trzy rzeczy:
    | GDO2 | GPIO2 |
    | VCC / GND | 3,3 V / GND |
 
-   Działa każde ESP32; zmień piny w YAML-u według swojego połączenia.
+   Inne warianty ESP32 powinny działać po zmianie pinów w YAML-u, ale w CI budowany jest tylko
+   ESP32-C3. Zapewnij modułowi stabilne 3,3 V: moduł pracujący na 2,93 V gubił większość zapisów
+   rejestrów, dopóki sterownik nie zaczął ich powtarzać.
 3. **Sterownik trzeba włączyć jawnie** przez `cc1101_allow_experimental: true` (jest już
-   w przykładzie). Jest eksperymentalny, bo miał mniej czasu testów niż pozostałe radia, a nie
-   dlatego, że wiadomo o jakimś błędzie.
+   w przykładzie). Jest eksperymentalny, bo nie był mierzony na stanowisku tego projektu: dowody
+   sprzętowe pochodzą dotąd z logów użytkowników. Znaleziony w ten sposób problem z zapisem
+   rejestrów został naprawiony.
 
-Czego się spodziewać: działa na **T1** dla kilku liczników, które nie nadają zbyt często. To
-najwolniejsze z czterech radiów przy odczycie ramek, więc w bloku z wieloma szybkimi licznikami
-gubi wyraźnie więcej niż SX1262, a S1 na CC1101 to surowy sniffer, nie ścieżka odbiorcza. Jeśli i tak
+Czego się spodziewać: użytkownicy używają go na **T1**, ale nie ma tu porównania CC1101 z innymi
+radiami, więc nie ma liczb do obiecania. To najwolniejsze z czterech radiów przy odczycie ramek
+(termin FIFO 1800 µs wobec 1000 µs na SX1276), co ma największe znaczenie przy wielu szybkich
+licznikach, a S1 na CC1101 to surowy sniffer, nie ścieżka odbiorcza. Raport z wynikami
+w Discussions pomoże bardziej niż cokolwiek innego. Jeśli i tak
 kupujesz nowy sprzęt, najpierw zajrzyj do [`CHIP_SELECTION_PL.md`](CHIP_SELECTION_PL.md); jeśli
 CC1101 już masz, używaj go.
 
