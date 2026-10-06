@@ -802,7 +802,13 @@ bool SX1262::has_rx_done_() {
 }
 
 bool SX1262::long_stream_active_() const {
-  return this->long_gfsk_packets_ && this->long_stream_hold_until_ms_ != 0 &&
+  if (!this->long_gfsk_packets_)
+    return false;
+  // Bench option: stream every frame, so the stream path can be measured on a
+  // site whose meters never send a frame long enough to trip the hold below.
+  if (this->force_long_stream_)
+    return true;
+  return this->long_stream_hold_until_ms_ != 0 &&
          (int32_t) (this->long_stream_hold_until_ms_ - millis()) > 0;
 }
 
@@ -997,9 +1003,13 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
       // transmitter is still on air and this is the frame's own signal level.
       // Draining 200+ bytes over SPI takes long enough that a sample taken
       // afterwards can already fall past the end of the transmission.
-      const int8_t inst = this->read_rssi_inst_dbm_();
-      if (inst != RSSI_NOT_MEASURED && inst > rssi_inflight)
-        rssi_inflight = inst;
+      // With sx1262_stream_poll_ms set, sample once, on the first bytes: every
+      // extra SPI transaction during reception is what that option removes.
+      if (this->stream_poll_ms_ == 0 || rssi_inflight == RSSI_NOT_MEASURED) {
+        const int8_t inst = this->read_rssi_inst_dbm_();
+        if (inst != RSSI_NOT_MEASURED && inst > rssi_inflight)
+          rssi_inflight = inst;
+      }
 
       uint8_t tmp[256];
       const uint8_t off = state_index;
@@ -1073,6 +1083,11 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
           break;
         }
       }
+      // Sparse polling (sx1262_stream_poll_ms): let the frame arrive before the
+      // next pointer read instead of reading again at once. The 256-byte ring
+      // fills in ~20 ms at 100 kchip/s, so the option is capped at 15 ms.
+      if (this->stream_poll_ms_ != 0)
+        delay(this->stream_poll_ms_);
     } else {
       // No new bytes right now.
       const uint16_t irq = this->get_irq_status_();
@@ -1097,7 +1112,7 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
         break;
       }
 
-      delay(1);
+      delay(this->stream_poll_ms_ != 0 ? this->stream_poll_ms_ : 1);
     }
   }
 

@@ -144,6 +144,14 @@ CONF_SX1262_RX_BANDWIDTH = "sx1262_rx_bandwidth"
 # How long the SX1262 waits for its TCXO after powering it through DIO3.
 # Fixed at 1 ms until 2026-09-28; Heltec's own driver uses 5 ms on the V4.
 CONF_SX1262_TCXO_STARTUP_MS = "sx1262_tcxo_startup_ms"
+# Bench options for the long-frame stream path (long_gfsk_packets: true).
+# stream_poll_ms: 0 keeps the tight SPI loop; N > 0 reads the RX pointer once
+# every N ms, to test whether SPI traffic during reception is what costs the
+# stream path its sensitivity (2026-10-01, plan-rzadki-stream-sx1262).
+# force_long_stream: stream every frame, since a bench without long frames
+# never trips the adaptive hold.
+CONF_SX1262_STREAM_POLL_MS = "sx1262_stream_poll_ms"
+CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 SX1262_T1_RX_BANDWIDTHS = {
     "312khz": "T1_BW_312",
     "234khz": "T1_BW_234",
@@ -640,6 +648,8 @@ BASE_CONFIG_SCHEMA = (
                 *SX1262_T1_RX_BANDWIDTHS, lower=True
             ),
             cv.Optional(CONF_SX1262_TCXO_STARTUP_MS, default=1): cv.int_range(min=1, max=20),
+            cv.Optional(CONF_SX1262_STREAM_POLL_MS, default=0): cv.int_range(min=0, max=15),
+            cv.Optional(CONF_SX1262_FORCE_LONG_STREAM, default=False): cv.boolean,
 
             # Optional log highlighting for selected meter IDs
             cv.Optional(CONF_HIGHLIGHT_METERS, default=[]): cv.ensure_list(_validate_meter_id),
@@ -729,7 +739,7 @@ _REPORT_RADIO = {
     "SX1262": (CONF_HAS_TCXO, CONF_TCXO_VOLTAGE, CONF_DIO2_RF_SWITCH, CONF_RF_SWITCH, CONF_RX_GAIN,
                CONF_LONG_GFSK_PACKETS, CONF_CLEAR_DEVICE_ERRORS_ON_BOOT,
                CONF_PUBLISH_DEV_ERR_AFTER_CLEAR, CONF_SX1262_RX_BANDWIDTH, CONF_SX1262_TCXO_STARTUP_MS,
-               CONF_MIN_PREAMBLE_BITS),
+               CONF_MIN_PREAMBLE_BITS, CONF_SX1262_STREAM_POLL_MS, CONF_SX1262_FORCE_LONG_STREAM),
     "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS,
                CONF_SX1276_PREAMBLE_TOLERANCE),
     "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL,),
@@ -806,6 +816,13 @@ def _validate_radio_pins(config):
 
     if CONF_TCXO_PIN in config and radio_type != "SX1276":
         raise cv.Invalid("tcxo_pin is only valid for radio_type: SX1276. For SX1262 use has_tcxo instead.")
+
+    for opt, default in ((CONF_SX1262_STREAM_POLL_MS, 0), (CONF_SX1262_FORCE_LONG_STREAM, False)):
+        if config.get(opt, default) != default:
+            if radio_type != "SX1262":
+                raise cv.Invalid(f"{opt} is only valid for radio_type: SX1262.")
+            if not config.get(CONF_LONG_GFSK_PACKETS, False):
+                raise cv.Invalid(f"{opt} only affects the long-frame stream path: set long_gfsk_packets: true.")
 
     if radio_type == "CC1101":
         if not config.get(CONF_CC1101_ALLOW_EXPERIMENTAL, False):
@@ -1032,6 +1049,8 @@ async def to_code(config):
             getattr(SX1262TcxoVoltage, SX1262_TCXO_VOLTAGES[config[CONF_TCXO_VOLTAGE]])
         ))
         cg.add(radio_var.set_tcxo_startup_ms(config[CONF_SX1262_TCXO_STARTUP_MS]))
+        cg.add(radio_var.set_stream_poll_ms(config[CONF_SX1262_STREAM_POLL_MS]))
+        cg.add(radio_var.set_force_long_stream(config[CONF_SX1262_FORCE_LONG_STREAM]))
 
         SX1262RxGain = radio_ns.enum("SX1262RxGain")
         gain = config.get(CONF_RX_GAIN, "boosted")
