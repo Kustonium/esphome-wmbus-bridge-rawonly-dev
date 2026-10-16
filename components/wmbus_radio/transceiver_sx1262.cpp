@@ -40,6 +40,7 @@ static constexpr uint8_t CMD_SET_DIO3_AS_TCXO_CTRL = 0x97;
 static constexpr uint8_t CMD_GET_STATUS = 0xC0;
 static constexpr uint8_t CMD_CALIBRATE = 0x89;
 static constexpr uint8_t CMD_CALIBRATE_IMAGE = 0x98;
+static constexpr uint8_t CMD_SET_REGULATOR_MODE = 0x96;
 static constexpr uint8_t CMD_WRITE_REGISTER = 0x0D;
 static constexpr uint8_t CMD_READ_REGISTER = 0x1D;
 
@@ -1318,6 +1319,16 @@ void SX1262::setup() {
   }
 
   this->cmd_write_(CMD_SET_STANDBY, {STANDBY_RC});
+
+  // SetRegulatorMode(0x01) = DC-DC + LDO. Nothing is sent for the LDO case: the
+  // chip comes out of reset on the LDO and this driver has always left it there,
+  // so the default keeps the exact command sequence of every earlier build.
+  // Sent in STDBY_RC, before the calibration below, as the datasheet's init
+  // sequence does. Bench option - see sx1262_regulator in __init__.py.
+  if (this->use_dcdc_) {
+    this->cmd_write_(CMD_SET_REGULATOR_MODE, {0x01});
+    ESP_LOGI(TAG, "Regulator: DC-DC (sx1262_regulator: dcdc)");
+  }
 
   // DIO2 RF switch
   this->cmd_write_(CMD_SET_DIO2_AS_RF_SWITCH_CTRL, {uint8_t(this->dio2_rf_switch_ ? 0x01 : 0x00)});
