@@ -144,10 +144,14 @@ CONF_SX1262_RX_BANDWIDTH = "sx1262_rx_bandwidth"
 # How long the SX1262 waits for its TCXO after powering it through DIO3.
 # Fixed at 1 ms until 2026-09-28; Heltec's own driver uses 5 ms on the V4.
 CONF_SX1262_TCXO_STARTUP_MS = "sx1262_tcxo_startup_ms"
-# Bench options for the long-frame stream path (long_gfsk_packets: true).
-# stream_poll_ms: 0 keeps the tight SPI loop; N > 0 reads the RX pointer once
-# every N ms, to test whether SPI traffic during reception is what costs the
-# stream path its sensitivity (2026-10-01, plan-rzadki-stream-sx1262).
+# Options for the long-frame stream path (long_gfsk_packets: true).
+# stream_poll_ms: N > 0 reads the RX pointer once every N ms; 0 is the old tight
+# SPI loop, kept as a bench option. SPI traffic during reception is what cost
+# the stream path its weak-signal tail: on one T-Beam (2026-10-12..14) the tight
+# loop heard fewer meters and about 3.5x fewer of the weakest frames than the
+# FIFO path, 15 ms got the meter count back to FIFO and about 2/3 of the frames,
+# and on the attenuator bench (2026-10-16) 15 ms received 326- and 435-byte
+# frames as fully as the tight loop down to about -83 dBm. Default 15 since then.
 # force_long_stream: stream every frame, since a bench without long frames
 # never trips the adaptive hold.
 CONF_SX1262_STREAM_POLL_MS = "sx1262_stream_poll_ms"
@@ -654,7 +658,7 @@ BASE_CONFIG_SCHEMA = (
                 *SX1262_T1_RX_BANDWIDTHS, lower=True
             ),
             cv.Optional(CONF_SX1262_TCXO_STARTUP_MS, default=1): cv.int_range(min=1, max=20),
-            cv.Optional(CONF_SX1262_STREAM_POLL_MS, default=0): cv.int_range(min=0, max=15),
+            cv.Optional(CONF_SX1262_STREAM_POLL_MS, default=15): cv.int_range(min=0, max=15),
             cv.Optional(CONF_SX1262_FORCE_LONG_STREAM, default=False): cv.boolean,
             cv.Optional(CONF_SX1262_REGULATOR, default="ldo"): cv.one_of("ldo", "dcdc", lower=True),
 
@@ -825,7 +829,7 @@ def _validate_radio_pins(config):
     if CONF_TCXO_PIN in config and radio_type != "SX1276":
         raise cv.Invalid("tcxo_pin is only valid for radio_type: SX1276. For SX1262 use has_tcxo instead.")
 
-    for opt, default in ((CONF_SX1262_STREAM_POLL_MS, 0), (CONF_SX1262_FORCE_LONG_STREAM, False)):
+    for opt, default in ((CONF_SX1262_STREAM_POLL_MS, 15), (CONF_SX1262_FORCE_LONG_STREAM, False)):
         if config.get(opt, default) != default:
             if radio_type != "SX1262":
                 raise cv.Invalid(f"{opt} is only valid for radio_type: SX1262.")

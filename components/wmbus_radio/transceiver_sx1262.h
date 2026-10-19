@@ -211,8 +211,8 @@ class SX1262 : public RadioTransceiver {
   bool rx_stopped_by_capture_{false};
   const char *last_capture_exit_{"none"};
   bool long_gfsk_packets_{false};
-  // Bench options for the stream path, see sx1262_stream_poll_ms in __init__.py.
-  uint8_t stream_poll_ms_{0};
+  // Stream path options, see sx1262_stream_poll_ms in __init__.py.
+  uint8_t stream_poll_ms_{15};
   bool force_long_stream_{false};
   // Bench option, see sx1262_regulator in __init__.py. false = LDO (reset default).
   bool use_dcdc_{false};
