@@ -431,13 +431,15 @@ first few frames go out unstamped and stay in the session counter until it
 resets. On the next add-on restart (with SNTP already running on the board)
 you should see `synced`.
 
-## 19. A distant meter comes and goes, or one board hears it and another does not
+## 19. A weak meter comes and goes, or one board hears it and another does not
 
 Before blaming the board or buying another, move the antenna. At 868 MHz the
-wavelength is 34.5 cm; a distant meter's signal reaches you over several paths
-(walls, neighbouring buildings, windows) and they cancel every ~17 cm. Each meter
+wavelength is 34.5 cm; a meter's signal reaches you over several paths (walls,
+floors, neighbouring buildings, windows) and they cancel every ~17 cm. Each meter
 has its own pattern of such spots, so a few centimetres can bring one meter in
-and drop another. Meters close by have enough margin not to notice.
+and drop another. Only weak meters notice: a meter with margin to spare still
+gets through in a cancellation spot. Weak usually means far away, but a meter a
+few floors down behind concrete can be just as weak.
 
 Measured on 2026-10-20/21: one board's antenna moved 30-50 cm along the same wall
 heard about 11% more frames from most meters and lost a whole group of meters it

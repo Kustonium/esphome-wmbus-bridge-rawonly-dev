@@ -429,13 +429,15 @@ niż NTP odpowie, więc kilka pierwszych ramek leci bez stempla i zostają
 w liczniku sesji, dopóki się nie zresetuje. Po restarcie dodatku (z SNTP
 już działającym na płytce) powinno być `zsynchronizowany`.
 
-## 19. Daleki licznik raz jest, raz go nie ma, albo jedna płytka go słyszy, a druga nie
+## 19. Słaby licznik raz jest, raz go nie ma, albo jedna płytka go słyszy, a druga nie
 
 Zanim obwinisz płytkę albo kupisz inną, przesuń antenę. Na 868 MHz fala ma
-34,5 cm; sygnał dalekiego licznika dochodzi kilkoma drogami (ściany, sąsiednie
+34,5 cm; sygnał licznika dochodzi kilkoma drogami (ściany, stropy, sąsiednie
 budynki, okna) i te drogi wygaszają się co ~17 cm. Każdy licznik ma własny układ
 takich miejsc, więc kilka centymetrów potrafi jeden licznik dodać, a inny zabrać.
-Bliskie liczniki mają dość zapasu, żeby tego nie zauważyć.
+Odczuwają to tylko słabe liczniki: licznik z zapasem przebija się nawet w miejscu
+wygaszenia. Słaby to zwykle daleki, ale licznik kilka pięter niżej, za betonem,
+bywa równie słaby.
 
 Zmierzone 2026-10-20/21: antena jednej płytki przesunięta o 30-50 cm wzdłuż tej
 samej ściany dała ok. 11% więcej ramek od większości liczników i zgubiła całą

@@ -5,7 +5,7 @@
 ## Boot report shows the diagnostic switches; antenna placement documented
 
 - **The `[diagnostics]` part of the boot configuration report now lists every switch that `diagnostic_mode` sets** - `diagnostic_verbose`, `diagnostic_publish_raw`, `diagnostic_publish_summary`, the event and summary switches and `diagnostic_meter_stats` - with their effective value and the marker `(from diagnostic_mode: X)`. They have no schema default, so the report used to leave them out entirely: a board on `diagnostic_mode: dev` showed no `diagnostic_verbose` at all, which once read as "verbose is off" and led to a needless reflash. Nothing changes in reception or in what is published.
-- **New: TROUBLESHOOTING section 19** on a distant meter that comes and goes. At 868 MHz reflections cancel every ~17 cm and each meter has its own pattern of such spots; moving one board's antenna 30-50 cm gave it about 11% more frames from most meters and cost it a whole group of meters it had heard every day. Move the antenna in centimetre steps before replacing the board. CHIP_SELECTION and BENCHMARKS now say how much placement weighs in the cross-board numbers.
+- **New: TROUBLESHOOTING section 19** on a weak meter that comes and goes. At 868 MHz reflections cancel every ~17 cm and each meter has its own pattern of such spots; moving one board's antenna 30-50 cm gave it about 11% more frames from most meters and cost it a whole group of meters it had heard every day. Move the antenna in centimetre steps before replacing the board. CHIP_SELECTION and BENCHMARKS now say how much placement weighs in the cross-board numbers.
 
 ---
 

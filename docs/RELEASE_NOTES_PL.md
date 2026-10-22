@@ -5,7 +5,7 @@
 ## Raport startowy pokazuje przełączniki diagnostyki; opisane położenie anteny
 
 - **Część `[diagnostics]` raportu konfiguracji przy starcie wymienia teraz każdy przełącznik ustawiany przez `diagnostic_mode`** - `diagnostic_verbose`, `diagnostic_publish_raw`, `diagnostic_publish_summary`, przełączniki zdarzeń i podsumowań oraz `diagnostic_meter_stats` - z wartością faktyczną i znacznikiem `(from diagnostic_mode: X)`. Nie mają domyślnej w schemacie, więc raport w ogóle je pomijał: płytka na `diagnostic_mode: dev` nie pokazywała `diagnostic_verbose`, co raz zostało odczytane jako „verbose wyłączone" i skończyło się niepotrzebnym wgrywaniem. Odbiór i to, co jest publikowane, nie zmieniają się.
-- **Nowe: TROUBLESHOOTING, punkt 19** o dalekim liczniku, który raz jest, a raz go nie ma. Na 868 MHz odbicia wygaszają się co ~17 cm, a każdy licznik ma własny układ takich miejsc; przesunięcie anteny jednej płytki o 30-50 cm dało jej ok. 11% więcej ramek od większości liczników i zabrało całą grupę liczników, którą słyszała codziennie. Zanim wymienisz płytkę, przesuwaj antenę o centymetry. CHIP_SELECTION i BENCHMARKS mówią teraz, ile położenie waży w liczbach porównujących płytki.
+- **Nowe: TROUBLESHOOTING, punkt 19** o słabym liczniku, który raz jest, a raz go nie ma. Na 868 MHz odbicia wygaszają się co ~17 cm, a każdy licznik ma własny układ takich miejsc; przesunięcie anteny jednej płytki o 30-50 cm dało jej ok. 11% więcej ramek od większości liczników i zabrało całą grupę liczników, którą słyszała codziennie. Zanim wymienisz płytkę, przesuwaj antenę o centymetry. CHIP_SELECTION i BENCHMARKS mówią teraz, ile położenie waży w liczbach porównujących płytki.
 
 ---
 
