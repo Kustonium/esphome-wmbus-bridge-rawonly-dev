@@ -2,6 +2,13 @@
 
 [English version](RELEASE_NOTES.md)
 
+## Raport startowy pokazuje przełączniki diagnostyki; opisane położenie anteny
+
+- **Część `[diagnostics]` raportu konfiguracji przy starcie wymienia teraz każdy przełącznik ustawiany przez `diagnostic_mode`** - `diagnostic_verbose`, `diagnostic_publish_raw`, `diagnostic_publish_summary`, przełączniki zdarzeń i podsumowań oraz `diagnostic_meter_stats` - z wartością faktyczną i znacznikiem `(from diagnostic_mode: X)`. Nie mają domyślnej w schemacie, więc raport w ogóle je pomijał: płytka na `diagnostic_mode: dev` nie pokazywała `diagnostic_verbose`, co raz zostało odczytane jako „verbose wyłączone" i skończyło się niepotrzebnym wgrywaniem. Odbiór i to, co jest publikowane, nie zmieniają się.
+- **Nowe: TROUBLESHOOTING, punkt 19** o dalekim liczniku, który raz jest, a raz go nie ma. Na 868 MHz odbicia wygaszają się co ~17 cm, a każdy licznik ma własny układ takich miejsc; przesunięcie anteny jednej płytki o 30-50 cm dało jej ok. 11% więcej ramek od większości liczników i zabrało całą grupę liczników, którą słyszała codziennie. Zanim wymienisz płytkę, przesuwaj antenę o centymetry. CHIP_SELECTION i BENCHMARKS mówią teraz, ile położenie waży w liczbach porównujących płytki.
+
+---
+
 ## SX1262: `long_gfsk_packets: true` gubi mniej słabych ramek
 
 - **Strumień długich ramek nie czyta już radia po SPI bez przerwy, gdy ramka napływa.** Sprawdza wskaźnik odbioru co 15 ms. To ciągły ruch na SPI w trakcie odbioru odbierał tej ścieżce słabe sygnały - owe „około 7 dB” z dokumentacji.
