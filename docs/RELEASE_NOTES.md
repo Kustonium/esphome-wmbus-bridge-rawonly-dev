@@ -2,6 +2,15 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## CC1101: no false alarms at boot; C1 overload hint needs real losses
+
+- **The CC1101 boot check no longer warns `RADIO_NOT_IN_RX` while the chip is calibrating on its way into RX** (`MARCSTATE` STARTCAL..ENDCAL, read right after the RX strobe). It used to tell a healthy radio that "RX should be restarted".
+- **The delayed boot report says `RX_LISTENING` instead of `RADIO_OK_NO_RF_SYNC`** when no frame is in flight at that instant. The old text said no sync or data was detected and pointed at the module and antenna, seconds after the first frames had been decoded. `RADIO_OK_NO_RF_SYNC` stays for the receive-wait timeout, where it means what it says.
+- **The CC1101 health, status, debug and config lines now take the verdict's level**: info on a healthy radio, warning or error only when the verdict is one.
+- **`C1_OVERLOAD_OR_MULTIPATH` needs at least 3 C1 CRC failures and at least 5% of C1 frames in the window** (60 s, 15 min and 60 min summaries). One failed frame next to a strong meter was enough before: a user's CC1101 with five Kamstrup meters at 1% CRC loss over 15 hours got the hint 58 times.
+
+---
+
 ## Boot report shows the diagnostic switches; antenna placement documented
 
 - **The `[diagnostics]` part of the boot configuration report now lists every switch that `diagnostic_mode` sets** - `diagnostic_verbose`, `diagnostic_publish_raw`, `diagnostic_publish_summary`, the event and summary switches and `diagnostic_meter_stats` - with their effective value and the marker `(from diagnostic_mode: X)`. They have no schema default, so the report used to leave them out entirely: a board on `diagnostic_mode: dev` showed no `diagnostic_verbose` at all, which once read as "verbose is off" and led to a needless reflash. Nothing changes in reception or in what is published.
