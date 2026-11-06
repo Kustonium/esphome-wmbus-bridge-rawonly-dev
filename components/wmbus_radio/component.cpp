@@ -1266,8 +1266,9 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
   // a condition a board receiving T1 traffic never reaches, which made the
   // measurement unobtainable in exactly the mode where it matters.
   //
-  // Only the SX1276 answers: SX126x and LR1121 have no AFC in GFSK and no
-  // register that reports the offset, so on those radios this is silent.
+  // SX1276 and CC1101 answer (CC1101: afc is always 0, fei is FREQEST). SX126x and
+  // LR1121 have no AFC in GFSK and no register that reports the offset, so on
+  // those radios this is silent.
   if (this->diag_verbose_) {
     int32_t afc_hz = 0, fei_hz = 0;
     if (this->radio->take_frame_freq_error(&afc_hz, &fei_hz)) {

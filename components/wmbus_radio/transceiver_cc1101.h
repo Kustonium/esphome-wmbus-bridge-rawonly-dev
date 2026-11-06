@@ -34,6 +34,7 @@ class CC1101 : public RadioTransceiver {
   uint32_t take_fifo_overrun_count() override;
   void dump_debug_status(const char *reason) override;
   void log_reg_status() override;
+  bool take_frame_freq_error(int32_t *afc_hz, int32_t *fei_hz) override;
 
  protected:
   InternalGPIOPin *gdo0_pin_{nullptr};
@@ -46,6 +47,9 @@ class CC1101 : public RadioTransceiver {
   uint32_t configured_frequency_hz_{868950000UL};
   int8_t last_rssi_dbm_{-127};
   bool rssi_captured_{false};
+  // FREQEST of the current frame; see take_frame_freq_error().
+  int8_t last_freqest_raw_{0};
+  bool freq_error_fresh_{false};
   bool abort_requested_{false};
   uint32_t fifo_overrun_count_{0};
   // SPI transactions the chip answered with CHIP_RDYn still high.

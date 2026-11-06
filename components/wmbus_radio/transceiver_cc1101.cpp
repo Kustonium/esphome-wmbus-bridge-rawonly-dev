@@ -94,6 +94,7 @@ static constexpr uint8_t REG_TEST0    = 0x2E;
 // CC1101 status registers
 static constexpr uint8_t REG_PARTNUM  = 0x30;
 static constexpr uint8_t REG_VERSION  = 0x31;
+static constexpr uint8_t REG_FREQEST  = 0x32;
 static constexpr uint8_t REG_RSSI     = 0x34;
 static constexpr uint8_t REG_MARCSTATE= 0x35;
 static constexpr uint8_t REG_RXBYTES  = 0x3B;
@@ -1013,6 +1014,29 @@ void CC1101::capture_rssi_() {
   }
   this->last_rssi_dbm_ = (int8_t) std::clamp<int16_t>(rssi, -127, 20);
   this->rssi_captured_ = true;
+  // Bench instrument, verbose only, so the normal path gains no SPI access. Read
+  // here, once per frame, because infinite packet mode never drops to IDLE on its
+  // own (DN015 reads it in IDLE, right after the packet) and the estimate has to
+  // belong to this frame, not to the empty channel after it.
+  if (this->diag_verbose_) {
+    this->last_freqest_raw_ = (int8_t) this->read_status_(REG_FREQEST);
+    this->freq_error_fresh_ = true;
+  }
+}
+
+// take_frame_freq_error: FREQEST for the frame, once. Two's complement in steps of
+// fXOSC / 2^14 (1587 Hz at 26 MHz, datasheet 0x32). It holds the transmitter's
+// crystal error plus this module's, so a value shared by all meters points at the
+// module. FSCTRL0 stays 0, so there is no applied correction to report as afc.
+bool CC1101::take_frame_freq_error(int32_t *afc_hz, int32_t *fei_hz) {
+  if (!this->freq_error_fresh_)
+    return false;
+  this->freq_error_fresh_ = false;
+  if (afc_hz != nullptr)
+    *afc_hz = 0;
+  if (fei_hz != nullptr)
+    *fei_hz = (int32_t) (((int64_t) this->last_freqest_raw_ * 26000000LL) / 16384);
+  return true;
 }
 
 optional<uint8_t> CC1101::drain_fifo_once_() {
