@@ -21,6 +21,10 @@ class CC1101 : public RadioTransceiver {
   void set_gdo0_pin(InternalGPIOPin *pin) { this->gdo0_pin_ = pin; }
   void set_gdo2_pin(InternalGPIOPin *pin) { this->gdo2_pin_ = pin; }
   void set_frequency_mhz(float frequency_mhz);
+  // Bench options (see __init__.py): the two registers they change, and what
+  // the health check then expects instead of the default profile.
+  void set_agc_full_gain(bool v) { this->agc_full_gain_ = v; }
+  void set_sync_15_16(bool v) { this->sync_15_16_ = v; }
 
   void setup() override;
   void dump_config() override;
@@ -51,6 +55,10 @@ class CC1101 : public RadioTransceiver {
   int8_t last_freqest_raw_{0};
   bool freq_error_fresh_{false};
   bool abort_requested_{false};
+  bool agc_full_gain_{false};
+  bool sync_15_16_{false};
+  uint8_t exp_mdmcfg2_() const { return this->sync_15_16_ ? 0x05 : 0x06; }
+  uint8_t exp_agcctrl2_() const { return this->agc_full_gain_ ? 0x03 : 0x43; }
   uint32_t fifo_overrun_count_{0};
   // SPI transactions the chip answered with CHIP_RDYn still high.
   uint32_t chip_not_ready_count_{0};
