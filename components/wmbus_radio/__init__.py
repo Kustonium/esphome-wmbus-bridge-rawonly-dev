@@ -170,9 +170,10 @@ CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 # its frames at about -88 dBm where an SX1262 next to it still decodes most,
 # while TI measured the chip at -96..-97 dBm (PER 1 %, AN067): these test two
 # software reasons for part of that gap, one at a time.
-#   cc1101_agc_full_gain: AGCCTRL2 0x43 -> 0x03. MAX_DVGA_GAIN 01 forbids the
-#     highest DVGA gain step; 00 allows every step.
-#     MEASURED 2026-11-10/11, do not enable: against a T-Beam (SX1262) next to
+#   cc1101_agc_full_gain (REMOVED 2026-11-11 after the measurement below):
+#     AGCCTRL2 0x43 -> 0x03. MAX_DVGA_GAIN 01 forbids the highest DVGA gain
+#     step; 00 allows every step.
+#     MEASURED 2026-11-10/11, harmful: against a T-Beam (SX1262) next to
 #     it, the CC1101 caught ~30% fewer frames than with 0x43, day, evening and
 #     night alike (frame ratio CC1101/T-Beam 0.96-0.98 day and 0.88-0.94 night
 #     before, 0.67 day and 0.70 night after). The loss is in strong and middle
@@ -181,7 +182,6 @@ CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 #   cc1101_sync_15_16: MDMCFG2 0x06 -> 0x05. 16 of 16 sync bits plus carrier
 #     sense, versus 15 of 16 without it: one wrong sync bit no longer loses a
 #     weak frame. Expect more false starts (no carrier-sense gate).
-CONF_CC1101_AGC_FULL_GAIN = "cc1101_agc_full_gain"
 CONF_CC1101_SYNC_15_16 = "cc1101_sync_15_16"
 # Bench option: SX1262 regulator. The driver never sent SetRegulatorMode, so the
 # chip has always run on its reset default, the LDO. RadioLib and Semtech's
@@ -445,7 +445,6 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_GDO0_PIN): pins.internal_gpio_input_pin_schema,
             cv.Optional(CONF_GDO2_PIN): pins.internal_gpio_input_pin_schema,
             cv.Optional(CONF_CC1101_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
-            cv.Optional(CONF_CC1101_AGC_FULL_GAIN, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_SYNC_15_16, default=False): cv.boolean,
             # SPI clock for the radio device only, not for the whole bus.
             #
@@ -785,7 +784,7 @@ _REPORT_RADIO = {
                CONF_SX1262_REGULATOR),
     "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS,
                CONF_SX1276_PREAMBLE_TOLERANCE),
-    "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL, CONF_CC1101_AGC_FULL_GAIN, CONF_CC1101_SYNC_15_16),
+    "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL, CONF_CC1101_SYNC_15_16),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
                CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
                CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION,
@@ -922,7 +921,7 @@ def _validate_radio_pins(config):
             raise cv.Invalid("gdo0_pin/gdo2_pin are only valid for CC1101. Use irq_pin for SX1262/SX1276.")
         if CONF_CC1101_ALLOW_EXPERIMENTAL in config and config.get(CONF_CC1101_ALLOW_EXPERIMENTAL, False):
             raise cv.Invalid("cc1101_allow_experimental is only valid for radio_type: CC1101.")
-        for opt in (CONF_CC1101_AGC_FULL_GAIN, CONF_CC1101_SYNC_15_16):
+        for opt in (CONF_CC1101_SYNC_15_16,):
             if config.get(opt, False):
                 raise cv.Invalid(f"{opt} is only valid for radio_type: CC1101.")
 
@@ -1244,7 +1243,6 @@ async def to_code(config):
         cg.add(radio_var.set_gdo0_pin(gdo0_pin))
         cg.add(radio_var.set_gdo2_pin(gdo2_pin))
         cg.add(radio_var.set_frequency_mhz(frequency_mhz))
-        cg.add(radio_var.set_agc_full_gain(config[CONF_CC1101_AGC_FULL_GAIN]))
         cg.add(radio_var.set_sync_15_16(config[CONF_CC1101_SYNC_15_16]))
         # Receiver task wake-up interrupt is the sync-detect line.
         cg.add(radio_var.set_irq_pin(gdo2_pin))

@@ -472,7 +472,7 @@ void CC1101::apply_radio_profile_() {
   this->write_reg_verified_(REG_MCSM0, 0x18);  // auto-calibrate from IDLE to RX/TX
   this->write_reg_verified_(REG_FOCCFG, 0x2E);
   this->write_reg_verified_(REG_BSCFG, 0xBF);
-  // 0x43 forbids the top DVGA gain step; cc1101_agc_full_gain -> 0x03.
+  // 0x43 forbids the top DVGA gain step (0x03 measured worse, see __init__.py).
   this->write_reg_verified_(REG_AGCCTRL2, this->exp_agcctrl2_());
   this->write_reg_verified_(REG_AGCCTRL1, 0x09);
   this->write_reg_verified_(REG_AGCCTRL0, 0xB5);
@@ -955,9 +955,10 @@ void CC1101::dump_config() {
   ESP_LOGCONFIG(TAG, "  Frequency: %.3f MHz", this->configured_frequency_hz_ / 1000000.0f);
   ESP_LOGCONFIG(TAG, "  SPI/RX: experimental CC1101, requires GDO0+GDO2");
   ESP_LOGCONFIG(TAG, "  RF profile: compatibility modem profile, infinite packet mode");
-  ESP_LOGCONFIG(TAG, "  Bench: agc_full_gain=%s (AGCCTRL2=0x%02X) sync_15_16=%s (MDMCFG2=0x%02X)",
-                this->agc_full_gain_ ? "on" : "off", this->exp_agcctrl2_(),
-                this->sync_15_16_ ? "on" : "off", this->exp_mdmcfg2_());
+  // Only when the bench option is set: users who never touch it see no line.
+  if (this->sync_15_16_) {
+    ESP_LOGCONFIG(TAG, "  Bench: sync_15_16=on (MDMCFG2=0x%02X)", this->exp_mdmcfg2_());
+  }
   const char *mode_str = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"
                        : (this->listen_mode_ == LISTEN_MODE_C1) ? "C1 only"
                        : (this->listen_mode_ == LISTEN_MODE_S1) ? "S1 only (experimental sync only)"
