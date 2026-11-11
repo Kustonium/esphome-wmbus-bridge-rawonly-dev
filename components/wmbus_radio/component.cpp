@@ -12,6 +12,7 @@
 #include "esp_timer.h"
 #include <esp_heap_caps.h>  // heap_caps_get_free_size() for the outbox boot log / auto-sizing seed
 
+#include <cctype>
 #include <cstring>
 #include <algorithm>
 #include <cstdlib>
@@ -20,6 +21,8 @@
 
 // Optional: publish diagnostics via ESPHome MQTT if mqtt component is present.
 #include "esphome/components/mqtt/mqtt_client.h"
+#include "esphome/core/application.h"
+#include "runtime_settings.h"
 
 // Protocol constants shared with the split-out translation units (rf_runtime, ...).
 #include "wmbus_radio_internal.h"
@@ -786,6 +789,19 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
       std::string cfg_topic = this->diag_topic_ + "/config";
       mqtt->publish(cfg_topic, cfg_payload, this->diag_qos_, true);
       this->config_report_mqtt_pending_ = false;
+    }
+
+    // Runtime settings: subscribe once (the MQTT client renews it after a
+    // reconnect) and announce what this board lets the add-on change.
+    if (!this->settings_subscribed_) {
+      this->settings_subscribed_ = true;
+      mqtt->subscribe(
+          this->topic_base_() + "/set/listen_mode",
+          [this](const std::string &, const std::string &payload) { this->on_set_listen_mode_(payload); }, 1);
+    }
+    if (this->settings_publish_pending_) {
+      this->settings_publish_pending_ = false;
+      this->publish_settings_();
     }
   }
 
@@ -1732,6 +1748,93 @@ void Radio::receiver_task(Radio *arg) {
 
 void Radio::add_frame_handler(std::function<void(Frame *)> &&callback) {
   this->handlers_.push_back(std::move(callback));
+}
+
+// ---------------------------------------------------------------------------
+// Runtime settings (runtime_settings.h)
+// ---------------------------------------------------------------------------
+static const char *listen_mode_key_(ListenMode mode) {
+  switch (mode) {
+    case LISTEN_MODE_T1: return "t1";
+    case LISTEN_MODE_C1: return "c1";
+    case LISTEN_MODE_S1: return "s1";
+    default: return "both";
+  }
+}
+
+std::string Radio::topic_base_() const {
+  const std::string suffix = "/diag";
+  if (this->diag_topic_.size() > suffix.size() &&
+      this->diag_topic_.compare(this->diag_topic_.size() - suffix.size(), suffix.size(), suffix) == 0)
+    return this->diag_topic_.substr(0, this->diag_topic_.size() - suffix.size());
+  return this->diag_topic_;
+}
+
+// <diag>/settings, retained: one object per setting with the value in effect,
+// where it came from, the YAML value, the allowed values and how a change is
+// applied. The add-on draws the board's settings panel from it; a board
+// without this topic runs firmware that cannot take changes.
+void Radio::publish_settings_() {
+  auto *mqtt = mqtt::global_mqtt_client;
+  if (mqtt == nullptr || !mqtt->is_connected() || this->radio == nullptr || this->diag_topic_.empty()) {
+    this->settings_publish_pending_ = true;
+    return;
+  }
+  const std::string chip = this->radio->get_name();
+  std::string unsupported = chip == "CC1101" ? "[\"s1\"]" : "[]";
+  std::string weak = chip == "SX1262" ? "[\"s1\"]" : "[]";
+  std::string payload = "{\"v\":1,\"radio\":\"" + chip + "\",\"listen_mode\":{\"value\":\"" +
+                        listen_mode_key_(this->radio->get_listen_mode()) + "\",\"source\":\"" +
+                        (this->radio->listen_mode_from_store() ? "stored" : "yaml") + "\",\"yaml\":\"" +
+                        listen_mode_key_(this->radio->get_yaml_listen_mode()) +
+                        "\",\"options\":[\"t1\",\"c1\",\"both\",\"s1\"],\"unsupported\":" + unsupported +
+                        ",\"weak\":" + weak + ",\"apply\":\"restart\"}}";
+  mqtt->publish(this->diag_topic_ + "/settings", payload, this->diag_qos_, true);
+}
+
+// <topic>/set/listen_mode: t1 | c1 | both | s1, or "yaml" to drop the stored
+// value. A value already in effect does nothing - that also keeps a stray
+// retained command from restarting the board over and over.
+void Radio::on_set_listen_mode_(const std::string &raw) {
+  std::string v;
+  for (char c : raw) {
+    if (c != ' ' && c != '\n' && c != '\r' && c != '\t' && c != '"') v += (char) tolower((unsigned char) c);
+  }
+  uint8_t code;
+  if (v == "t1") code = LISTEN_MODE_T1;
+  else if (v == "c1") code = LISTEN_MODE_C1;
+  else if (v == "both") code = LISTEN_MODE_BOTH;
+  else if (v == "s1") code = LISTEN_MODE_S1;
+  else if (v == "yaml" || v == "default") code = runtime_settings::NONE;
+  else {
+    ESP_LOGW(TAG, "set/listen_mode: unknown value '%s' (t1, c1, both, s1 or yaml)", v.c_str());
+    return;
+  }
+  if (this->radio == nullptr) return;
+  if (code == LISTEN_MODE_S1 && std::string(this->radio->get_name()) == "CC1101") {
+    ESP_LOGW(TAG, "set/listen_mode: S1 is not supported on CC1101, ignored");
+    return;
+  }
+  const uint8_t stored = runtime_settings::load_listen_mode();
+  const uint8_t effective_after = code == runtime_settings::NONE ? (uint8_t) this->radio->get_yaml_listen_mode() : code;
+  if (stored == code && (uint8_t) this->radio->get_listen_mode() == effective_after) {
+    ESP_LOGD(TAG, "set/listen_mode: '%s' already in effect", v.c_str());
+    return;
+  }
+  if (!runtime_settings::save_listen_mode(code)) {
+    ESP_LOGW(TAG, "set/listen_mode: could not store '%s'", v.c_str());
+    return;
+  }
+  ESP_LOGI(TAG, "set/listen_mode: '%s' stored, restarting to apply it", v.c_str());
+  auto *mqtt = mqtt::global_mqtt_client;
+  if (mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
+    mqtt->publish(this->diag_topic_,
+                  std::string("{\"event\":\"setting_saved\",\"key\":\"listen_mode\",\"value\":\"") + v +
+                      "\",\"restart\":true}",
+                  this->diag_qos_, false);
+  }
+  // Give the event a moment to leave before the restart.
+  this->set_timeout("wmbus_settings_restart", 1000, []() { App.safe_reboot(); });
 }
 
 } // namespace wmbus_radio

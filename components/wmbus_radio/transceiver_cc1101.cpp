@@ -914,6 +914,7 @@ void CC1101::log_reg_status() {
 }
 
 void CC1101::setup() {
+  this->apply_stored_settings_();
   // CC1101 deliberately does not use the generic reset_pin/irq_pin-only setup.
   // It needs both GDO2(sync) and GDO0(FIFO threshold) for deterministic RX.
   this->spi_setup();

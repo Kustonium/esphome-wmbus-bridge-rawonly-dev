@@ -1252,6 +1252,9 @@ async def to_code(config):
         cg.add(radio_var.set_frequency_mhz(frequency_mhz))
 
     cg.add(radio_var.set_listen_mode(listen_mode_map[effective_listen_mode]))
+    # A listen_mode stored by the add-on moves the default frequency with it
+    # (S1 868.30 / T1-C1 868.95) unless frequency: was written in YAML.
+    cg.add(radio_var.set_frequency_explicit(CONF_FREQUENCY in config))
 
     if config[CONF_RADIO_TYPE] != "CC1101":
         irq_pin = await cg.gpio_pin_expression(config[CONF_IRQ_PIN])

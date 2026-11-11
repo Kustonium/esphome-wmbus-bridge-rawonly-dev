@@ -1212,6 +1212,7 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
 // static RF / modulation / packet parameters.
 // ---------------------------------------------------------------------------
 void SX1262::setup() {
+  this->apply_stored_settings_();
   this->irq_edge_ = gpio::INTERRUPT_RISING_EDGE;
   this->common_setup();
   ESP_LOGV(TAG, "Setup");
