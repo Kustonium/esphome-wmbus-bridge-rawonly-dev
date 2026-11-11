@@ -846,6 +846,8 @@ protected:
   std::string topic_base_() const;
   void publish_settings_();
   void on_set_listen_mode_(const std::string &payload);
+  bool config_report_settings_applied_{false};
+  void apply_settings_to_config_report_();
 
   // SX1262 YAML sanity state. These values are copied from YAML as-is.
   // They do not auto-configure board wiring; they only make risky settings visible in boot logs.

@@ -735,6 +735,10 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     // the YAML - and so "I did not change that" becomes checkable.
     // Deliberately here and not in setup(): setup() runs before the network
     // logger attaches, so over `esphome logs` those lines are never seen.
+    // The report is built from YAML at compile time; a listen_mode stored by
+    // the add-on (runtime_settings.h) replaces that line, here and in the
+    // <diag>/config snapshot, so the report shows what the radio runs.
+    this->apply_settings_to_config_report_();
     if (!this->config_report_.empty()) {
       ESP_LOGI(TAG, LOG_TR("Configuration (%s):", "Konfiguracja (%s):"), radio_name);
       for (const auto &line : this->config_report_)
@@ -1759,6 +1763,19 @@ static const char *listen_mode_key_(ListenMode mode) {
     case LISTEN_MODE_C1: return "c1";
     case LISTEN_MODE_S1: return "s1";
     default: return "both";
+  }
+}
+
+void Radio::apply_settings_to_config_report_() {
+  if (this->config_report_settings_applied_ || this->radio == nullptr) return;
+  this->config_report_settings_applied_ = true;
+  if (!this->radio->listen_mode_from_store()) return;
+  for (auto &line : this->config_report_) {
+    if (line.rfind("  listen_mode: ", 0) == 0) {
+      line = std::string("  listen_mode: ") + listen_mode_key_(this->radio->get_listen_mode()) +
+             " (CHANGED, stored by the add-on; YAML: " + listen_mode_key_(this->radio->get_yaml_listen_mode()) + ")";
+      break;
+    }
   }
 }
 
