@@ -24,9 +24,11 @@ uint8_t load_listen_mode() {
 
 bool save_listen_mode(uint8_t value) {
   const bool ok = listen_mode_pref().save(&value);
-  // A restart follows a change; flush now so it is not lost with it.
-  global_preferences->sync();
-  return ok;
+  // A restart follows a change; flush now so it is not lost with it. save()
+  // only queues the value on ESP32, so the flush is what says whether it
+  // reached flash: on a failure the caller must not restart for nothing.
+  const bool synced = global_preferences->sync();
+  return ok && synced;
 }
 
 }  // namespace runtime_settings

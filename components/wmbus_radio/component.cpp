@@ -774,6 +774,9 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     // publishing here means the marker (default / CHANGED / set) matches
     // exactly what a reader would see in the boot log.
     if (this->config_report_mqtt_pending_ && !this->config_report_.empty()) {
+      // Usually sent before the boot log (~10 s after setup), so the stored
+      // listen_mode goes into the report here too (idempotent).
+      this->apply_settings_to_config_report_();
       std::string cfg_payload = "{\"radio\":\"";
       cfg_payload += (this->radio != nullptr) ? this->radio->get_name() : "unknown";
       cfg_payload += "\",\"lines\":[";
@@ -1828,6 +1831,11 @@ void Radio::on_set_listen_mode_(const std::string &raw) {
     return;
   }
   if (this->radio == nullptr) return;
+  // The mode the YAML already gives is not an override: storing it would make
+  // the board ignore a later YAML change. It clears the stored value instead.
+  if (code != runtime_settings::NONE && code == (uint8_t) this->radio->get_yaml_listen_mode()) {
+    code = runtime_settings::NONE;
+  }
   if (code == LISTEN_MODE_S1 && std::string(this->radio->get_name()) == "CC1101") {
     ESP_LOGW(TAG, "set/listen_mode: S1 is not supported on CC1101, ignored");
     return;
@@ -1838,12 +1846,20 @@ void Radio::on_set_listen_mode_(const std::string &raw) {
     ESP_LOGD(TAG, "set/listen_mode: '%s' already in effect", v.c_str());
     return;
   }
+  auto *mqtt = mqtt::global_mqtt_client;
   if (!runtime_settings::save_listen_mode(code)) {
-    ESP_LOGW(TAG, "set/listen_mode: could not store '%s'", v.c_str());
+    // No restart: it would come back with the old mode and look like a
+    // silent no-op. The add-on shows the event instead.
+    ESP_LOGW(TAG, "set/listen_mode: could not store '%s' in flash, not restarting", v.c_str());
+    if (mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
+      mqtt->publish(this->diag_topic_,
+                    std::string("{\"event\":\"setting_failed\",\"key\":\"listen_mode\",\"value\":\"") + v +
+                        "\",\"reason\":\"flash\"}",
+                    this->diag_qos_, false);
+    }
     return;
   }
   ESP_LOGI(TAG, "set/listen_mode: '%s' stored, restarting to apply it", v.c_str());
-  auto *mqtt = mqtt::global_mqtt_client;
   if (mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty()) {
     mqtt->publish(this->diag_topic_,
                   std::string("{\"event\":\"setting_saved\",\"key\":\"listen_mode\",\"value\":\"") + v +
