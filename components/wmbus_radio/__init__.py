@@ -172,6 +172,12 @@ CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 # software reasons for part of that gap, one at a time.
 #   cc1101_agc_full_gain: AGCCTRL2 0x43 -> 0x03. MAX_DVGA_GAIN 01 forbids the
 #     highest DVGA gain step; 00 allows every step.
+#     MEASURED 2026-11-10/11, do not enable: against a T-Beam (SX1262) next to
+#     it, the CC1101 caught ~30% fewer frames than with 0x43, day, evening and
+#     night alike (frame ratio CC1101/T-Beam 0.96-0.98 day and 0.88-0.94 night
+#     before, 0.67 day and 0.70 night after). The loss is in strong and middle
+#     frames (-81..-88 dBm on the LilyGO scale: 6% vs 31% at night) and nothing
+#     is gained on the weakest (-93 dBm and below: 5% vs 8%). 0x43 stays.
 #   cc1101_sync_15_16: MDMCFG2 0x06 -> 0x05. 16 of 16 sync bits plus carrier
 #     sense, versus 15 of 16 without it: one wrong sync bit no longer loses a
 #     weak frame. Expect more false starts (no carrier-sense gate).
