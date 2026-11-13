@@ -1349,7 +1349,23 @@ void Radio::receive_frame() {
       this->diag_60min_rx_path_.stale_wakeups_cleared++;
     }
     this->radio->restart_rx();
-    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(hop_ms))) {
+    // Only the opt-in CC1101 bench path slices this wait. Do not clear task
+    // notifications or blindly flush FIFO between slices: a sync IRQ may have
+    // arrived just as the previous wait expired. The driver checks GDO2/FIFO
+    // before any maintenance. The legacy 5-second safety re-arm stays intact.
+    const uint32_t poll_ms = this->radio->idle_rx_poll_interval_ms();
+    uint32_t hop_waited = 0;
+    bool notified = false;
+    while (hop_waited < hop_ms) {
+      const uint32_t slice_ms = poll_ms == 0 ? hop_ms : std::min(poll_ms, hop_ms - hop_waited);
+      if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(slice_ms))) {
+        notified = true;
+        break;
+      }
+      hop_waited += slice_ms;
+      if (poll_ms != 0 && hop_waited < hop_ms) this->radio->service_idle_rx();
+    }
+    if (notified) {
       got_irq = true;
       this->diag_rx_path_.irq_fired++;
       this->diag_15m_rx_path_.irq_fired++;

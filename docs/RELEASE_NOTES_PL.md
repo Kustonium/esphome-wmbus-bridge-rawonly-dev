@@ -2,6 +2,12 @@
 
 [English version](RELEASE_NOTES.md)
 
+## CC1101: opcjonalne testy restartowania RX
+
+- Nowe przełączniki `cc1101_rx_state_wait` i `cc1101_idle_rx_refresh`, oba domyślnie wyłączone. Osobno testują restart potwierdzany MARCSTATE i odświeżanie bezczynnego RX co około 50 ms; nie zmieniają `cc1101_sync_15_16`.
+- Raporty konfiguracji/statusu pokazują ustawienia oraz liczniki prób odświeżenia i timeoutów. Testy hostowe obejmują zmiany stanu, timeouty i nadejście ramki podczas kontroli; wynik RF wymaga pomiaru.
+- Procedura A–B–A i ograniczenia: [testy CC1101 RX](CC1101_RX_BENCH_PL.md).
+
 ## Tryb nasłuchu przełączany z dodatku Home Assistant, bez kompilacji
 
 - **Płytka publikuje teraz ustawienia, które dodatek może zmieniać** (retained `wmbus/<płytka>/diag/settings`), i słucha `wmbus/<płytka>/set/listen_mode` (`t1`, `c1`, `both`, `s1` albo `yaml`). Zakładka Płytki w dodatku (od 1.6.18) pokazuje kafelek każdej płytki z tymi przyciskami. Kliknięcie zapisuje tryb we flashu płytki i ją restartuje (około 10 s); płytka wraca w nowym trybie. S1 na CC1101 jest odrzucane.

@@ -24,6 +24,10 @@ class CC1101 : public RadioTransceiver {
   // Bench option (see __init__.py): the register it changes, and what the
   // health check then expects instead of the default profile.
   void set_sync_15_16(bool v) { this->sync_15_16_ = v; }
+  void set_rx_state_wait(bool v) { this->rx_state_wait_ = v; }
+  void set_idle_rx_refresh(bool v) { this->idle_rx_refresh_ = v; }
+  uint32_t idle_rx_poll_interval_ms() const override { return this->idle_rx_refresh_ ? 50 : 0; }
+  void service_idle_rx() override;
 
   void setup() override;
   void dump_config() override;
@@ -55,6 +59,12 @@ class CC1101 : public RadioTransceiver {
   bool freq_error_fresh_{false};
   bool abort_requested_{false};
   bool sync_15_16_{false};
+  bool rx_state_wait_{false};
+  bool idle_rx_refresh_{false};
+  uint32_t idle_refresh_count_{0};
+  uint32_t idle_refresh_skipped_{0};
+  uint32_t state_wait_timeouts_{0};
+  uint8_t last_wait_state_{0};
   // S1 takes TI's 0x05 (15/16 sync bits, no carrier sense) as AN067 Radio Link A
   // does; T1/C1 keep 0x06 unless cc1101_sync_15_16.
   uint8_t exp_mdmcfg2_() const { return (this->s1_() || this->sync_15_16_) ? 0x05 : 0x06; }
@@ -102,7 +112,9 @@ class CC1101 : public RadioTransceiver {
   uint8_t rxbytes_raw_();
   uint8_t rxbytes_count_();
   bool rx_overflow_();
-  void flush_rx_();
+  bool flush_rx_();
+  bool wait_marcstate_(uint8_t expected);
+  void enter_rx_();
   void capture_rssi_();
 
   optional<uint8_t> drain_fifo_once_();

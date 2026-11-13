@@ -2,6 +2,12 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## CC1101: opt-in RX restart experiments
+
+- New `cc1101_rx_state_wait` and `cc1101_idle_rx_refresh` switches, both false by default. Test MARCSTATE-confirmed restart separately from guarded 50 ms idle refresh; neither changes `cc1101_sync_15_16`.
+- Effective settings and cumulative refresh/timeout counters appear in configuration/status reports. Host tests cover state transitions, timeouts and packet-arrival guards; RF results remain to be measured.
+- See [CC1101 RX bench](CC1101_RX_BENCH.md) for A-B-A phases and limitations.
+
 ## Listen mode switchable from the Home Assistant add-on, without compiling
 
 - **The board now publishes the settings the add-on may change** (retained `wmbus/<board>/diag/settings`) and listens for `wmbus/<board>/set/listen_mode` (`t1`, `c1`, `both`, `s1` or `yaml`). The add-on's Boards tab (1.6.18 and later) shows a tile per board with these buttons. A click stores the mode in the board's flash and restarts it (about 10 s); the board comes back in the new mode. S1 is refused on CC1101.

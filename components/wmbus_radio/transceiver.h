@@ -42,6 +42,10 @@ public:
     this->irq_pin_->attach_interrupt(callback, arg, this->irq_edge_);
   }
   virtual void restart_rx() = 0;
+  // Optional bench maintenance, called only while the receiver task waits for
+  // its sync IRQ. Zero keeps the existing single 5-second notification wait.
+  virtual uint32_t idle_rx_poll_interval_ms() const { return 0; }
+  virtual void service_idle_rx() {}
   virtual int8_t get_rssi() = 0;
   virtual const char *get_name() = 0;
 

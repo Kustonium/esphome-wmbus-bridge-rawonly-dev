@@ -183,6 +183,8 @@ CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 #     sense, versus 15 of 16 without it: one wrong sync bit no longer loses a
 #     weak frame. Expect more false starts (no carrier-sense gate).
 CONF_CC1101_SYNC_15_16 = "cc1101_sync_15_16"
+CONF_CC1101_RX_STATE_WAIT = "cc1101_rx_state_wait"
+CONF_CC1101_IDLE_RX_REFRESH = "cc1101_idle_rx_refresh"
 # Bench option: SX1262 regulator. The driver never sent SetRegulatorMode, so the
 # chip has always run on its reset default, the LDO. RadioLib and Semtech's
 # reference drivers switch to DC-DC at init, and another SX1262 driver that does
@@ -446,6 +448,8 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_GDO2_PIN): pins.internal_gpio_input_pin_schema,
             cv.Optional(CONF_CC1101_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_SYNC_15_16, default=False): cv.boolean,
+            cv.Optional(CONF_CC1101_RX_STATE_WAIT, default=False): cv.boolean,
+            cv.Optional(CONF_CC1101_IDLE_RX_REFRESH, default=False): cv.boolean,
             # SPI clock for the radio device only, not for the whole bus.
             #
             # The driver defaults to 2 MHz, which is well inside every supported
@@ -784,7 +788,8 @@ _REPORT_RADIO = {
                CONF_SX1262_REGULATOR),
     "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS,
                CONF_SX1276_PREAMBLE_TOLERANCE),
-    "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL, CONF_CC1101_SYNC_15_16),
+    "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL, CONF_CC1101_SYNC_15_16,
+               CONF_CC1101_RX_STATE_WAIT, CONF_CC1101_IDLE_RX_REFRESH),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
                CONF_RX_BANDWIDTH, CONF_MIN_PREAMBLE_BITS, CONF_PAYLOAD_LENGTH,
                CONF_RX_BOOSTED, CONF_BITRATE, CONF_DEVIATION,
@@ -921,7 +926,7 @@ def _validate_radio_pins(config):
             raise cv.Invalid("gdo0_pin/gdo2_pin are only valid for CC1101. Use irq_pin for SX1262/SX1276.")
         if CONF_CC1101_ALLOW_EXPERIMENTAL in config and config.get(CONF_CC1101_ALLOW_EXPERIMENTAL, False):
             raise cv.Invalid("cc1101_allow_experimental is only valid for radio_type: CC1101.")
-        for opt in (CONF_CC1101_SYNC_15_16,):
+        for opt in (CONF_CC1101_SYNC_15_16, CONF_CC1101_RX_STATE_WAIT, CONF_CC1101_IDLE_RX_REFRESH):
             if config.get(opt, False):
                 raise cv.Invalid(f"{opt} is only valid for radio_type: CC1101.")
 
@@ -1244,6 +1249,8 @@ async def to_code(config):
         cg.add(radio_var.set_gdo2_pin(gdo2_pin))
         cg.add(radio_var.set_frequency_mhz(frequency_mhz))
         cg.add(radio_var.set_sync_15_16(config[CONF_CC1101_SYNC_15_16]))
+        cg.add(radio_var.set_rx_state_wait(config[CONF_CC1101_RX_STATE_WAIT]))
+        cg.add(radio_var.set_idle_rx_refresh(config[CONF_CC1101_IDLE_RX_REFRESH]))
         # Receiver task wake-up interrupt is the sync-detect line.
         cg.add(radio_var.set_irq_pin(gdo2_pin))
     else:

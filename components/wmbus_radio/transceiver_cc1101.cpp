@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "transceiver_cc1101.h"
+#include "cc1101_rx_control.h"
 #include "log_lang.h"
 
 #include "esphome/core/log.h"
@@ -322,11 +323,55 @@ uint8_t CC1101::rxbytes_raw_() { return this->read_status_(REG_RXBYTES); }
 uint8_t CC1101::rxbytes_count_() { return this->rxbytes_raw_() & 0x7F; }
 bool CC1101::rx_overflow_() { return (this->rxbytes_raw_() & 0x80) != 0; }
 
-void CC1101::flush_rx_() {
+bool CC1101::wait_marcstate_(uint8_t expected) {
+  const bool ready = cc1101_wait_state(
+      [this]() { return this->last_wait_state_ = this->read_status_(REG_MARCSTATE); },
+      []() { return esp_timer_get_time(); }, []() { esp_rom_delay_us(20); }, expected, 10000);
+  if (!ready) {
+    this->state_wait_timeouts_++;
+    // Rate-limit failure logging: a failed board must not flood the RX task.
+    if (this->state_wait_timeouts_ == 1 || (this->state_wait_timeouts_ % 64) == 0)
+      ESP_LOGW(TAG, "RX state timeout: expected=0x%02X observed=0x%02X total=%u",
+               expected, this->last_wait_state_ & 0x1F, (unsigned) this->state_wait_timeouts_);
+  }
+  return ready;
+}
+
+void CC1101::enter_rx_() {
+  this->strobe_(CC1101_SRX);
+  if (this->rx_state_wait_ && !this->wait_marcstate_(0x0D)) this->abort_requested_ = true;
+}
+
+bool CC1101::flush_rx_() {
   this->strobe_(CC1101_SIDLE);
-  esp_rom_delay_us(120);
+  if (this->rx_state_wait_) {
+    if (!this->wait_marcstate_(0x01)) {
+      this->abort_requested_ = true;
+      this->chunk_len_ = 0;
+      this->chunk_idx_ = 0;
+      this->rssi_captured_ = false;
+      this->last_rssi_dbm_ = -127;
+      return false;  // SFRX must not be sent before IDLE is confirmed.
+    }
+  } else {
+    esp_rom_delay_us(120);
+  }
   this->strobe_(CC1101_SFRX);
-  esp_rom_delay_us(120);
+  if (!this->rx_state_wait_) esp_rom_delay_us(120);
+  return true;
+}
+
+void CC1101::service_idle_rx() {
+  if (!this->idle_rx_refresh_) return;
+  if (this->gdo2_pin_ == nullptr || !cc1101_idle_refresh_safe(
+          [this]() { return this->gdo2_pin_->digital_read(); },
+          [this]() { return this->rxbytes_raw_(); },
+          [this]() { return this->read_status_(REG_MARCSTATE); })) {
+    this->idle_refresh_skipped_++;
+    return;
+  }
+  this->idle_refresh_count_++;
+  this->restart_rx();
 }
 
 void CC1101::reset_cc1101_() {
@@ -917,6 +962,10 @@ void CC1101::dump_debug_status(const char *reason) {
            mdmcfg4, mdmcfg3, mdmcfg2, deviatn, foccfg, bscfg, agc2, agc1, agc0,
            frend1, fscal3, sync1, sync0);
 #undef CC1101_DETAIL_LOG
+  ESP_LOGI(TAG, "CC1101 RX bench: state_wait=%s idle_refresh_ms=%u refreshes=%u skipped=%u state_timeouts=%u",
+           this->rx_state_wait_ ? "on" : "off", (unsigned) this->idle_rx_poll_interval_ms(),
+           (unsigned) this->idle_refresh_count_, (unsigned) this->idle_refresh_skipped_,
+           (unsigned) this->state_wait_timeouts_);
 }
 
 void CC1101::log_reg_status() {
@@ -967,6 +1016,8 @@ void CC1101::setup() {
 }
 
 void CC1101::dump_config() {
+  ESP_LOGCONFIG(TAG, "  Bench RX: state_wait=%s idle_refresh_ms=%u (sync option independent)",
+                this->rx_state_wait_ ? "on" : "off", (unsigned) this->idle_rx_poll_interval_ms());
   ESP_LOGCONFIG(TAG, "Transceiver: %s", this->get_name());
   LOG_PIN("  GDO0/FIFO Pin: ", this->gdo0_pin_);
   LOG_PIN("  GDO2/SYNC Pin: ", this->gdo2_pin_);
@@ -991,7 +1042,7 @@ void CC1101::restart_rx() {
     // the S1 profile set in apply_radio_profile_() (32.768 kcps); the receiver
     // task raw-drains and packet.cpp decodes the Manchester chips.
     sync2 = 0x96;
-    this->flush_rx_();
+    if (!this->flush_rx_()) return;
     this->write_reg_verified_(REG_SYNC1, 0x76);
     this->write_reg_verified_(REG_SYNC0, sync2);
     this->chunk_len_ = 0;
@@ -999,7 +1050,7 @@ void CC1101::restart_rx() {
     this->rssi_captured_ = false;
     this->last_rssi_dbm_ = -127;
     this->abort_requested_ = false;
-    this->strobe_(CC1101_SRX);
+    this->enter_rx_();
     return;
   }
   // One sync word for t1, c1 and both: 0x543D. Per EN 13757-4 the C-mode header
@@ -1018,14 +1069,14 @@ void CC1101::restart_rx() {
   // with the sibling drivers, which are now fixed too.
   sync2 = 0x3D;
 
-  this->flush_rx_();
+  if (!this->flush_rx_()) return;
   this->set_sync_word_(sync2);
   this->chunk_len_ = 0;
   this->chunk_idx_ = 0;
   this->rssi_captured_ = false;
   this->last_rssi_dbm_ = -127;
   this->abort_requested_ = false;
-  this->strobe_(CC1101_SRX);
+  this->enter_rx_();
 }
 
 void CC1101::capture_rssi_() {
