@@ -1320,7 +1320,9 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
 }
 
 void Radio::wakeup_receiver_task_from_isr(TaskHandle_t *arg) {
-  BaseType_t xHigherPriorityTaskWoken;
+  // FreeRTOS only ever sets this to pdTRUE; it must start at pdFALSE, or a
+  // stack leftover asks for a context switch from every interrupt.
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
   vTaskNotifyGiveFromISR(*arg, &xHigherPriorityTaskWoken);
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
