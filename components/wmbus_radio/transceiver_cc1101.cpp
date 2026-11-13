@@ -134,9 +134,7 @@ static constexpr uint8_t EXP_MDMCFG4   = 0x5C;
 static constexpr uint8_t EXP_MDMCFG3   = 0x04;
 static constexpr uint8_t EXP_DEVIATN   = 0x44;
 static constexpr uint8_t EXP_FOCCFG    = 0x2E;
-static constexpr uint8_t EXP_BSCFG     = 0xBF;
 static constexpr uint8_t EXP_AGCCTRL1  = 0x09;
-static constexpr uint8_t EXP_AGCCTRL0  = 0xB5;
 static constexpr uint8_t EXP_FREND1    = 0xB6;
 static constexpr uint8_t EXP_FSCAL3    = 0xEA;
 
@@ -466,9 +464,12 @@ void CC1101::apply_radio_profile_() {
   // only report the sync ("raw sniffer"). Computed for fXOSC = 26 MHz:
   //   MDMCFG4 0x6A: CHANBW_E=1, CHANBW_M=2 -> 270.8 kHz; DRATE_E=10
   //   MDMCFG3 0x4A: DRATE_M=74 -> (256+74)*2^10*26e6/2^28 = 32 730 baud (-0.12 %)
-  //   DEVIATN 0x50: E=5, M=0 -> 26e6/2^17*8*2^5 = 50.8 kHz
-  // 270 kHz = the ~133 kHz the signal occupies plus about +-60 kHz of
-  // meter and board crystal offset. Not yet measured on hardware.
+  //   DEVIATN 0x47: E=4, M=7 -> 26e6/2^17*15*2^4 = 47.6 kHz
+  // These are the Radio Link A (S-mode) values of TI AN067 (SWRA234), which
+  // also sets BSCFG 0x6D, AGCCTRL2 0x04, AGCCTRL0 0xB2 and MDMCFG2 0x05 for S
+  // (see the exp_*_() helpers). TI: 270 kHz is the minimum filter for the full
+  // range of valid S signals; receiver deviation 40-50 kHz, 47 kHz for link A.
+  // Not yet measured on hardware.
   this->write_reg_verified_(REG_MDMCFG4, this->exp_mdmcfg4_());
   this->write_reg_verified_(REG_MDMCFG3, this->exp_mdmcfg3_());
   // 0x06 = 16/16 sync bits + carrier sense; cc1101_sync_15_16 -> 0x05.
@@ -481,11 +482,11 @@ void CC1101::apply_radio_profile_() {
   this->write_reg_verified_(REG_MCSM1, 0x00);
   this->write_reg_verified_(REG_MCSM0, 0x18);  // auto-calibrate from IDLE to RX/TX
   this->write_reg_verified_(REG_FOCCFG, 0x2E);
-  this->write_reg_verified_(REG_BSCFG, 0xBF);
+  this->write_reg_verified_(REG_BSCFG, this->exp_bscfg_());
   // 0x43 forbids the top DVGA gain step (0x03 measured worse, see __init__.py).
   this->write_reg_verified_(REG_AGCCTRL2, this->exp_agcctrl2_());
   this->write_reg_verified_(REG_AGCCTRL1, 0x09);
-  this->write_reg_verified_(REG_AGCCTRL0, 0xB5);
+  this->write_reg_verified_(REG_AGCCTRL0, this->exp_agcctrl0_());
   this->write_reg_verified_(REG_WOREVT1, 0x87);
   this->write_reg_verified_(REG_WOREVT0, 0x6B);
   this->write_reg_verified_(REG_WORCTRL, 0xFB);
@@ -619,10 +620,10 @@ bool CC1101::validate_startup_config_() {
   check("MDMCFG2", mdmcfg2, this->exp_mdmcfg2_(), "modem/sync profile", "profil modemu/synchronizacji");
   check("DEVIATN", deviatn, this->exp_deviatn_(), "frequency deviation profile", "profil dewiacji czestotliwosci");
   check("FOCCFG", foccfg, EXP_FOCCFG, "frequency offset compensation", "kompensacja odchylki czestotliwosci");
-  check("BSCFG", bscfg, EXP_BSCFG, "bit synchronization", "synchronizacja bitow");
+  check("BSCFG", bscfg, this->exp_bscfg_(), "bit synchronization", "synchronizacja bitow");
   check("AGCCTRL2", agc2, this->exp_agcctrl2_(), "AGC profile", "profil AGC");
   check("AGCCTRL1", agc1, EXP_AGCCTRL1, "AGC profile", "profil AGC");
-  check("AGCCTRL0", agc0, EXP_AGCCTRL0, "AGC profile", "profil AGC");
+  check("AGCCTRL0", agc0, this->exp_agcctrl0_(), "AGC profile", "profil AGC");
   check("FREND1", frend1, EXP_FREND1, "RF frontend profile", "profil toru RF");
   const bool fscal3_ok = fscal3_config_ok_(fscal3, EXP_FSCAL3);
   ok = ok && fscal3_ok;
@@ -748,8 +749,8 @@ void CC1101::dump_debug_status(const char *reason) {
       reg_ok_(fsctrl1, EXP_FSCTRL1) && reg_ok_(mdmcfg4, this->exp_mdmcfg4_()) &&
       reg_ok_(mdmcfg3, this->exp_mdmcfg3_()) && reg_ok_(mdmcfg2, this->exp_mdmcfg2_()) &&
       reg_ok_(deviatn, this->exp_deviatn_()) && reg_ok_(foccfg, EXP_FOCCFG) &&
-      reg_ok_(bscfg, EXP_BSCFG) && reg_ok_(agc2, this->exp_agcctrl2_()) &&
-      reg_ok_(agc1, EXP_AGCCTRL1) && reg_ok_(agc0, EXP_AGCCTRL0) &&
+      reg_ok_(bscfg, this->exp_bscfg_()) && reg_ok_(agc2, this->exp_agcctrl2_()) &&
+      reg_ok_(agc1, EXP_AGCCTRL1) && reg_ok_(agc0, this->exp_agcctrl0_()) &&
       reg_ok_(frend1, EXP_FREND1) && fscal3_config_ok_(fscal3, EXP_FSCAL3);
 
   // chip_id_known is deliberately not part of config_ok: it says which CC1101
@@ -948,7 +949,7 @@ void CC1101::setup() {
   char rf_buf[112];
   if (this->s1_()) {
     snprintf(rf_buf, sizeof(rf_buf),
-             "CC1101 S1 (experimental): freq=%.3fMHz DR=32.73kbaud fdev~51kHz RxBW~271kHz infinite-packet",
+             "CC1101 S1 (experimental, TI AN067 link A): freq=%.3fMHz DR=32.73kbaud fdev~48kHz RxBW~271kHz",
              this->configured_frequency_hz_ / 1000000.0f);
   } else {
     snprintf(rf_buf, sizeof(rf_buf),
@@ -973,7 +974,7 @@ void CC1101::dump_config() {
   ESP_LOGCONFIG(TAG, "  SPI/RX: experimental CC1101, requires GDO0+GDO2");
   ESP_LOGCONFIG(TAG, "  RF profile: compatibility modem profile, infinite packet mode");
   // Only when the bench option is set: users who never touch it see no line.
-  if (this->sync_15_16_) {
+  if (this->sync_15_16_ && !this->s1_()) {
     ESP_LOGCONFIG(TAG, "  Bench: sync_15_16=on (MDMCFG2=0x%02X)", this->exp_mdmcfg2_());
   }
   const char *mode_str = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"

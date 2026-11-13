@@ -55,18 +55,26 @@ class CC1101 : public RadioTransceiver {
   bool freq_error_fresh_{false};
   bool abort_requested_{false};
   bool sync_15_16_{false};
-  uint8_t exp_mdmcfg2_() const { return this->sync_15_16_ ? 0x05 : 0x06; }
+  // S1 takes TI's 0x05 (15/16 sync bits, no carrier sense) as AN067 Radio Link A
+  // does; T1/C1 keep 0x06 unless cc1101_sync_15_16.
+  uint8_t exp_mdmcfg2_() const { return (this->s1_() || this->sync_15_16_) ? 0x05 : 0x06; }
   // S1 (S-mode, 32.768 kcps Manchester) needs its own modem profile; T1/C1
-  // keep the inherited 100 kcps one. See apply_radio_profile_() for the values.
+  // keep the inherited 100 kcps one. S1 values: TI AN067 (SWRA234), Appendix C,
+  // "CC1101 Register Settings for Radio Link A" (S-mode). The T1/C1 profile is
+  // that note's Radio Link B (Appendix D) except MDMCFG2.
   bool s1_() const { return this->listen_mode_ == LISTEN_MODE_S1; }
   uint8_t exp_mdmcfg4_() const { return this->s1_() ? 0x6A : 0x5C; }
   uint8_t exp_mdmcfg3_() const { return this->s1_() ? 0x4A : 0x04; }
-  uint8_t exp_deviatn_() const { return this->s1_() ? 0x50 : 0x44; }
+  uint8_t exp_deviatn_() const { return this->s1_() ? 0x47 : 0x44; }
+  uint8_t exp_bscfg_() const { return this->s1_() ? 0x6D : 0xBF; }
+  uint8_t exp_agcctrl0_() const { return this->s1_() ? 0xB2 : 0xB5; }
   uint8_t exp_sync1_() const { return this->s1_() ? 0x76 : 0x54; }
   uint8_t exp_sync0_() const { return this->s1_() ? 0x96 : 0x3D; }
   // 0x43: MAX_DVGA_GAIN forbids the top DVGA step. 0x03 (every step) was
   // measured on 2026-11-10/11 and cost ~30% of frames; see __init__.py.
-  uint8_t exp_agcctrl2_() const { return 0x43; }
+  // S1: TI Link A uses 0x04 (every DVGA step, 36 dB target). Note that 0x03 on
+  // T1 was measured worse on 2026-11-10/11; S1 follows TI until measured.
+  uint8_t exp_agcctrl2_() const { return this->s1_() ? 0x04 : 0x43; }
   uint32_t fifo_overrun_count_{0};
   // SPI transactions the chip answered with CHIP_RDYn still high.
   uint32_t chip_not_ready_count_{0};

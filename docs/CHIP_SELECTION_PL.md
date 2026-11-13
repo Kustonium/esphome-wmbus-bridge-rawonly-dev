@@ -106,7 +106,7 @@ Zasada praktyczna: **`SX1276` do S1, `SX1262` do T1.** Jeśli potrzebujesz obu,
 jest to argument za dwoma urządzeniami, a nie za jednym kompromisem.
 
 `CC1101` w `listen_mode: s1` ma w gałęzi rozwojowej od 2026-11-13 własny profil
-modemu S1 (32,768 kcps, ±50 kHz, filtr 271 kHz); wcześniej zostawał na szybkości
+modemu S1 (TI AN067 Radio Link A: 32,768 kcps, 47 kHz, filtr 271 kHz); wcześniej zostawał na szybkości
 T1 i łapał tylko sync. Jeszcze niezmierzone. `LR1121`
 odebrał S1 poprawnie za pierwszym razem, ale wyłącznie z nadajnika warsztatowego
 przy −59 dBm, co dowodzi działania toru i nie mówi nic o czułości.
