@@ -420,9 +420,10 @@ void CC1101::apply_radio_profile_() {
 
   this->set_frequency_(this->configured_frequency_hz_);
   // wM-Bus sync word 0x543D, shared by mode T and mode C. See restart_rx() for
-  // why 0x54CD is not a second sync word to listen on.
-  this->write_reg_verified_(REG_SYNC1, 0x54);
-  this->write_reg_verified_(REG_SYNC0, 0x3D);
+  // why 0x54CD is not a second sync word to listen on. S1: the last 16 chips of
+  // the S-mode sync, 0x7696 (the chip has a 16-bit sync register).
+  this->write_reg_verified_(REG_SYNC1, this->exp_sync1_());
+  this->write_reg_verified_(REG_SYNC0, this->exp_sync0_());
   this->write_reg_verified_(REG_PKTLEN, 0xFF);
   this->write_reg_verified_(REG_PKTCTRL1, 0x00);  // no address check, no appended status
 
@@ -459,13 +460,22 @@ void CC1101::apply_radio_profile_() {
   // ---------------------------------------------------------------------------
   this->write_reg_verified_(REG_FSCTRL1, 0x08);
   this->write_reg_verified_(REG_FSCTRL0, 0x00);
-  this->write_reg_verified_(REG_MDMCFG4, 0x5C);
-  this->write_reg_verified_(REG_MDMCFG3, 0x04);
+  // T1/C1: 0x5C/0x04 = RX filter 325 kHz, 103 kbaud (100 kcps chips).
+  // S1 (dev, 2026-11-13): S-mode is 32.768 kcps Manchester, +-50 kHz deviation
+  // at 868.30 MHz. Until now the chip stayed on the T1 rate in S1 and could
+  // only report the sync ("raw sniffer"). Computed for fXOSC = 26 MHz:
+  //   MDMCFG4 0x6A: CHANBW_E=1, CHANBW_M=2 -> 270.8 kHz; DRATE_E=10
+  //   MDMCFG3 0x4A: DRATE_M=74 -> (256+74)*2^10*26e6/2^28 = 32 730 baud (-0.12 %)
+  //   DEVIATN 0x50: E=5, M=0 -> 26e6/2^17*8*2^5 = 50.8 kHz
+  // 270 kHz = the ~133 kHz the signal occupies plus about +-60 kHz of
+  // meter and board crystal offset. Not yet measured on hardware.
+  this->write_reg_verified_(REG_MDMCFG4, this->exp_mdmcfg4_());
+  this->write_reg_verified_(REG_MDMCFG3, this->exp_mdmcfg3_());
   // 0x06 = 16/16 sync bits + carrier sense; cc1101_sync_15_16 -> 0x05.
   this->write_reg_verified_(REG_MDMCFG2, this->exp_mdmcfg2_());
   this->write_reg_verified_(REG_MDMCFG1, 0x22);
   this->write_reg_verified_(REG_MDMCFG0, 0xF8);
-  this->write_reg_verified_(REG_DEVIATN, 0x44);
+  this->write_reg_verified_(REG_DEVIATN, this->exp_deviatn_());
 
   this->write_reg_verified_(REG_MCSM2, 0x07);
   this->write_reg_verified_(REG_MCSM1, 0x00);
@@ -600,14 +610,14 @@ bool CC1101::validate_startup_config_() {
   check("FIFOTHR", fifothr, EXP_FIFOTHR, "FIFO threshold around 32 bytes", "prog FIFO okolo 32 bajtow");
   check("PKTCTRL1", pktctrl1, EXP_PKTCTRL1, "no address filtering/status append", "bez filtrowania adresu i statusu");
   check("PKTCTRL0", pktctrl0, EXP_PKTCTRL0, "infinite packet mode for long T1 raw frames", "tryb infinite dla dlugich ramek T1 raw");
-  check("SYNC1", sync1, EXP_SYNC1, "wM-Bus sync high byte", "starszy bajt sync wM-Bus");
-  check("SYNC0", sync0, EXP_SYNC_T1, "T1 sync low byte", "mlodszy bajt sync T1");
+  check("SYNC1", sync1, this->exp_sync1_(), "wM-Bus sync high byte", "starszy bajt sync wM-Bus");
+  check("SYNC0", sync0, this->exp_sync0_(), "sync low byte (T1/C1 or S1)", "mlodszy bajt sync (T1/C1 albo S1)");
 
   check("FSCTRL1", fsctrl1, EXP_FSCTRL1, "RF frequency offset profile", "profil przesuniecia czestotliwosci RF");
-  check("MDMCFG4", mdmcfg4, EXP_MDMCFG4, "RX bandwidth / data rate profile", "profil pasma RX / predkosci danych");
-  check("MDMCFG3", mdmcfg3, EXP_MDMCFG3, "data rate profile", "profil predkosci danych");
+  check("MDMCFG4", mdmcfg4, this->exp_mdmcfg4_(), "RX bandwidth / data rate profile", "profil pasma RX / predkosci danych");
+  check("MDMCFG3", mdmcfg3, this->exp_mdmcfg3_(), "data rate profile", "profil predkosci danych");
   check("MDMCFG2", mdmcfg2, this->exp_mdmcfg2_(), "modem/sync profile", "profil modemu/synchronizacji");
-  check("DEVIATN", deviatn, EXP_DEVIATN, "frequency deviation profile", "profil dewiacji czestotliwosci");
+  check("DEVIATN", deviatn, this->exp_deviatn_(), "frequency deviation profile", "profil dewiacji czestotliwosci");
   check("FOCCFG", foccfg, EXP_FOCCFG, "frequency offset compensation", "kompensacja odchylki czestotliwosci");
   check("BSCFG", bscfg, EXP_BSCFG, "bit synchronization", "synchronizacja bitow");
   check("AGCCTRL2", agc2, this->exp_agcctrl2_(), "AGC profile", "profil AGC");
@@ -731,12 +741,13 @@ void CC1101::dump_debug_status(const char *reason) {
   const bool pkt_infinite = (pktctrl0 & 0x03) == 0x02;
   const bool sync_t1 = sync1 == EXP_SYNC1 && sync0 == EXP_SYNC_T1;
   const bool sync_c1 = sync1 == EXP_SYNC1 && sync0 == EXP_SYNC_C1;
-  const bool sync_known = sync_t1 || sync_c1;
+  const bool sync_s1 = this->s1_() && sync1 == 0x76 && sync0 == 0x96;
+  const bool sync_known = sync_t1 || sync_c1 || sync_s1;
 
   const bool rf_profile_ok =
-      reg_ok_(fsctrl1, EXP_FSCTRL1) && reg_ok_(mdmcfg4, EXP_MDMCFG4) &&
-      reg_ok_(mdmcfg3, EXP_MDMCFG3) && reg_ok_(mdmcfg2, this->exp_mdmcfg2_()) &&
-      reg_ok_(deviatn, EXP_DEVIATN) && reg_ok_(foccfg, EXP_FOCCFG) &&
+      reg_ok_(fsctrl1, EXP_FSCTRL1) && reg_ok_(mdmcfg4, this->exp_mdmcfg4_()) &&
+      reg_ok_(mdmcfg3, this->exp_mdmcfg3_()) && reg_ok_(mdmcfg2, this->exp_mdmcfg2_()) &&
+      reg_ok_(deviatn, this->exp_deviatn_()) && reg_ok_(foccfg, EXP_FOCCFG) &&
       reg_ok_(bscfg, EXP_BSCFG) && reg_ok_(agc2, this->exp_agcctrl2_()) &&
       reg_ok_(agc1, EXP_AGCCTRL1) && reg_ok_(agc0, EXP_AGCCTRL0) &&
       reg_ok_(frend1, EXP_FREND1) && fscal3_config_ok_(fscal3, EXP_FSCAL3);
@@ -935,9 +946,15 @@ void CC1101::setup() {
 
   this->apply_radio_profile_();
   char rf_buf[112];
-  snprintf(rf_buf, sizeof(rf_buf),
-           "CC1101 compat: freq=%.3fMHz DR=100kbps fdev~47kHz RxBW~325kHz infinite-packet",
-           this->configured_frequency_hz_ / 1000000.0f);
+  if (this->s1_()) {
+    snprintf(rf_buf, sizeof(rf_buf),
+             "CC1101 S1 (experimental): freq=%.3fMHz DR=32.73kbaud fdev~51kHz RxBW~271kHz infinite-packet",
+             this->configured_frequency_hz_ / 1000000.0f);
+  } else {
+    snprintf(rf_buf, sizeof(rf_buf),
+             "CC1101 compat: freq=%.3fMHz DR=100kbps fdev~47kHz RxBW~325kHz infinite-packet",
+             this->configured_frequency_hz_ / 1000000.0f);
+  }
   this->rf_params_str_ = rf_buf;
   if (!this->validate_startup_config_()) {
     this->dump_debug_status("startup_config_error");
@@ -961,7 +978,7 @@ void CC1101::dump_config() {
   }
   const char *mode_str = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"
                        : (this->listen_mode_ == LISTEN_MODE_C1) ? "C1 only"
-                       : (this->listen_mode_ == LISTEN_MODE_S1) ? "S1 only (experimental sync only)"
+                       : (this->listen_mode_ == LISTEN_MODE_S1) ? "S1 only (experimental, 32.768 kcps profile)"
                        : "T1+C1 (both)";
   ESP_LOGCONFIG(TAG, "  Listen mode: %s", mode_str);
 }
@@ -969,8 +986,9 @@ void CC1101::dump_config() {
 void CC1101::restart_rx() {
   uint8_t sync2;
   if (this->listen_mode_ == LISTEN_MODE_S1) {
-    // CC1101 has only the existing 2-byte sync path here; use the last 16 bits
-    // of S-mode sync as an experimental raw sniffer. SX1262/SX1276 are preferred for S1.
+    // 16-bit sync register: the last 16 chips of the S-mode sync. The modem runs
+    // the S1 profile set in apply_radio_profile_() (32.768 kcps); the receiver
+    // task raw-drains and packet.cpp decodes the Manchester chips.
     sync2 = 0x96;
     this->flush_rx_();
     this->write_reg_verified_(REG_SYNC1, 0x76);

@@ -1801,8 +1801,10 @@ void Radio::publish_settings_() {
     return;
   }
   const std::string chip = this->radio->get_name();
-  std::string unsupported = chip == "CC1101" ? "[\"s1\"]" : "[]";
-  std::string weak = chip == "SX1262" ? "[\"s1\"]" : "[]";
+  // S1 on CC1101 has its own modem profile since 2026-11-13 but is still
+  // experimental, so it is offered with a warning like SX1262's weaker S1.
+  std::string unsupported = "[]";
+  std::string weak = (chip == "SX1262" || chip == "CC1101") ? "[\"s1\"]" : "[]";
   std::string payload = "{\"v\":1,\"radio\":\"" + chip + "\",\"listen_mode\":{\"value\":\"" +
                         listen_mode_key_(this->radio->get_listen_mode()) + "\",\"source\":\"" +
                         (this->radio->listen_mode_from_store() ? "stored" : "yaml") + "\",\"yaml\":\"" +
@@ -1835,10 +1837,6 @@ void Radio::on_set_listen_mode_(const std::string &raw) {
   // the board ignore a later YAML change. It clears the stored value instead.
   if (code != runtime_settings::NONE && code == (uint8_t) this->radio->get_yaml_listen_mode()) {
     code = runtime_settings::NONE;
-  }
-  if (code == LISTEN_MODE_S1 && std::string(this->radio->get_name()) == "CC1101") {
-    ESP_LOGW(TAG, "set/listen_mode: S1 is not supported on CC1101, ignored");
-    return;
   }
   const uint8_t stored = runtime_settings::load_listen_mode();
   const uint8_t effective_after = code == runtime_settings::NONE ? (uint8_t) this->radio->get_yaml_listen_mode() : code;
