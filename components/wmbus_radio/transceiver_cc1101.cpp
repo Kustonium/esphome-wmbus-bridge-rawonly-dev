@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "transceiver_cc1101.h"
+#include "runtime_settings.h"
 #include "cc1101_rx_control.h"
 #include "log_lang.h"
 
@@ -9,6 +10,7 @@
 #include "esp_rom_sys.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <cstdio>
 
@@ -974,8 +976,27 @@ void CC1101::log_reg_status() {
   this->dump_debug_status("boot_log");
 }
 
+static const char *const CC1101_KEY_RX_BW = "wmbus_radio.cc1101_rx_bw";
+static const char *const CC1101_KEY_CS = "wmbus_radio.cc1101_cs";
+
 void CC1101::setup() {
   this->apply_stored_settings_();
+  // Values the add-on stored (runtime_settings.h) replace the YAML ones.
+  const uint8_t stored_bw = runtime_settings::load_u8(CC1101_KEY_RX_BW);
+  if (stored_bw <= 2) {
+    this->rx_bw_ = stored_bw;
+    this->rx_bw_stored_ = true;
+  }
+  const uint8_t stored_cs = runtime_settings::load_u8(CC1101_KEY_CS);
+  if (stored_cs <= 1) {
+    this->cs_ = stored_cs == 1;
+    this->cs_stored_ = true;
+  }
+  if (this->rx_bw_stored_ || this->cs_stored_) {
+    ESP_LOGW(TAG, "CC1101 settings stored by the add-on: rx_bandwidth=%u kHz%s, carrier_sense=%s%s",
+             (unsigned) this->rx_bw_khz_(), this->rx_bw_stored_ ? " (stored)" : "",
+             this->cs_ ? "on" : "off", this->cs_stored_ ? " (stored)" : "");
+  }
   // CC1101 deliberately does not use the generic reset_pin/irq_pin-only setup.
   // It needs both GDO2(sync) and GDO0(FIFO threshold) for deterministic RX.
   this->spi_setup();
@@ -1002,8 +1023,8 @@ void CC1101::setup() {
              this->configured_frequency_hz_ / 1000000.0f);
   } else {
     snprintf(rf_buf, sizeof(rf_buf),
-             "CC1101 compat: freq=%.3fMHz DR=100kbps fdev~47kHz RxBW~325kHz infinite-packet",
-             this->configured_frequency_hz_ / 1000000.0f);
+             "CC1101 compat: freq=%.3fMHz DR=100kbps fdev~47kHz RxBW~%ukHz CS=%s infinite-packet",
+             this->configured_frequency_hz_ / 1000000.0f, (unsigned) this->rx_bw_khz_(), this->cs_ ? "on" : "off");
   }
   this->rf_params_str_ = rf_buf;
   if (!this->validate_startup_config_()) {
@@ -1025,8 +1046,10 @@ void CC1101::dump_config() {
   ESP_LOGCONFIG(TAG, "  SPI/RX: experimental CC1101, requires GDO0+GDO2");
   ESP_LOGCONFIG(TAG, "  RF profile: compatibility modem profile, infinite packet mode");
   // Only when the bench option is set: users who never touch it see no line.
-  if (this->sync_15_16_ && !this->s1_()) {
-    ESP_LOGCONFIG(TAG, "  Bench: sync_15_16=on (MDMCFG2=0x%02X)", this->exp_mdmcfg2_());
+  if ((this->sync_15_16_ || !this->cs_ || this->rx_bw_ != 0) && !this->s1_()) {
+    ESP_LOGCONFIG(TAG, "  Bench: sync_15_16=%s carrier_sense=%s (MDMCFG2=0x%02X) rx_bandwidth=%ukHz (MDMCFG4=0x%02X)",
+                  this->sync_15_16_ ? "on" : "off", this->cs_ ? "on" : "off", this->exp_mdmcfg2_(),
+                  (unsigned) this->rx_bw_khz_(), this->exp_mdmcfg4_());
   }
   const char *mode_str = (this->listen_mode_ == LISTEN_MODE_T1) ? "T1 only"
                        : (this->listen_mode_ == LISTEN_MODE_C1) ? "C1 only"
@@ -1160,6 +1183,66 @@ optional<uint8_t> CC1101::read() {
 }
 
 int8_t CC1101::get_rssi() { return this->last_rssi_dbm_; }
+
+// ---- Runtime settings (bench): RX filter and carrier-sense gate -------------
+std::vector<std::string> CC1101::runtime_setting_keys() {
+  return {"cc1101_rx_bandwidth", "cc1101_carrier_sense"};
+}
+
+static const char *bw_key_(uint8_t i) { return i == 1 ? "270" : (i == 2 ? "232" : "325"); }
+
+std::string CC1101::runtime_settings_json() {
+  std::string out = ",\"cc1101_rx_bandwidth\":{\"value\":\"";
+  out += bw_key_(this->rx_bw_);
+  out += "\",\"source\":\"";
+  out += this->rx_bw_stored_ ? "stored" : "yaml";
+  out += "\",\"yaml\":\"";
+  out += bw_key_(this->yaml_rx_bw_);
+  out += "\",\"options\":[\"325\",\"270\",\"232\"],\"unit\":\"kHz\",\"apply\":\"restart\"}";
+  out += ",\"cc1101_carrier_sense\":{\"value\":\"";
+  out += this->cs_ ? "on" : "off";
+  out += "\",\"source\":\"";
+  out += this->cs_stored_ ? "stored" : "yaml";
+  out += "\",\"yaml\":\"";
+  out += this->yaml_cs_ ? "on" : "off";
+  out += "\",\"options\":[\"on\",\"off\"],\"apply\":\"restart\"}";
+  return out;
+}
+
+int CC1101::set_runtime_setting(const std::string &key, const std::string &raw) {
+  std::string v;
+  for (char c : raw) {
+    if (c != ' ' && c != '\n' && c != '\r' && c != '\t' && c != '"') v += (char) tolower((unsigned char) c);
+  }
+  const char *pref_key;
+  uint8_t code, yaml_code, stored, current;
+  if (key == "cc1101_rx_bandwidth") {
+    if (v == "325") code = 0;
+    else if (v == "270") code = 1;
+    else if (v == "232") code = 2;
+    else if (v == "yaml") code = runtime_settings::NONE;
+    else return 0;
+    pref_key = CC1101_KEY_RX_BW;
+    yaml_code = this->yaml_rx_bw_;
+    current = this->rx_bw_;
+  } else if (key == "cc1101_carrier_sense") {
+    if (v == "on") code = 1;
+    else if (v == "off") code = 0;
+    else if (v == "yaml") code = runtime_settings::NONE;
+    else return 0;
+    pref_key = CC1101_KEY_CS;
+    yaml_code = this->yaml_cs_ ? 1 : 0;
+    current = this->cs_ ? 1 : 0;
+  } else {
+    return 0;
+  }
+  // The YAML value is not an override: it clears the stored one.
+  if (code == yaml_code) code = runtime_settings::NONE;
+  stored = runtime_settings::load_u8(pref_key);
+  const uint8_t effective_after = code == runtime_settings::NONE ? yaml_code : code;
+  if (stored == code && current == effective_after) return 1;
+  return runtime_settings::save_u8(pref_key, code) ? 2 : 3;
+}
 
 bool CC1101::consume_rx_abort_request() {
   const bool abort = this->abort_requested_;

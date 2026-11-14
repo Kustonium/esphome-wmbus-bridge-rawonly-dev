@@ -846,6 +846,7 @@ protected:
   std::string topic_base_() const;
   void publish_settings_();
   void on_set_listen_mode_(const std::string &payload);
+  void on_set_radio_setting_(const std::string &key, const std::string &payload);
   bool config_report_settings_applied_{false};
   void apply_settings_to_config_report_();
 

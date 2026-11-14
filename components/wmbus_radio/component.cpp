@@ -805,6 +805,13 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
       mqtt->subscribe(
           this->topic_base_() + "/set/listen_mode",
           [this](const std::string &, const std::string &payload) { this->on_set_listen_mode_(payload); }, 1);
+      // Radio-specific settings (e.g. CC1101 RX filter, carrier sense).
+      for (const auto &key : this->radio->runtime_setting_keys()) {
+        mqtt->subscribe(
+            this->topic_base_() + "/set/" + key,
+            [this, key](const std::string &, const std::string &payload) { this->on_set_radio_setting_(key, payload); },
+            1);
+      }
     }
     if (this->settings_publish_pending_) {
       this->settings_publish_pending_ = false;
@@ -1828,8 +1835,42 @@ void Radio::publish_settings_() {
                         (this->radio->listen_mode_from_store() ? "stored" : "yaml") + "\",\"yaml\":\"" +
                         listen_mode_key_(this->radio->get_yaml_listen_mode()) +
                         "\",\"options\":[\"t1\",\"c1\",\"both\",\"s1\"],\"unsupported\":" + unsupported +
-                        ",\"weak\":" + weak + ",\"apply\":\"restart\"}}";
+                        ",\"weak\":" + weak + ",\"apply\":\"restart\"}" +
+                        this->radio->runtime_settings_json() + "}";
   mqtt->publish(this->diag_topic_ + "/settings", payload, this->diag_qos_, true);
+}
+
+// <topic>/set/<key> for a radio-specific setting; the radio validates and
+// stores it, the board restarts to apply it like listen_mode.
+void Radio::on_set_radio_setting_(const std::string &key, const std::string &payload) {
+  if (this->radio == nullptr) return;
+  const int r = this->radio->set_runtime_setting(key, payload);
+  auto *mqtt = mqtt::global_mqtt_client;
+  const bool can_publish = mqtt != nullptr && mqtt->is_connected() && !this->diag_topic_.empty();
+  if (r == 0) {
+    ESP_LOGW(TAG, "set/%s: invalid value '%s'", key.c_str(), payload.c_str());
+    return;
+  }
+  if (r == 1) {
+    ESP_LOGD(TAG, "set/%s: '%s' already in effect", key.c_str(), payload.c_str());
+    return;
+  }
+  if (r == 3) {
+    ESP_LOGW(TAG, "set/%s: could not store '%s' in flash, not restarting", key.c_str(), payload.c_str());
+    if (can_publish) {
+      mqtt->publish(this->diag_topic_,
+                    "{\"event\":\"setting_failed\",\"key\":\"" + key + "\",\"reason\":\"flash\"}",
+                    this->diag_qos_, false);
+    }
+    return;
+  }
+  ESP_LOGI(TAG, "set/%s: '%s' stored, restarting to apply it", key.c_str(), payload.c_str());
+  if (can_publish) {
+    mqtt->publish(this->diag_topic_,
+                  "{\"event\":\"setting_saved\",\"key\":\"" + key + "\",\"restart\":true}",
+                  this->diag_qos_, false);
+  }
+  this->set_timeout("wmbus_settings_restart", 1000, []() { App.safe_reboot(); });
 }
 
 // <topic>/set/listen_mode: t1 | c1 | both | s1, or "yaml" to drop the stored

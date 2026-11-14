@@ -24,6 +24,13 @@ class CC1101 : public RadioTransceiver {
   // Bench option (see __init__.py): the register it changes, and what the
   // health check then expects instead of the default profile.
   void set_sync_15_16(bool v) { this->sync_15_16_ = v; }
+  // T1/C1 RX filter: 0 = 325 kHz (TI AN067 link B), 1 = 270 kHz, 2 = 232 kHz.
+  void set_rx_bandwidth(uint8_t i) { this->rx_bw_ = this->yaml_rx_bw_ = i; }
+  // Carrier sense as sync qualifier (MDMCFG2 SYNC_MODE bit 2). Off = 0x02/0x01.
+  void set_carrier_sense(bool v) { this->cs_ = this->yaml_cs_ = v; }
+  std::vector<std::string> runtime_setting_keys() override;
+  std::string runtime_settings_json() override;
+  int set_runtime_setting(const std::string &key, const std::string &value) override;
   void set_rx_state_wait(bool v) { this->rx_state_wait_ = v; }
   void set_idle_rx_refresh(bool v) { this->idle_rx_refresh_ = v; }
   uint32_t idle_rx_poll_interval_ms() const override { return this->idle_rx_refresh_ ? 50 : 0; }
@@ -67,13 +74,32 @@ class CC1101 : public RadioTransceiver {
   uint8_t last_wait_state_{0};
   // S1 takes TI's 0x05 (15/16 sync bits, no carrier sense) as AN067 Radio Link A
   // does; T1/C1 keep 0x06 unless cc1101_sync_15_16.
-  uint8_t exp_mdmcfg2_() const { return (this->s1_() || this->sync_15_16_) ? 0x05 : 0x06; }
+  // SYNC_MODE (SWRS061I p.44): 0x06 = 16/16 + carrier sense, 0x05 = 15/16 +
+  // carrier sense, 0x02 / 0x01 = the same without carrier sense. S1 keeps TI's
+  // 0x05.
+  uint8_t exp_mdmcfg2_() const {
+    if (this->s1_()) return 0x05;
+    uint8_t m = this->sync_15_16_ ? 0x05 : 0x06;
+    if (!this->cs_) m &= (uint8_t) ~0x04;
+    return m;
+  }
+  uint8_t rx_bw_{0};
+  uint8_t yaml_rx_bw_{0};
+  bool rx_bw_stored_{false};
+  bool cs_{true};
+  bool yaml_cs_{true};
+  bool cs_stored_{false};
+  uint16_t rx_bw_khz_() const { return this->rx_bw_ == 1 ? 270 : (this->rx_bw_ == 2 ? 232 : 325); }
   // S1 (S-mode, 32.768 kcps Manchester) needs its own modem profile; T1/C1
   // keep the inherited 100 kcps one. S1 values: TI AN067 (SWRA234), Appendix C,
   // "CC1101 Register Settings for Radio Link A" (S-mode). The T1/C1 profile is
   // that note's Radio Link B (Appendix D) except MDMCFG2.
   bool s1_() const { return this->listen_mode_ == LISTEN_MODE_S1; }
-  uint8_t exp_mdmcfg4_() const { return this->s1_() ? 0x6A : 0x5C; }
+  // T1/C1: CHANBW_E=1, CHANBW_M=1/2/3 -> 325/270/232 kHz, DRATE_E=12.
+  uint8_t exp_mdmcfg4_() const {
+    if (this->s1_()) return 0x6A;
+    return this->rx_bw_ == 1 ? 0x6C : (this->rx_bw_ == 2 ? 0x7C : 0x5C);
+  }
   uint8_t exp_mdmcfg3_() const { return this->s1_() ? 0x4A : 0x04; }
   uint8_t exp_deviatn_() const { return this->s1_() ? 0x47 : 0x44; }
   uint8_t exp_bscfg_() const { return this->s1_() ? 0x6D : 0xBF; }

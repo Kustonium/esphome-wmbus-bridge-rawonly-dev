@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #define BYTE(x, n) ((uint8_t)(x >> (n * 8)))
 
@@ -191,6 +192,14 @@ public:
   // Each driver keeps its own frequency field; virtual so a stored S1 <-> T1/C1
   // change can move the default frequency without knowing the driver.
   virtual void set_frequency_mhz(float frequency_mhz) {}
+  // Radio-specific runtime settings besides listen_mode (runtime_settings.h):
+  // the keys the add-on may set on <base>/set/<key>, the JSON members appended
+  // to <diag>/settings (each ',"key":{...}'), and the handler. Result:
+  // 0 = invalid value, 1 = already in effect, 2 = stored (restart to apply),
+  // 3 = flash write failed.
+  virtual std::vector<std::string> runtime_setting_keys() { return {}; }
+  virtual std::string runtime_settings_json() { return ""; }
+  virtual int set_runtime_setting(const std::string &key, const std::string &value) { return 0; }
   // True when YAML set frequency: explicitly; then a stored mode never moves it.
   void set_frequency_explicit(bool explicit_frequency) { this->frequency_explicit_ = explicit_frequency; }
   const std::string &get_rf_params_str() const { return this->rf_params_str_; }

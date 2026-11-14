@@ -22,6 +22,11 @@ static constexpr uint8_t NONE = 0xFF;
 uint8_t load_listen_mode();
 bool save_listen_mode(uint8_t value);
 
+// Any other one-byte setting, keyed by name (e.g. "wmbus_radio.cc1101_rx_bw").
+// NONE = nothing stored. Saving NONE drops the stored value.
+uint8_t load_u8(const char *key);
+bool save_u8(const char *key, uint8_t value);
+
 }  // namespace runtime_settings
 }  // namespace wmbus_radio
 }  // namespace esphome

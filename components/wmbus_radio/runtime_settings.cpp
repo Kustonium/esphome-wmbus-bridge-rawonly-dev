@@ -31,6 +31,20 @@ bool save_listen_mode(uint8_t value) {
   return ok && synced;
 }
 
+uint8_t load_u8(const char *key) {
+  auto pref = global_preferences->make_preference<uint8_t>(fnv1_hash(key), true);
+  uint8_t value = NONE;
+  if (!pref.load(&value)) return NONE;
+  return value;
+}
+
+bool save_u8(const char *key, uint8_t value) {
+  auto pref = global_preferences->make_preference<uint8_t>(fnv1_hash(key), true);
+  const bool ok = pref.save(&value);
+  const bool synced = global_preferences->sync();
+  return ok && synced;
+}
+
 }  // namespace runtime_settings
 }  // namespace wmbus_radio
 }  // namespace esphome

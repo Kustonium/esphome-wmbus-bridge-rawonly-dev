@@ -7,7 +7,9 @@ Wszystkie fazy zbudować z tego samego commita dev. Nowe opcje domyślnie nie zm
 
 | Opcja `wmbus_radio` | Domyślnie | Działanie |
 |---|---|---|
-| `cc1101_sync_15_16` | `false` | T1/C1: 0x06 (16/16 + CS) lub 0x05 (15/16 bez CS). S1 ma własny profil 0x05. |
+| `cc1101_sync_15_16` | `false` | T1/C1: 0x06 (16/16 + CS) lub 0x05 (15/16 + CS — **oba z bramką carrier sense**, SWRS061I s. 44). S1 ma własny profil 0x05. |
+| `cc1101_carrier_sense` | `true` | `false` = sync bez carrier sense (0x02, z `sync_15_16` 0x01). Przełączane też z dodatku (kafelek, bez kompilacji). |
+| `cc1101_rx_bandwidth` | `325khz` | Filtr RX T1/C1: `325khz` (TI AN067 link B), `270khz`, `232khz`. Przełączane też z dodatku. |
 | `cc1101_rx_state_wait` | `false` | SIDLE → czekaj na IDLE → SFRX → SRX → czekaj na RX. |
 | `cc1101_idle_rx_refresh` | `false` | Sprawdzanie co około 50 ms podczas oczekiwania na IRQ; odświeżenie tylko przy GDO2=0, pustym FIFO i stanie RX. |
 
@@ -26,7 +28,7 @@ cc1101_idle_rx_refresh: false
 | Odświeżanie | refresh=false | refresh=true | refresh=false | sync i state_wait stałe; zalecane state_wait=true |
 
 O terminie i wyborze faz decyduje prowadzący. Nie przełączać kilku opcji naraz.
-Zmiana sync modyfikuje zarówno tolerancję synchronizacji, jak i bramkę CS.
+Zmiana sync zmienia tylko tolerancję synchronizacji; bramkę CS wyłącza `cc1101_carrier_sense: false`.
 Porównywać te same godziny i typ dnia, minimum 2 h, wspólną antenę i niezmieniony
 LR1121. Deduplikacja `(source, boot_id, seq)`, emisja CRC32 + kubełek 20 s ±1.
 T1 analizować osobno od C1/S1. Raportować emisje/liczniki CC/LR, koszyki RSSI LR,

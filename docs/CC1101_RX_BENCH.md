@@ -7,7 +7,9 @@ Build all phases from the same dev commit. Both new options default to false.
 
 | `wmbus_radio` option | Default | Effect |
 |---|---|---|
-| `cc1101_sync_15_16` | `false` | T1/C1: 0x06 (16/16 + CS) versus 0x05 (15/16 without CS). S1 has its own 0x05 profile. |
+| `cc1101_sync_15_16` | `false` | T1/C1: 0x06 (16/16 + CS) versus 0x05 (15/16 + CS — **both keep the carrier-sense gate**, SWRS061I p. 44). S1 has its own 0x05 profile. |
+| `cc1101_carrier_sense` | `true` | `false` = sync without carrier sense (0x02, with `sync_15_16` 0x01). Also switchable from the add-on (tile, no build). |
+| `cc1101_rx_bandwidth` | `325khz` | T1/C1 RX filter: `325khz` (TI AN067 link B), `270khz`, `232khz`. Also switchable from the add-on. |
 | `cc1101_rx_state_wait` | `false` | SIDLE → wait IDLE → SFRX → SRX → wait RX. |
 | `cc1101_idle_rx_refresh` | `false` | Check approximately every 50 ms while waiting for IRQ; re-arm only with GDO2 low, FIFO empty and state RX. |
 
@@ -23,7 +25,7 @@ Run separate A-B-A experiments: sync false/true/false with both RX options
 false; state_wait false/true/false with sync fixed and refresh false; then
 refresh false/true/false with sync and state_wait fixed (prefer state_wait=true
 throughout the last experiment). The operator decides when to run each phase.
-Sync changes both tolerance and carrier-sense gating; it does not isolate CS.
+The sync option changes only the sync tolerance; `cc1101_carrier_sense: false` removes the CS gate.
 
 Use identical hours/day types, at least 2 hours, unchanged common antenna and
 LR1121 reference. Deduplicate `(source, boot_id, seq)`; match CRC32 and 20-second
