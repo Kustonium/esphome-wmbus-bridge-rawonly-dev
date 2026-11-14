@@ -1209,6 +1209,18 @@ std::string CC1101::runtime_settings_json() {
   return out;
 }
 
+void CC1101::patch_config_report(std::vector<std::string> &lines) {
+  for (auto &line : lines) {
+    if (this->cs_stored_ && line.rfind("  cc1101_carrier_sense: ", 0) == 0) {
+      line = std::string("  cc1101_carrier_sense: ") + (this->cs_ ? "true" : "false") +
+             " (CHANGED, stored by the add-on; YAML: " + (this->yaml_cs_ ? "true" : "false") + ")";
+    } else if (this->rx_bw_stored_ && line.rfind("  cc1101_rx_bandwidth: ", 0) == 0) {
+      line = std::string("  cc1101_rx_bandwidth: ") + bw_key_(this->rx_bw_) +
+             "khz (CHANGED, stored by the add-on; YAML: " + bw_key_(this->yaml_rx_bw_) + "khz)";
+    }
+  }
+}
+
 int CC1101::set_runtime_setting(const std::string &key, const std::string &raw) {
   std::string v;
   for (char c : raw) {

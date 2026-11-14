@@ -31,6 +31,7 @@ class CC1101 : public RadioTransceiver {
   std::vector<std::string> runtime_setting_keys() override;
   std::string runtime_settings_json() override;
   int set_runtime_setting(const std::string &key, const std::string &value) override;
+  void patch_config_report(std::vector<std::string> &lines) override;
   void set_rx_state_wait(bool v) { this->rx_state_wait_ = v; }
   void set_idle_rx_refresh(bool v) { this->idle_rx_refresh_ = v; }
   uint32_t idle_rx_poll_interval_ms() const override { return this->idle_rx_refresh_ ? 50 : 0; }

@@ -1797,6 +1797,8 @@ static const char *listen_mode_key_(ListenMode mode) {
 void Radio::apply_settings_to_config_report_() {
   if (this->config_report_settings_applied_ || this->radio == nullptr) return;
   this->config_report_settings_applied_ = true;
+  // Radio-specific settings stored by the add-on (e.g. CC1101 carrier sense).
+  this->radio->patch_config_report(this->config_report_);
   if (!this->radio->listen_mode_from_store()) return;
   for (auto &line : this->config_report_) {
     if (line.rfind("  listen_mode: ", 0) == 0) {

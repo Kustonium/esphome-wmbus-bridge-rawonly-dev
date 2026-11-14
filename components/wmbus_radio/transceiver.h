@@ -200,6 +200,9 @@ public:
   virtual std::vector<std::string> runtime_setting_keys() { return {}; }
   virtual std::string runtime_settings_json() { return ""; }
   virtual int set_runtime_setting(const std::string &key, const std::string &value) { return 0; }
+  // Rewrites the boot configuration report lines of settings stored by the
+  // add-on, so the report shows what the radio runs (YAML stays in brackets).
+  virtual void patch_config_report(std::vector<std::string> &lines) {}
   // True when YAML set frequency: explicitly; then a stored mode never moves it.
   void set_frequency_explicit(bool explicit_frequency) { this->frequency_explicit_ = explicit_frequency; }
   const std::string &get_rf_params_str() const { return this->rf_params_str_; }
