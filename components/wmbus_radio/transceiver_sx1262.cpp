@@ -1452,9 +1452,17 @@ void SX1262::setup() {
   // S-mode - it is worth about a factor of four and no more. Do not re-run this
   // sweep; the numbers are here.
   // T1 is the one mode the sweep above never covered - it was run on S-mode.
-  // 312.0 kHz here is inherited, not measured, and it is 25% wider than the
+  // 312.0 kHz was inherited, not measured, and it is 25% wider than the
   // 250 kHz the SX1276 uses for T1, so it admits ~1.2 dB of noise the signal
-  // does not need. `sx1262_rx_bandwidth` exists to settle that on hardware.
+  // does not need. Settled on hardware 2026-11-12/13, same hours (07:30-11:30)
+  // on two working days, LR1121 on a splitter as the reference (2796 vs 2792
+  // emissions/h): a T-Beam on the splitter caught 52.5% of the LR1121's
+  // -110..-105 dBm frames at 234 kHz against 30.6% at 312 kHz, 18.4% against
+  // 3.4% below -110, meters 0.84 against 0.76 of the LR1121's; a Heltec gained
+  // at -105..-100 (33% against 26%), a XIAO a little; strong frames lost
+  // nothing. C1 in `both` gained too (T-Beam 77% of the LR1121's C1 frames
+  // against 60%). So 234 kHz is the default since 2026-11-15; 312khz stays
+  // selectable.
   // Scope, exactly: only `listen_mode: s1` ignores this and keeps its measured
   // 234.3 kHz. t1, both and c1 follow the setting.
   //
@@ -1464,7 +1472,10 @@ void SX1262::setup() {
   // Techem C1 meters an SX1276 decoded every ~245 s: two SX1262 boards (Heltec
   // V4.2, XIAO) in `c1` at 234.3 kHz decoded none of them over several minutes,
   // one CRC failure between them, while the Heltec in `both` at 312 kHz did
-  // decode C1. The SX1276 reaches C1 through AFC over 250 kHz; the SX1262 has
+  // decode C1. That run predates the fix of 2026-09-30 that stopped c1/both
+  // arming on 0x54CD every fourth time; after it, 234 kHz did better on C1
+  // than 312 kHz (see the T1 note above), so the 09-25 result is not one
+  // about the filter. The SX1276 reaches C1 through AFC over 250 kHz; the SX1262 has
   // no AFC in GFSK, so the filter alone has to absorb the meter's frequency
   // offset on top of a ~190 kHz Carson bandwidth.
   uint8_t rx_bw = GFSK_RX_BW_234_3;

@@ -699,7 +699,10 @@ BASE_CONFIG_SCHEMA = (
             # exactly zero on two SX1262 boards and an LR1121).
             cv.Optional(CONF_SX1276_PREAMBLE_TOLERANCE, default=10): cv.int_range(min=0, max=31),
 
-            cv.Optional(CONF_SX1262_RX_BANDWIDTH, default="312khz"): cv.one_of(
+            # 234khz since 2026-11-15: measured better than the inherited
+            # 312khz on three SX1262 boards in `both` (T1 and C1), see
+            # transceiver_sx1262.cpp.
+            cv.Optional(CONF_SX1262_RX_BANDWIDTH, default="234khz"): cv.one_of(
                 *SX1262_T1_RX_BANDWIDTHS, lower=True
             ),
             cv.Optional(CONF_SX1262_TCXO_STARTUP_MS, default=1): cv.int_range(min=1, max=20),
@@ -1168,7 +1171,7 @@ async def to_code(config):
             radio_var.set_t1_rx_bandwidth(
                 getattr(
                     SX1262T1RxBandwidth,
-                    SX1262_T1_RX_BANDWIDTHS[config.get(CONF_SX1262_RX_BANDWIDTH, "312khz")],
+                    SX1262_T1_RX_BANDWIDTHS[config.get(CONF_SX1262_RX_BANDWIDTH, "234khz")],
                 )
             )
         )

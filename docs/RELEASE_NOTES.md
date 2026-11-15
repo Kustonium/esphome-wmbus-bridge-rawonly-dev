@@ -2,6 +2,13 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## SX1262: 234 kHz receive filter by default
+
+- **`sx1262_rx_bandwidth` now defaults to `234khz` instead of `312khz`.** The 312 kHz value was inherited and had never been measured for T1. Measured on 2026-11-12/13 at the same hours on two working days, with an LR1121 on a splitter as the reference: a T-Beam on the other splitter output caught 52.5% of the LR1121's frames at -110..-105 dBm with 234 kHz against 30.6% with 312 kHz, and heard 0.84 of its meters against 0.76. A Heltec gained at -105..-100 dBm (33% against 26%), a XIAO a little. Strong frames lost nothing, and C1 in `listen_mode: both` improved as well (the T-Beam caught 77% of the LR1121's C1 frames against 60%).
+- **Boards with `sx1262_rx_bandwidth:` in their YAML keep that value.** Boards without it switch to 234 kHz at the next build. To keep the old behaviour, set `sx1262_rx_bandwidth: 312khz`. S1 is unchanged (its 234.3 kHz was always fixed).
+
+---
+
 ## CC1101: opt-in RX restart experiments
 
 - New `cc1101_rx_state_wait` and `cc1101_idle_rx_refresh` switches, both false by default. Test MARCSTATE-confirmed restart separately from guarded 50 ms idle refresh; neither changes `cc1101_sync_15_16`.

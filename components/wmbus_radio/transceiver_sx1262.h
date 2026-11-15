@@ -40,8 +40,8 @@ enum SX1262PreambleDetector : uint8_t {
 };
 
 enum SX1262T1RxBandwidth : uint8_t {
-  T1_BW_312 = 0,  // inherited default, current behaviour
-  T1_BW_234 = 1,  // matches C1/S1 and roughly the SX1276 window
+  T1_BW_312 = 0,  // the inherited value, default until 2026-11-15
+  T1_BW_234 = 1,  // default: measured better for T1 and C1, roughly the SX1276 window
   T1_BW_156 = 2,  // deliberately too narrow; the losing end of the S1 sweep
 };
 
@@ -202,7 +202,7 @@ class SX1262 : public RadioTransceiver {
   bool dio2_rf_switch_{true};
   bool has_tcxo_{false};
   SX1262RxGain rx_gain_{BOOSTED};
-  SX1262T1RxBandwidth t1_rx_bandwidth_{T1_BW_312};
+  SX1262T1RxBandwidth t1_rx_bandwidth_{T1_BW_234};
   SX1262PreambleDetector preamble_detector_{PREAMBLE_DETECT_16};
   SX1262TcxoVoltage tcxo_voltage_{SX1262_TCXO_3_0V};
   uint8_t tcxo_startup_ms_{1};

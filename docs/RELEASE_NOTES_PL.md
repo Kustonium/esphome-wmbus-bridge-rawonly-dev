@@ -2,6 +2,13 @@
 
 [English version](RELEASE_NOTES.md)
 
+## SX1262: filtr odbiornika 234 kHz domyślnie
+
+- **`sx1262_rx_bandwidth` ma teraz domyślnie `234khz` zamiast `312khz`.** Wartość 312 kHz była odziedziczona i nigdy nie zmierzona dla T1. Pomiar 12–13.11.2026, te same godziny w dwa dni robocze, odniesieniem LR1121 na rozgałęźniku: T-Beam na drugim wyjściu rozgałęźnika złapał przy 234 kHz 52,5% ramek LR1121 z zakresu −110..−105 dBm wobec 30,6% przy 312 kHz i słyszał 0,84 jego liczników wobec 0,76. Heltec zyskał przy −105..−100 dBm (33% wobec 26%), XIAO trochę. Mocne ramki nic nie straciły, a C1 w `listen_mode: both` też się poprawił (T-Beam złapał 77% ramek C1 LR1121 wobec 60%).
+- **Płytki z `sx1262_rx_bandwidth:` w YAML zachowują swoją wartość.** Płytki bez tego wpisu przechodzą na 234 kHz przy najbliższym budowaniu. Żeby zostać przy starym zachowaniu, ustaw `sx1262_rx_bandwidth: 312khz`. S1 bez zmian (jego 234,3 kHz było zawsze stałe).
+
+---
+
 ## CC1101: opcjonalne testy restartowania RX
 
 - Nowe przełączniki `cc1101_rx_state_wait` i `cc1101_idle_rx_refresh`, oba domyślnie wyłączone. Osobno testują restart potwierdzany MARCSTATE i odświeżanie bezczynnego RX co około 50 ms; nie zmieniają `cc1101_sync_15_16`.
