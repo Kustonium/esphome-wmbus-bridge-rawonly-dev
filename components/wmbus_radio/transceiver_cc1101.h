@@ -69,13 +69,15 @@ class CC1101 : public RadioTransceiver {
   uint32_t idle_refresh_skipped_{0};
   uint32_t state_wait_timeouts_{0};
   uint8_t last_wait_state_{0};
-  // S1 takes TI's 0x05 (15/16 sync bits, no carrier sense) as AN067 Radio Link A
-  // does; T1/C1 keep 0x06 unless cc1101_sync_15_16.
+  // S1 takes TI's 0x05 (15/16 sync bits + carrier sense) as AN067 Radio Link A
+  // does by default; T1/C1 keep 0x06 unless cc1101_sync_15_16.
   // SYNC_MODE (SWRS061I p.44): 0x06 = 16/16 + carrier sense, 0x05 = 15/16 +
-  // carrier sense, 0x02 / 0x01 = the same without carrier sense. S1 keeps TI's
-  // 0x05.
+  // carrier sense, 0x02 / 0x01 = the same without carrier sense. Keep S1 at
+  // 15/16, but honor cc1101_carrier_sense so a YAML A/B test can change only
+  // the CS qualifier: 0x05 (TI default) versus 0x01 (CS disabled). This matters
+  // when weak S1 frames are visible on other radios but never raise CC1101 GDO2.
   uint8_t exp_mdmcfg2_() const {
-    if (this->s1_()) return 0x05;
+    if (this->s1_()) return this->cs_ ? 0x05 : 0x01;
     uint8_t m = this->sync_15_16_ ? 0x05 : 0x06;
     if (!this->cs_) m &= (uint8_t) ~0x04;
     return m;
