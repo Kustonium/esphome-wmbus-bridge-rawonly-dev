@@ -194,6 +194,8 @@ CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 #     nothing on strong ones. YAML only; the add-on switch it had during that
 #     test is gone and a value it stored is dropped at boot.
 CONF_CC1101_SYNC_15_16 = "cc1101_sync_15_16"
+# Bench, S1 only: full 16/16 sync instead of TI's 15/16 (see transceiver_cc1101.h).
+CONF_CC1101_S1_SYNC_16_16 = "cc1101_s1_sync_16_16"
 CONF_CC1101_CARRIER_SENSE = "cc1101_carrier_sense"
 CONF_CC1101_RX_BANDWIDTH = "cc1101_rx_bandwidth"
 CC1101_RX_BANDWIDTHS = {"325khz": 0, "270khz": 1, "232khz": 2}
@@ -462,6 +464,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_GDO2_PIN): pins.internal_gpio_input_pin_schema,
             cv.Optional(CONF_CC1101_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_SYNC_15_16, default=False): cv.boolean,
+            cv.Optional(CONF_CC1101_S1_SYNC_16_16, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_CARRIER_SENSE, default=True): cv.boolean,
             cv.Optional(CONF_CC1101_RX_BANDWIDTH, default="232khz"): cv.one_of(*CC1101_RX_BANDWIDTHS, lower=True),
             cv.Optional(CONF_CC1101_RX_STATE_WAIT, default=False): cv.boolean,
@@ -807,7 +810,7 @@ _REPORT_RADIO = {
                CONF_SX1262_REGULATOR),
     "SX1276": (CONF_SX1276_BUSY_ETHER_MODE, CONF_MIN_PREAMBLE_BITS,
                CONF_SX1276_PREAMBLE_TOLERANCE),
-    "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL, CONF_CC1101_SYNC_15_16,
+    "CC1101": (CONF_CC1101_ALLOW_EXPERIMENTAL, CONF_CC1101_SYNC_15_16, CONF_CC1101_S1_SYNC_16_16,
                CONF_CC1101_CARRIER_SENSE, CONF_CC1101_RX_BANDWIDTH,
                CONF_CC1101_RX_STATE_WAIT, CONF_CC1101_IDLE_RX_REFRESH),
     "LR1121": (CONF_LR1121_ALLOW_EXPERIMENTAL, CONF_TCXO_VOLTAGE, CONF_TCXO_STARTUP_TICKS,
@@ -950,7 +953,8 @@ def _validate_radio_pins(config):
             raise cv.Invalid(f"{CONF_CC1101_CARRIER_SENSE} is only valid for radio_type: CC1101.")
         if config.get(CONF_CC1101_RX_BANDWIDTH, "232khz") != "232khz":
             raise cv.Invalid(f"{CONF_CC1101_RX_BANDWIDTH} is only valid for radio_type: CC1101.")
-        for opt in (CONF_CC1101_SYNC_15_16, CONF_CC1101_RX_STATE_WAIT, CONF_CC1101_IDLE_RX_REFRESH):
+        for opt in (CONF_CC1101_SYNC_15_16, CONF_CC1101_S1_SYNC_16_16, CONF_CC1101_RX_STATE_WAIT,
+                    CONF_CC1101_IDLE_RX_REFRESH):
             if config.get(opt, False):
                 raise cv.Invalid(f"{opt} is only valid for radio_type: CC1101.")
 
@@ -1273,6 +1277,7 @@ async def to_code(config):
         cg.add(radio_var.set_gdo2_pin(gdo2_pin))
         cg.add(radio_var.set_frequency_mhz(frequency_mhz))
         cg.add(radio_var.set_sync_15_16(config[CONF_CC1101_SYNC_15_16]))
+        cg.add(radio_var.set_s1_sync_16_16(config[CONF_CC1101_S1_SYNC_16_16]))
         cg.add(radio_var.set_carrier_sense(config[CONF_CC1101_CARRIER_SENSE]))
         cg.add(radio_var.set_rx_bandwidth(CC1101_RX_BANDWIDTHS[config[CONF_CC1101_RX_BANDWIDTH]]))
         cg.add(radio_var.set_rx_state_wait(config[CONF_CC1101_RX_STATE_WAIT]))

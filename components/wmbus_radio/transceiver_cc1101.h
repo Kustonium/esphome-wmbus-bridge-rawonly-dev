@@ -24,6 +24,7 @@ class CC1101 : public RadioTransceiver {
   // Bench option (see __init__.py): the register it changes, and what the
   // health check then expects instead of the default profile.
   void set_sync_15_16(bool v) { this->sync_15_16_ = v; }
+  void set_s1_sync_16_16(bool v) { this->s1_sync_16_16_ = v; }
   // T1/C1 RX filter: 0 = 325 kHz (TI AN067 link B), 1 = 270 kHz, 2 = 232 kHz.
   void set_rx_bandwidth(uint8_t i) { this->rx_bw_ = i; }
   // Carrier sense as sync qualifier (MDMCFG2 SYNC_MODE bit 2). Off = 0x02/0x01.
@@ -76,14 +77,24 @@ class CC1101 : public RadioTransceiver {
   // 15/16, but honor cc1101_carrier_sense so a YAML A/B test can change only
   // the CS qualifier: 0x05 (TI default) versus 0x01 (CS disabled). This matters
   // when weak S1 frames are visible on other radios but never raise CC1101 GDO2.
+  //
+  // cc1101_s1_sync_16_16 (bench, 2026-11-16): S1 with a full 16/16 sync, 0x06 /
+  // 0x02. Without carrier sense, 15/16 let noise match the sync about 17x more
+  // often than 16/16 (~230 false syncs/min measured), which keeps the receiver
+  // busy and can hide real frames. 16/16 without CS (0x02) tells whether the
+  // demodulator gets real weak S1 frames at all (good CRC appears) or not.
   uint8_t exp_mdmcfg2_() const {
-    if (this->s1_()) return this->cs_ ? 0x05 : 0x01;
+    if (this->s1_()) {
+      const uint8_t m = this->s1_sync_16_16_ ? 0x06 : 0x05;
+      return this->cs_ ? m : (uint8_t) (m & ~0x04);
+    }
     uint8_t m = this->sync_15_16_ ? 0x05 : 0x06;
     if (!this->cs_) m &= (uint8_t) ~0x04;
     return m;
   }
   uint8_t rx_bw_{2};  // 232 kHz, the YAML default
   bool cs_{true};
+  bool s1_sync_16_16_{false};
   uint16_t rx_bw_khz_() const { return this->rx_bw_ == 1 ? 270 : (this->rx_bw_ == 2 ? 232 : 325); }
   // S1 (S-mode, 32.768 kcps Manchester) needs its own modem profile; T1/C1
   // keep the inherited 100 kcps one. S1 values: TI AN067 (SWRA234), Appendix C,
