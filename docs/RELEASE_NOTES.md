@@ -2,6 +2,14 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## CC1101: 232 kHz receive filter by default, bench switches off the add-on tile
+
+- **`cc1101_rx_bandwidth` now defaults to `232khz` instead of `325khz`.** Measured on the bench in November 2026 with an LR1121 on a splitter as the reference: more frames near the threshold, no new meters lost, nothing lost on strong frames. `325khz` (TI AN067) stays selectable for meters with an extreme frequency offset.
+- **The add-on's CC1101 tile no longer switches the RX filter or carrier sense.** Both were test switches; both tests are settled (232 kHz, carrier sense on). They are YAML-only options now. A value the add-on stored on the board during the tests is dropped at the next boot and the log says so.
+- **Boards with `cc1101_rx_bandwidth:` in their YAML keep that value.** Boards without it switch to 232 kHz at the next build.
+
+---
+
 ## SX1262: 234 kHz receive filter by default
 
 - **`sx1262_rx_bandwidth` now defaults to `234khz` instead of `312khz`.** The 312 kHz value was inherited and had never been measured for T1. Measured on 2026-11-12/13 at the same hours on two working days, with an LR1121 on a splitter as the reference: a T-Beam on the other splitter output caught 52.5% of the LR1121's frames at -110..-105 dBm with 234 kHz against 30.6% with 312 kHz, and heard 0.84 of its meters against 0.76. A Heltec gained at -105..-100 dBm (33% against 26%), a XIAO a little. Strong frames lost nothing, and C1 in `listen_mode: both` improved as well (the T-Beam caught 77% of the LR1121's C1 frames against 60%).

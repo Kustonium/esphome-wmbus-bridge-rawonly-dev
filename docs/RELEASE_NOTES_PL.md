@@ -2,6 +2,14 @@
 
 [English version](RELEASE_NOTES.md)
 
+## CC1101: filtr odbiornika 232 kHz domyślnie, przełączniki testowe znikają z kafelka dodatku
+
+- **`cc1101_rx_bandwidth` ma teraz domyślnie `232khz` zamiast `325khz`.** Zmierzone na stanowisku w listopadzie 2026, odniesieniem LR1121 na rozgałęźniku: więcej ramek przy progu, żaden licznik nie zniknął, żadnych strat na mocnych ramkach. `325khz` (TI AN067) zostaje do wyboru dla liczników ze skrajnym przesunięciem częstotliwości.
+- **Kafelek CC1101 w dodatku nie przełącza już filtra ani wykrywania nośnej.** Oba były przełącznikami testowymi, oba testy są rozstrzygnięte (232 kHz, nośna włączona). Teraz to opcje tylko w YAML. Wartość zapisaną w płytce z dodatku w czasie testów płytka kasuje przy najbliższym starcie i odnotowuje to w logu.
+- **Płytki z `cc1101_rx_bandwidth:` w YAML zachowują swoją wartość.** Płytki bez tego wpisu przechodzą na 232 kHz przy najbliższym budowaniu.
+
+---
+
 ## SX1262: filtr odbiornika 234 kHz domyślnie
 
 - **`sx1262_rx_bandwidth` ma teraz domyślnie `234khz` zamiast `312khz`.** Wartość 312 kHz była odziedziczona i nigdy nie zmierzona dla T1. Pomiar 12–13.11.2026, te same godziny w dwa dni robocze, odniesieniem LR1121 na rozgałęźniku: T-Beam na drugim wyjściu rozgałęźnika złapał przy 234 kHz 52,5% ramek LR1121 z zakresu −110..−105 dBm wobec 30,6% przy 312 kHz i słyszał 0,84 jego liczników wobec 0,76. Heltec zyskał przy −105..−100 dBm (33% wobec 26%), XIAO trochę. Mocne ramki nic nie straciły, a C1 w `listen_mode: both` też się poprawił (T-Beam złapał 77% ramek C1 LR1121 wobec 60%).

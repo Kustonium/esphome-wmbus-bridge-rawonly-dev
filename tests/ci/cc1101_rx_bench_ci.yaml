@@ -25,7 +25,7 @@ wmbus_radio:
   cc1101_rx_state_wait: true
   cc1101_idle_rx_refresh: true
   cc1101_carrier_sense: false
-  cc1101_rx_bandwidth: 232khz
+  cc1101_rx_bandwidth: 325khz  # non-default since 232khz became the default
   cs_pin: GPIO4
   gdo0_pin: GPIO3
   gdo2_pin: GPIO2

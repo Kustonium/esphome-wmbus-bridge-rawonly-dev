@@ -55,6 +55,7 @@ A valid S1 telegram is published on `wmbus/<topic_name>/telegram` just like vali
 | `sx1262_rx_bandwidth` | `SX1262` | `234khz` | public | `234khz` (default since 2026-11-15, measured better than 312 kHz for T1 and C1), `312khz` (the inherited value, default before), `156khz`. Applies to `listen_mode: t1`, `both` **and `c1`**; ignored by `s1`, whose measured 234.3 kHz setting is fixed. `c1` was pinned to 234.3 kHz before 2026-09-25, a value only ever measured for S1 |
 | `fem_ctrl_pin`, `fem_en_pin`, `fem_pa_pin` | `SX1262` | none | board-specific | external RF front-end pins, e.g. Heltec V4 |
 | `rf_sw_pin` | `SX1262` | none | board-specific | module RF-switch gate; required on XIAO ESP32-S3 + Wio-SX1262 (`GPIO38`), otherwise sensitivity is about 30 dB lower |
+| `cc1101_rx_bandwidth` | `CC1101` | `232khz` | public | T1/C1 receive filter: `232khz` (default since 2026-11-16, measured better than 325 kHz near the threshold, nothing lost on strong frames), `325khz` (TI AN067, also covers meters with an extreme frequency offset), `270khz`. YAML only. |
 | `sx1276_busy_ether_mode` | `SX1276` | `normal` | public | `normal`, `aggressive`, `adaptive`; increase only for **measured** overload (`fifo_overrun`/`truncated` > 0); `adaptive` aborts weak starts and costs about 12 dB of sensitivity |
 | `tcxo_pin` | `SX1276` | none | board-specific | optional TCXO-enable pin, driven HIGH before SX1276 initialization |
 | `busy_pin` | `SX1262`, `LR1121` | required | public | BUSY line; without it the driver cannot distinguish “not ready yet” from a response |

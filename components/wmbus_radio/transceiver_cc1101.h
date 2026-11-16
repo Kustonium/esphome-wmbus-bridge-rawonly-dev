@@ -25,13 +25,9 @@ class CC1101 : public RadioTransceiver {
   // health check then expects instead of the default profile.
   void set_sync_15_16(bool v) { this->sync_15_16_ = v; }
   // T1/C1 RX filter: 0 = 325 kHz (TI AN067 link B), 1 = 270 kHz, 2 = 232 kHz.
-  void set_rx_bandwidth(uint8_t i) { this->rx_bw_ = this->yaml_rx_bw_ = i; }
+  void set_rx_bandwidth(uint8_t i) { this->rx_bw_ = i; }
   // Carrier sense as sync qualifier (MDMCFG2 SYNC_MODE bit 2). Off = 0x02/0x01.
   void set_carrier_sense(bool v) { this->cs_ = v; }
-  std::vector<std::string> runtime_setting_keys() override;
-  std::string runtime_settings_json() override;
-  int set_runtime_setting(const std::string &key, const std::string &value) override;
-  void patch_config_report(std::vector<std::string> &lines) override;
   void set_rx_state_wait(bool v) { this->rx_state_wait_ = v; }
   void set_idle_rx_refresh(bool v) { this->idle_rx_refresh_ = v; }
   uint32_t idle_rx_poll_interval_ms() const override { return this->idle_rx_refresh_ ? 50 : 0; }
@@ -84,9 +80,7 @@ class CC1101 : public RadioTransceiver {
     if (!this->cs_) m &= (uint8_t) ~0x04;
     return m;
   }
-  uint8_t rx_bw_{0};
-  uint8_t yaml_rx_bw_{0};
-  bool rx_bw_stored_{false};
+  uint8_t rx_bw_{2};  // 232 kHz, the YAML default
   bool cs_{true};
   uint16_t rx_bw_khz_() const { return this->rx_bw_ == 1 ? 270 : (this->rx_bw_ == 2 ? 232 : 325); }
   // S1 (S-mode, 32.768 kcps Manchester) needs its own modem profile; T1/C1

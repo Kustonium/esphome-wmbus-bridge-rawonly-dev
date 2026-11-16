@@ -188,8 +188,11 @@ CONF_SX1262_FORCE_LONG_STREAM = "sx1262_force_long_stream"
 #     Table 14), so no gain is expected unless our CS sits higher; bench test.
 #   cc1101_rx_bandwidth: T1/C1 RX filter 325 (TI AN067 link B, minimum for the
 #     whole tolerance range) / 270 / 232 kHz. Narrower = less noise for typical
-#     meters, worse for extreme frequency offset (AN067 8.2.2). Both can also be
-#     changed from the add-on at runtime (runtime_settings.h).
+#     meters, worse for extreme frequency offset (AN067 8.2.2). 232 kHz is the
+#     default since 2026-11-16: on the bench (LR1121 on a splitter as the
+#     reference) it caught more frames near the threshold than 325 kHz and lost
+#     nothing on strong ones. YAML only; the add-on switch it had during that
+#     test is gone and a value it stored is dropped at boot.
 CONF_CC1101_SYNC_15_16 = "cc1101_sync_15_16"
 CONF_CC1101_CARRIER_SENSE = "cc1101_carrier_sense"
 CONF_CC1101_RX_BANDWIDTH = "cc1101_rx_bandwidth"
@@ -460,7 +463,7 @@ BASE_CONFIG_SCHEMA = (
             cv.Optional(CONF_CC1101_ALLOW_EXPERIMENTAL, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_SYNC_15_16, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_CARRIER_SENSE, default=True): cv.boolean,
-            cv.Optional(CONF_CC1101_RX_BANDWIDTH, default="325khz"): cv.one_of(*CC1101_RX_BANDWIDTHS, lower=True),
+            cv.Optional(CONF_CC1101_RX_BANDWIDTH, default="232khz"): cv.one_of(*CC1101_RX_BANDWIDTHS, lower=True),
             cv.Optional(CONF_CC1101_RX_STATE_WAIT, default=False): cv.boolean,
             cv.Optional(CONF_CC1101_IDLE_RX_REFRESH, default=False): cv.boolean,
             # SPI clock for the radio device only, not for the whole bus.
@@ -945,7 +948,7 @@ def _validate_radio_pins(config):
             raise cv.Invalid("cc1101_allow_experimental is only valid for radio_type: CC1101.")
         if config.get(CONF_CC1101_CARRIER_SENSE, True) is False:
             raise cv.Invalid(f"{CONF_CC1101_CARRIER_SENSE} is only valid for radio_type: CC1101.")
-        if config.get(CONF_CC1101_RX_BANDWIDTH, "325khz") != "325khz":
+        if config.get(CONF_CC1101_RX_BANDWIDTH, "232khz") != "232khz":
             raise cv.Invalid(f"{CONF_CC1101_RX_BANDWIDTH} is only valid for radio_type: CC1101.")
         for opt in (CONF_CC1101_SYNC_15_16, CONF_CC1101_RX_STATE_WAIT, CONF_CC1101_IDLE_RX_REFRESH):
             if config.get(opt, False):
