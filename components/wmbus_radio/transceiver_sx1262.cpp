@@ -1211,8 +1211,28 @@ bool SX1262::capture_rx_stream_(uint16_t trigger_irq) {
 // Configures FEM pins (if defined), resets the SX1262, and programs all
 // static RF / modulation / packet parameters.
 // ---------------------------------------------------------------------------
+// rx_gain and long_gfsk_packets from the add-on (runtime_settings.h).
+std::vector<std::string> SX1262::runtime_setting_keys() { return {"rx_gain", "long_gfsk_packets"}; }
+
+std::string SX1262::runtime_settings_json() { return this->rx_gain_opt_.json() + this->long_gfsk_opt_.json(); }
+
+int SX1262::set_runtime_setting(const std::string &key, const std::string &value) {
+  if (key == "rx_gain") return this->rx_gain_opt_.set(value);
+  if (key == "long_gfsk_packets") return this->long_gfsk_opt_.set(value);
+  return 0;
+}
+
+void SX1262::patch_config_report(std::vector<std::string> &lines) {
+  this->rx_gain_opt_.patch(lines);
+  this->long_gfsk_opt_.patch(lines);
+}
+
 void SX1262::setup() {
   this->apply_stored_settings_();
+  this->rx_gain_opt_.load();
+  if (this->rx_gain_opt_.stored) this->rx_gain_ = this->rx_gain_opt_.value == 1 ? POWER_SAVING : BOOSTED;
+  this->long_gfsk_opt_.load();
+  if (this->long_gfsk_opt_.stored) this->long_gfsk_packets_ = this->long_gfsk_opt_.value == 1;
   this->irq_edge_ = gpio::INTERRUPT_RISING_EDGE;
   this->common_setup();
   ESP_LOGV(TAG, "Setup");

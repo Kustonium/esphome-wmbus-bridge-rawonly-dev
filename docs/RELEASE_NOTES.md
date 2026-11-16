@@ -2,6 +2,13 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## More settings switchable from the add-on, also with diagnostics off
+
+- **The board's settings and configuration report no longer need `diagnostic_mode`.** `diag/settings` and `diag/config` are published, and `set/...` is listened to, with any `diagnostic_mode`, also `off` (the default). Before, a board with diagnostics off could not be switched from the add-on at all, not even its listen mode.
+- **New switchable settings** besides `listen_mode`: `diagnostic_mode` (`off`, `low`, `normal`, `debug`; `dev` stays a YAML choice), `publish_rssi`, and on SX1262 `rx_gain` and `long_gfsk_packets`, on SX1276 `sx1276_busy_ether_mode`. Each works like the listen mode: stored in flash, applied after a restart, `yaml` (the add-on's "back to YAML") drops it. Diagnostic fields set explicitly in YAML keep their value under a switched `diagnostic_mode`.
+
+---
+
 ## CC1101: 232 kHz receive filter by default, bench switches off the add-on tile
 
 - **`cc1101_rx_bandwidth` now defaults to `232khz` instead of `325khz`.** Measured on the bench in November 2026 with an LR1121 on a splitter as the reference: more frames near the threshold, no new meters lost, nothing lost on strong frames. `325khz` (TI AN067) stays selectable for meters with an extreme frequency offset.

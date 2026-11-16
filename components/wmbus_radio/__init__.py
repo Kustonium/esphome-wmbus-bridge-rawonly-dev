@@ -1500,6 +1500,26 @@ async def to_code(config):
     cg.add(var.set_diag_publish_summary_60min(config[CONF_DIAG_PUBLISH_SUMMARY_60MIN] if CONF_DIAG_PUBLISH_SUMMARY_60MIN in config else diag_preset["summary_60min"]))
     cg.add(var.set_diag_publish_summary_highlight_meters(summary_highlight))
     cg.add(var.set_diag_meter_stats_all(meter_stats_all))
+    # diagnostic_mode can also be switched from the add-on (runtime_settings.h);
+    # the board then applies the preset itself. Fields YAML set explicitly keep
+    # their value there too: one bit each, in the order of
+    # Radio::apply_diag_preset_().
+    diag_explicit = (
+        CONF_DIAG_VERBOSE in config,
+        CONF_DIAG_PUBLISH_RAW in config,
+        CONF_DIAG_PUBLISH_SUMMARY in config,
+        CONF_DIAG_PUBLISH_DROP_EVENTS in config,
+        CONF_DIAG_PUBLISH_RX_PATH_EVENTS in config,
+        CONF_DIAG_EVENTS_HIGHLIGHT_ONLY in config or CONF_DIAG_PUBLISH_HIGHLIGHT_ONLY in config,
+        CONF_DIAG_PUBLISH_SUGGESTION in config,
+        CONF_DIAG_PUBLISH_SUMMARY_15MIN in config,
+        CONF_DIAG_PUBLISH_SUMMARY_60MIN in config,
+        CONF_DIAG_METER_STATS in config,
+        CONF_DIAG_PUBLISH_SUMMARY_HIGHLIGHT_METERS in config,
+    )
+    cg.add(var.set_diag_explicit_mask(sum(1 << i for i, on in enumerate(diag_explicit) if on)))
+    cg.add(var.set_diag_base_topic(f"wmbus/{topic_name}/diag"))
+    cg.add(var.set_diag_topic_explicit(CONF_DIAG_TOPIC in config and bool(str(config.get(CONF_DIAG_TOPIC, "")).strip())))
 
     for warning in warnings:
         cg.add(var.add_config_warning(warning))

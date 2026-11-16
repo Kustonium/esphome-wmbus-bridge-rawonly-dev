@@ -2,6 +2,13 @@
 
 [English version](RELEASE_NOTES.md)
 
+## Więcej ustawień przełączanych z dodatku, także przy wyłączonej diagnostyce
+
+- **Ustawienia płytki i raport konfiguracji nie wymagają już `diagnostic_mode`.** `diag/settings` i `diag/config` są publikowane, a `set/...` nasłuchiwane, przy każdym `diagnostic_mode`, także `off` (domyślnym). Wcześniej płytki z wyłączoną diagnostyką w ogóle nie dało się przełączać z dodatku, nawet trybu nasłuchu.
+- **Nowe ustawienia przełączane** obok `listen_mode`: `diagnostic_mode` (`off`, `low`, `normal`, `debug`; `dev` zostaje wyborem w YAML), `publish_rssi`, a na SX1262 `rx_gain` i `long_gfsk_packets`, na SX1276 `sx1276_busy_ether_mode`. Każde działa jak tryb nasłuchu: zapis we flashu, zastosowanie po restarcie, `yaml` („wróć do YAML” w dodatku) je kasuje. Pola diagnostyki ustawione wprost w YAML zachowują swoją wartość przy przełączonym `diagnostic_mode`.
+
+---
+
 ## CC1101: filtr odbiornika 232 kHz domyślnie, przełączniki testowe znikają z kafelka dodatku
 
 - **`cc1101_rx_bandwidth` ma teraz domyślnie `232khz` zamiast `325khz`.** Zmierzone na stanowisku w listopadzie 2026, odniesieniem LR1121 na rozgałęźniku: więcej ramek przy progu, żaden licznik nie zniknął, żadnych strat na mocnych ramkach. `325khz` (TI AN067) zostaje do wyboru dla liczników ze skrajnym przesunięciem częstotliwości.

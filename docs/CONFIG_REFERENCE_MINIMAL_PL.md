@@ -97,9 +97,9 @@ Preferuj `topic_name`.
 | `wmbus/<topic_name>/diag/summary_60min` | co 60 min | tylko `dev`, chyba że wymusisz stare flagi |
 | `wmbus/<topic_name>/diag/meter_snapshot` | snapshot liczników | `normal`+ z `highlight_meters`; w `dev` wszystkie |
 | `wmbus/<topic_name>/diag/boot` | raz po starcie | `retain=true`; boot idzie też jako kopia do root `diag` bez retain |
-| `wmbus/<topic_name>/diag/config` | raz po starcie | `retain=true`; snapshot efektywnej konfiguracji (`{radio, lines[]}`) - konsumowany przez panel diagnostyczny dodatku |
-| `wmbus/<topic_name>/diag/settings` | raz po starcie | `retain=true`; ustawienia, które dodatek może zmieniać bez kompilacji (`{v, radio, listen_mode{value, source, yaml, options, unsupported, weak}}`) |
-| `wmbus/<topic_name>/set/listen_mode` | subskrybowany | `t1`, `c1`, `both`, `s1` albo `yaml`; zapis we flashu, potem restart płytki. Zapisany tryb wygrywa z YAML, dopóki nie przyjdzie `yaml` (albo sam tryb z YAML) |
+| `wmbus/<topic_name>/diag/config` | raz po starcie | `retain=true`; snapshot efektywnej konfiguracji (`{radio, lines[]}`), konsumowany przez kafelki płytek w dodatku. Publikowany przy każdym `diagnostic_mode`, także `off` |
+| `wmbus/<topic_name>/diag/settings` | raz po starcie | `retain=true`; ustawienia, które dodatek może zmieniać bez kompilacji (`{v, radio, listen_mode{value, source, yaml, options, unsupported, weak}, <klucz>{value, source, yaml, options}...}`). Publikowany przy każdym `diagnostic_mode`, także `off` |
+| `wmbus/<topic_name>/set/<klucz>` | subskrybowany | `listen_mode` (`t1`, `c1`, `both`, `s1`), `diagnostic_mode` (`off`, `low`, `normal`, `debug`), `publish_rssi` (`true`, `false`), na SX1262 `rx_gain` (`boosted`, `power_saving`) i `long_gfsk_packets` (`true`, `false`), na SX1276 `sx1276_busy_ether_mode` (`normal`, `aggressive`, `adaptive`); albo `yaml`. Zapis we flashu, potem restart płytki. Zapisana wartość wygrywa z YAML, dopóki nie przyjdzie `yaml` (albo sama wartość z YAML) |
 | `wmbus/<topic_name>/diag/suggestion` | wykryta anomalia RF | sugestie diagnostyczne |
 | `wmbus/<topic_name>/diag/busy_ether_changed` | zmiana stanu busy-ether | SX1276 + `adaptive` |
 | `wmbus/<topic_name>/rssi/<meter_id>` | ramka z realnym pomiarem RSSI | tylko przy `publish_rssi: true`; `retain=true` |
