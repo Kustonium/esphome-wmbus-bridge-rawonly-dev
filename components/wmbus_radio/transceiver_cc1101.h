@@ -27,7 +27,7 @@ class CC1101 : public RadioTransceiver {
   // T1/C1 RX filter: 0 = 325 kHz (TI AN067 link B), 1 = 270 kHz, 2 = 232 kHz.
   void set_rx_bandwidth(uint8_t i) { this->rx_bw_ = this->yaml_rx_bw_ = i; }
   // Carrier sense as sync qualifier (MDMCFG2 SYNC_MODE bit 2). Off = 0x02/0x01.
-  void set_carrier_sense(bool v) { this->cs_ = this->yaml_cs_ = v; }
+  void set_carrier_sense(bool v) { this->cs_ = v; }
   std::vector<std::string> runtime_setting_keys() override;
   std::string runtime_settings_json() override;
   int set_runtime_setting(const std::string &key, const std::string &value) override;
@@ -88,8 +88,6 @@ class CC1101 : public RadioTransceiver {
   uint8_t yaml_rx_bw_{0};
   bool rx_bw_stored_{false};
   bool cs_{true};
-  bool yaml_cs_{true};
-  bool cs_stored_{false};
   uint16_t rx_bw_khz_() const { return this->rx_bw_ == 1 ? 270 : (this->rx_bw_ == 2 ? 232 : 325); }
   // S1 (S-mode, 32.768 kcps Manchester) needs its own modem profile; T1/C1
   // keep the inherited 100 kcps one. S1 values: TI AN067 (SWRA234), Appendix C,
