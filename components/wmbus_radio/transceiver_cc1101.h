@@ -24,7 +24,6 @@ class CC1101 : public RadioTransceiver {
   // Bench option (see __init__.py): the register it changes, and what the
   // health check then expects instead of the default profile.
   void set_sync_15_16(bool v) { this->sync_15_16_ = v; }
-  void set_s1_sync_16_16(bool v) { this->s1_sync_16_16_ = v; }
   // T1/C1 RX filter: 0 = 325 kHz (TI AN067 link B), 1 = 270 kHz, 2 = 232 kHz.
   void set_rx_bandwidth(uint8_t i) { this->rx_bw_ = i; }
   // Carrier sense as sync qualifier (MDMCFG2 SYNC_MODE bit 2). Off = 0x02/0x01.
@@ -70,31 +69,25 @@ class CC1101 : public RadioTransceiver {
   uint32_t idle_refresh_skipped_{0};
   uint32_t state_wait_timeouts_{0};
   uint8_t last_wait_state_{0};
-  // S1 takes TI's 0x05 (15/16 sync bits + carrier sense) as AN067 Radio Link A
-  // does by default; T1/C1 keep 0x06 unless cc1101_sync_15_16.
   // SYNC_MODE (SWRS061I p.44): 0x06 = 16/16 + carrier sense, 0x05 = 15/16 +
-  // carrier sense, 0x02 / 0x01 = the same without carrier sense. Keep S1 at
-  // 15/16, but honor cc1101_carrier_sense so a YAML A/B test can change only
-  // the CS qualifier: 0x05 (TI default) versus 0x01 (CS disabled). This matters
-  // when weak S1 frames are visible on other radios but never raise CC1101 GDO2.
+  // carrier sense, 0x02 / 0x01 = the same without carrier sense. T1/C1 keep
+  // 0x06 unless cc1101_sync_15_16, and honor cc1101_carrier_sense.
   //
-  // cc1101_s1_sync_16_16 (bench, 2026-11-16): S1 with a full 16/16 sync, 0x06 /
-  // 0x02. Without carrier sense, 15/16 let noise match the sync about 17x more
-  // often than 16/16 (~230 false syncs/min measured), which keeps the receiver
-  // busy and can hide real frames. 16/16 without CS (0x02) tells whether the
-  // demodulator gets real weak S1 frames at all (good CRC appears) or not.
+  // S1 is always TI's 0x05 (AN067 Radio Link A), whatever those two options
+  // say. Measured 2026-11-16: without carrier sense, noise matched the 0x7696
+  // sync ~230 times a minute at 15/16 and ~25 at 16/16, all with a bad CRC, and
+  // no real weak S1 frame came through either way; a strong fake S1 frame from
+  // a nearby transmitter was decoded 714/720 with 0x05. The CC1101 simply does
+  // not hear the weak S1 meters that the SX1276 and LR1121 decode at the same
+  // place; the bench switches that tested this are gone.
   uint8_t exp_mdmcfg2_() const {
-    if (this->s1_()) {
-      const uint8_t m = this->s1_sync_16_16_ ? 0x06 : 0x05;
-      return this->cs_ ? m : (uint8_t) (m & ~0x04);
-    }
+    if (this->s1_()) return 0x05;
     uint8_t m = this->sync_15_16_ ? 0x05 : 0x06;
     if (!this->cs_) m &= (uint8_t) ~0x04;
     return m;
   }
   uint8_t rx_bw_{2};  // 232 kHz, the YAML default
   bool cs_{true};
-  bool s1_sync_16_16_{false};
   uint16_t rx_bw_khz_() const { return this->rx_bw_ == 1 ? 270 : (this->rx_bw_ == 2 ? 232 : 325); }
   // S1 (S-mode, 32.768 kcps Manchester) needs its own modem profile; T1/C1
   // keep the inherited 100 kcps one. S1 values: TI AN067 (SWRA234), Appendix C,
