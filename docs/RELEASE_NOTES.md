@@ -2,6 +2,12 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## Hiding meter IDs on screenshots
+
+- **New: `esphome::wmbus_radio::set_log_anonymize(true/false)`**, meant for a template switch on the board's page. While on, every meter ID in the log is replaced by a stand-in (each digit plus the matching digit of today's UTC date, modulo 10), the raw hex of truncated/dropped packets is hidden, and MQTT, the add-on and `on_frame` keep the real IDs. Without a clock IDs show as `????????`. A cover for forum posts, not encryption. See [DIAGNOSTIC](DIAGNOSTIC.md#hiding-meter-ids-on-screenshots).
+
+---
+
 ## `repeater: true`, quiet log with the MQTT buffer off, `mark_as_handled` corrected
 
 - **New `repeater` option (default `false`).** With `repeater: true` the board is a radio front end only: no MQTT at all - no telegram, `/rx`, diagnostic or settings topics, no buffer, no outage statistics. Frames leave only through `on_frame`, for example over ESP-NOW to a bridge board that has network and publishes them. The YAML of such a board may omit `mqtt:`. Every other board still needs `mqtt:`, and the validation says so.

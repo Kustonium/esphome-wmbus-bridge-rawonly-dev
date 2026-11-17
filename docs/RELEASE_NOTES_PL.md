@@ -2,6 +2,12 @@
 
 [English version](RELEASE_NOTES.md)
 
+## Ukrywanie numerów liczników na zrzutach
+
+- **Nowe: `esphome::wmbus_radio::set_log_anonymize(true/false)`**, do przełącznika na stronie płytki. Gdy włączone, każdy numer licznika w logu zastępuje numer zastępczy (cyfra plus cyfra dzisiejszej daty UTC, modulo 10), surowy hex uciętych i odrzuconych pakietów jest ukryty, a MQTT, dodatek i `on_frame` dostają prawdziwe numery. Bez zegara numery pokazują się jako `????????`. Zasłona na zrzuty na forum, nie szyfrowanie. Szczegóły: [DIAGNOSTIC](DIAGNOSTIC_PL.md#ukrywanie-numerów-liczników-na-zrzutach).
+
+---
+
 ## `repeater: true`, cichy log przy wyłączonym buforze MQTT, poprawka opisu `mark_as_handled`
 
 - **Nowa opcja `repeater` (domyślnie `false`).** Przy `repeater: true` płytka jest tylko odbiornikiem radiowym: bez MQTT w ogóle, czyli bez tematów telegramów, `/rx`, diagnostyki i ustawień, bez bufora i bez statystyk awarii. Ramki wychodzą wyłącznie przez `on_frame`, na przykład przez ESP-NOW do płytki-mostu, która ma sieć i je publikuje. YAML takiej płytki może nie mieć `mqtt:`. Każda inna płytka nadal potrzebuje `mqtt:` i walidacja o tym mówi.

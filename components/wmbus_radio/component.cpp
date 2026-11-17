@@ -21,6 +21,7 @@
 
 // Optional: publish diagnostics via ESPHome MQTT if mqtt component is present.
 #include "mqtt_access.h"
+#include "log_anon.h"
 #include <esp_random.h>  // esp_random(): came in through mqtt_client.h before repeater builds dropped it
 #include "esphome/core/application.h"
 #include "runtime_settings.h"
@@ -54,6 +55,7 @@ namespace wmbus_radio {
 static const char *TAG = "wmbus";
 
 bool g_repeater_mode = false;  // see mqtt_access.h
+bool g_log_anonymize = false;  // see log_anon.h
 
 // Logging policy for this component:
 // - important user-facing INFO/WARN/ERROR messages may be concise bilingual EN/PL,
@@ -994,7 +996,8 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                  (unsigned) p->raw_got_len(), (unsigned) p->decoded_len(),
                  (unsigned) p->final_len(), (int) p->get_rssi(), p->drop_detail().c_str());
         if (this->diag_publish_raw_) {
-          ESP_LOGW(TAG, LOG_TR("TRUNCATED raw(hex)=%s", "Ucieta ramka raw(hex)=%s"), p->raw_hex().c_str());
+          ESP_LOGW(TAG, LOG_TR("TRUNCATED raw(hex)=%s", "Ucieta ramka raw(hex)=%s"),
+                   log_anonymize() ? LOG_TR("(hidden: anonymize on)", "(ukryte: anonimizacja)") : p->raw_hex().c_str());
         }
       }
     } else if (!p->drop_reason().empty()) {
@@ -1081,7 +1084,8 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
                  (unsigned) p->raw_got_len(), (unsigned) p->decoded_len(),
                  (unsigned) p->final_len(), (int) p->get_rssi(), p->drop_detail().c_str());
         if (this->diag_publish_raw_) {
-          ESP_LOGW(TAG, LOG_TR("DROPPED raw(hex)=%s", "Odrzucony pakiet raw(hex)=%s"), p->raw_hex().c_str());
+          ESP_LOGW(TAG, LOG_TR("DROPPED raw(hex)=%s", "Odrzucony pakiet raw(hex)=%s"),
+                   log_anonymize() ? LOG_TR("(hidden: anonymize on)", "(ukryte: anonimizacja)") : p->raw_hex().c_str());
         }
       }
     }
@@ -1285,6 +1289,9 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
   }
 
   const char *log_tag = TAG;
+  // Log text only: id_str itself stays real for MQTT / forwarding below.
+  char log_id_buf[12];
+  const char *log_id = anon_meter_id(id_str, log_id_buf, sizeof(log_id_buf));
   if (highlight) {
     if (!this->highlight_tag_.empty()) log_tag = this->highlight_tag_.c_str();
     const char *ansi_pre = this->highlight_ansi_ ? "\033[1;32m" : "";
@@ -1294,7 +1301,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              d.size(), p->raw_got_len(), frame->rssi(),
              link_mode_name(frame->link_mode()),
              frame->format().c_str(),
-             mfr, id_str, (unsigned) ver, (unsigned) dev, (unsigned) ci,
+             mfr, log_id, (unsigned) ver, (unsigned) dev, (unsigned) ci,
              ansi_suf);
 
     // Keep highlight_meters lightweight by default: local emphasis plus packet number only.
@@ -1302,10 +1309,10 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     const auto &stats = this->highlight_meter_stats_[stats_key_ro];
     if (stats.count == 1) {
       ESP_LOGI(log_tag, LOG_TR("%s[id:%s] first packet (packet #1)", "%s[id:%s] pierwszy pakiet (pakiet nr 1)"),
-               this->highlight_prefix_.c_str(), id_str);
+               this->highlight_prefix_.c_str(), log_id);
     } else {
       ESP_LOGI(log_tag, LOG_TR("%s[id:%s] packet #%u received", "%s[id:%s] odebrano pakiet nr %u"),
-               this->highlight_prefix_.c_str(), id_str,
+               this->highlight_prefix_.c_str(), log_id,
                (unsigned) stats.count);
     }
   } else {
@@ -1313,7 +1320,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
              d.size(), p->raw_got_len(), frame->rssi(),
              link_mode_name(frame->link_mode()),
              frame->format().c_str(),
-             mfr, id_str, (unsigned) ver, (unsigned) dev, (unsigned) ci);
+             mfr, log_id, (unsigned) ver, (unsigned) dev, (unsigned) ci);
   }
 
   // Per-frame frequency error, next to the meter that sent it.
@@ -1332,7 +1339,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     if (this->radio->take_frame_freq_error(&afc_hz, &fei_hz)) {
       ESP_LOGI(TAG, "FREQERR id:%s mode:%s len:%zu rssi:%ddBm afc:%ldHz fei:%ldHz"
                     LOG_TR("", " (blad czestotliwosci nadajnika)"),
-               id_str, link_mode_name(frame->link_mode()), d.size(), frame->rssi(),
+               log_id, link_mode_name(frame->link_mode()), d.size(), frame->rssi(),
                (long) afc_hz, (long) fei_hz);
     }
   }

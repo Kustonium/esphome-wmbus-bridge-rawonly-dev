@@ -14,6 +14,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include "mqtt_access.h"
+#include "log_anon.h"
 
 #include <cstdio>
 #include <string>
@@ -127,8 +128,9 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, uint32_t meter
 
   if (want_target && mqtt->is_connected()) {
     if (this->target_log_) {
+      char log_id_buf[12];
       ESP_LOGI(log_tag != nullptr ? log_tag : TAG, LOG_TR("TARGET %s caught RSSI=%d len=%u", "TARGET %s przechwycono RSSI=%d len=%u"),
-               id_str != nullptr ? id_str : "????????",
+               id_str != nullptr ? anon_meter_id(id_str, log_id_buf, sizeof(log_id_buf)) : "????????",
                (int) frame.rssi(),
                (unsigned) frame.data().size());
     }

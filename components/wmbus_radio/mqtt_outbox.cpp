@@ -34,6 +34,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include "mqtt_access.h"
+#include "log_anon.h"
 
 // The sensor/number/select entities are OPTIONAL platforms of this component.
 // Including their headers unconditionally forced AUTO_LOAD = ["sensor",
@@ -830,9 +831,9 @@ void Radio::update_outbox_stats_(uint32_t now_ms) {
       if (!this->outbox_drop_by_meter_.empty()) {
         std::string by_meter;
         for (const auto &kv : this->outbox_drop_by_meter_) {
-          char b[40];
-          snprintf(b, sizeof(b), "%s%08X=%u", by_meter.empty() ? "" : " ",
-                   (unsigned) (kv.first & 0xFFFFFFFFu), (unsigned) kv.second);
+          char b[40], idb[12];
+          snprintf(b, sizeof(b), "%s%s=%u", by_meter.empty() ? "" : " ",
+                   anon_meter_id_hex((uint32_t) (kv.first & 0xFFFFFFFFu), idb, sizeof(idb)), (unsigned) kv.second);
           by_meter += b;
         }
         ESP_LOGI(TAG, LOG_TR("MQTT outbox drops this outage by meter: %s", "Bufor MQTT: odrzucone w tej awarii wg licznika: %s"),
@@ -847,9 +848,9 @@ void Radio::update_outbox_stats_(uint32_t now_ms) {
       if (!this->mqtt_outbox_meter_quotas_.empty()) {
         std::string per_meter;
         for (const auto &mq : this->mqtt_outbox_meter_quotas_) {
-          char b[40];
-          snprintf(b, sizeof(b), "%s%08X=%u/%u", per_meter.empty() ? "" : " ",
-                   (unsigned) (mq.key & 0xFFFFFFFFu), (unsigned) mq.count, (unsigned) mq.quota);
+          char b[40], idb[12];
+          snprintf(b, sizeof(b), "%s%s=%u/%u", per_meter.empty() ? "" : " ",
+                   anon_meter_id_hex((uint32_t) (mq.key & 0xFFFFFFFFu), idb, sizeof(idb)), (unsigned) mq.count, (unsigned) mq.quota);
           per_meter += b;
         }
         ESP_LOGI(TAG, LOG_TR("MQTT outbox per-meter queued/quota: %s", "Bufor MQTT wg licznika (kolejka/limit): %s"),
