@@ -13,7 +13,7 @@
 
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
-#include "esphome/components/mqtt/mqtt_client.h"
+#include "mqtt_access.h"
 
 #include <cstdio>
 #include <string>
@@ -59,7 +59,7 @@ bool Radio::forward_meter_allowed_(uint32_t meter_id, uint32_t meter_id_raw) con
 void Radio::maybe_publish_radio_raw_(Packet *packet, uint32_t now_ms) {
   if (!this->publish_radio_raw_ || packet == nullptr) return;
 
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   const std::string raw = packet->packet_hex();
@@ -97,7 +97,7 @@ void Radio::maybe_forward_frame_(Frame &frame, uint32_t meter_id, uint32_t meter
     if (this->rx_publish_seq_ == 0) this->rx_publish_seq_ = 1;
   }
 
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr) return;
 
   std::string hex = frame.as_hex();
@@ -186,7 +186,7 @@ void Radio::publish_rx_metadata_(Frame &frame, const char *id_str, uint32_t mete
   // "obok RSSI") is exactly the companion data a disconnect must not lose,
   // so it goes through the same RAM outbox as the telegram it describes
   // instead of being dropped when the broker is unreachable.
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr || this->rx_topic_.empty() ||
       id_str == nullptr || id_str[0] == '\0')
     return;

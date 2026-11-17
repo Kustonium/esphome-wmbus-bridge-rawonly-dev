@@ -33,7 +33,7 @@
 #include "esphome/core/defines.h"
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
-#include "esphome/components/mqtt/mqtt_client.h"
+#include "mqtt_access.h"
 
 // The sensor/number/select entities are OPTIONAL platforms of this component.
 // Including their headers unconditionally forced AUTO_LOAD = ["sensor",
@@ -225,7 +225,7 @@ void Radio::maybe_reautosize_outbox_(uint32_t now_ms) {
 
 void Radio::enqueue_or_publish_(const std::string &topic, const std::string &payload, uint8_t qos, bool retain,
                                  uint32_t meter_id, uint32_t meter_id_raw) {
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr) return;
 
   const bool connected = mqtt->is_connected();
@@ -283,8 +283,17 @@ void Radio::enqueue_or_publish_(const std::string &topic, const std::string &pay
 
   if (this->mqtt_outbox_capacity_ == 0) {
     // Buffering disabled (mqtt_buffer_size: 0, or lowered to 0 at runtime):
-    // behave exactly like the upstream project today - drop silently.
-    this->note_outbox_drop_(display_id, false);
+    // the message is dropped. It is NOT fed into the outbox drop statistics -
+    // with no buffer there is nothing to evict, and the 30 s "outbox stats /
+    // dropped this outage by meter" lines read as a fault to anyone looking at
+    // the log (17.11.2026: a board with mqtt disabled printed "evicted=420"
+    // against a 0/0 buffer). Count frames (the telegram, not its /rx
+    // companion) and report them once, when the link comes back - see
+    // note_outbox_link_state_().
+    if (topic == this->telegram_topic_) {
+      if (this->unbuffered_outage_start_ms_ == 0) this->unbuffered_outage_start_ms_ = (uint32_t) esphome::millis();
+      this->unbuffered_lost_frames_++;
+    }
     return;
   }
 
@@ -427,7 +436,7 @@ void Radio::flush_mqtt_outbox_() {
     }
     return;
   }
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   // One INFO line when draining actually begins (broker came back); the
@@ -717,6 +726,19 @@ void Radio::note_outbox_link_state_(bool connected) {
     this->mqtt_outbox_dropped_this_outage_ = 0;
     this->mqtt_outbox_refused_heap_this_outage_ = 0;
     this->outbox_drop_by_meter_.clear();
+    this->unbuffered_outage_start_ms_ = (uint32_t) esphome::millis();
+    this->unbuffered_lost_frames_ = 0;
+  }
+  // Buffer off: the single line that says what an outage cost. Only when
+  // something was actually lost; a reconnect with nothing missed stays silent.
+  if (!this->outbox_was_connected_ && connected && this->unbuffered_lost_frames_ != 0) {
+    const uint32_t secs =
+        this->unbuffered_outage_start_ms_ != 0 ? ((uint32_t) esphome::millis() - this->unbuffered_outage_start_ms_) / 1000 : 0;
+    ESP_LOGW(TAG, LOG_TR("MQTT back after %u s - %u frame(s) not published (mqtt_buffer_size: 0)",
+                         "MQTT wrocil po %u s - %u ramek nieopublikowanych (mqtt_buffer_size: 0)"),
+             (unsigned) secs, (unsigned) this->unbuffered_lost_frames_);
+    this->unbuffered_lost_frames_ = 0;
+    this->unbuffered_outage_start_ms_ = 0;
   }
   this->outbox_was_connected_ = connected;
 }
@@ -740,7 +762,7 @@ void Radio::update_outbox_stats_(uint32_t now_ms) {
   // stats breakdown always describe the current (or most recent) outage.
   // The lifetime mqtt_outbox_dropped_total_ is left alone. 1 s granularity
   // is fine - the outbox itself reacts to the disconnect on its own path.
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   const bool connected = (mqtt != nullptr && mqtt->is_connected());
   this->note_outbox_link_state_(connected);
 

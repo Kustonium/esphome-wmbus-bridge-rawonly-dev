@@ -13,7 +13,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/helpers.h"
-#include "esphome/components/mqtt/mqtt_client.h"
+#include "mqtt_access.h"
 
 #include <algorithm>
 #include <cstring>
@@ -34,7 +34,7 @@ void Radio::publish_meter_window_batch_(const char *trigger, uint32_t elapsed_s,
   if (!this->diag_publish_summary_highlight_meters_) return;
   if (this->highlight_meter_stats_.empty()) return;
   if (this->diag_topic_.empty()) return;
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   const char *listen_mode = (this->radio != nullptr)
@@ -124,7 +124,7 @@ void Radio::publish_meter_window_for_(const char *trigger, uint32_t elapsed_s,
                                       bool reset_time_window,
                                       bool reset_count_window) {
   if (this->diag_topic_.empty()) return;
-  auto *mqtt = esphome::mqtt::global_mqtt_client;
+  auto *mqtt = mqtt_client();
   if (mqtt == nullptr || !mqtt->is_connected()) return;
 
   // rssi_n_window counts measured samples only, so count_window > 0 does not

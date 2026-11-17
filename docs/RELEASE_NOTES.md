@@ -2,6 +2,14 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## `repeater: true`, quiet log with the MQTT buffer off, `mark_as_handled` corrected
+
+- **New `repeater` option (default `false`).** With `repeater: true` the board is a radio front end only: no MQTT at all - no telegram, `/rx`, diagnostic or settings topics, no buffer, no outage statistics. Frames leave only through `on_frame`, for example over ESP-NOW to a bridge board that has network and publishes them. The YAML of such a board may omit `mqtt:`. Every other board still needs `mqtt:`, and the validation says so.
+- **`mqtt_buffer_size: 0` no longer fills the log with buffer statistics.** Without a buffer, the 30 s "outbox stats" lines and the per-meter drop list used to report every frame missed during a broker outage as "evicted" from a 0/0 buffer, and they grew without end on a board with MQTT disabled. Now one line is logged when the broker comes back: `MQTT back after N s - M frame(s) not published (mqtt_buffer_size: 0)`. With a buffer set, nothing changes.
+- **Documentation fix: `mark_as_handled` does not stop the MQTT publish.** The publish runs before the `on_frame` triggers; `mark_as_handled` only counts the frame as handled in the log. The docs said otherwise. To stop the publish use `repeater: true` or `forward_meters`.
+
+---
+
 ## More settings switchable from the add-on, also with diagnostics off
 
 - **The board's settings and configuration report no longer need `diagnostic_mode`.** `diag/settings` and `diag/config` are published, and `set/...` is listened to, with any `diagnostic_mode`, also `off` (the default). Before, a board with diagnostics off could not be switched from the add-on at all, not even its listen mode.

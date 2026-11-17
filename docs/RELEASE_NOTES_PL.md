@@ -2,6 +2,14 @@
 
 [English version](RELEASE_NOTES.md)
 
+## `repeater: true`, cichy log przy wyłączonym buforze MQTT, poprawka opisu `mark_as_handled`
+
+- **Nowa opcja `repeater` (domyślnie `false`).** Przy `repeater: true` płytka jest tylko odbiornikiem radiowym: bez MQTT w ogóle, czyli bez tematów telegramów, `/rx`, diagnostyki i ustawień, bez bufora i bez statystyk awarii. Ramki wychodzą wyłącznie przez `on_frame`, na przykład przez ESP-NOW do płytki-mostu, która ma sieć i je publikuje. YAML takiej płytki może nie mieć `mqtt:`. Każda inna płytka nadal potrzebuje `mqtt:` i walidacja o tym mówi.
+- **`mqtt_buffer_size: 0` nie zasypuje już logu statystykami bufora.** Bez bufora linie „Statystyki bufora MQTT” co 30 s i lista odrzuconych wg licznika pokazywały każdą ramkę z czasu przerwy brokera jako „eksmisję” z bufora 0/0, a na płytce z wyłączonym MQTT rosły bez końca. Teraz po powrocie brokera pojawia się jedna linia: `MQTT wrocil po N s - M ramek nieopublikowanych (mqtt_buffer_size: 0)`. Z ustawionym buforem nic się nie zmienia.
+- **Poprawka dokumentacji: `mark_as_handled` nie wyłącza publikacji MQTT.** Publikacja odbywa się przed triggerami `on_frame`, a `mark_as_handled` tylko liczy ramkę jako obsłużoną w logu. Dokumentacja twierdziła inaczej. Do wyłączenia publikacji służy `repeater: true` albo `forward_meters`.
+
+---
+
 ## Więcej ustawień przełączanych z dodatku, także przy wyłączonej diagnostyce
 
 - **Ustawienia płytki i raport konfiguracji nie wymagają już `diagnostic_mode`.** `diag/settings` i `diag/config` są publikowane, a `set/...` nasłuchiwane, przy każdym `diagnostic_mode`, także `off` (domyślnym). Wcześniej płytki z wyłączoną diagnostyką w ogóle nie dało się przełączać z dodatku, nawet trybu nasłuchu.
