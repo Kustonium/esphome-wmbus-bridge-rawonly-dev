@@ -71,7 +71,8 @@ mqtt:
   broker: !secret mqtt_broker
   username: !secret mqtt_user
   password: !secret mqtt_password
-  skip_cert_cn_check: true
+  # EN: no skip_cert_cn_check here: since ESPHome 2026.11 it switches TLS on.
+  # PL: bez skip_cert_cn_check: od ESPHome 2026.11 ta opcja włącza TLS.
   port: 1883
 
 # Clock for the node (it has no network): sent in every ACK. Also the key for
