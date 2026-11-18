@@ -39,7 +39,7 @@ inline bool anon_date_key(uint8_t key[8]) {
   const time_t now = ::time(nullptr);  // :: - esphome::time is a namespace
   struct tm t;
   if (gmtime_r(&now, &t) == nullptr || t.tm_year + 1900 < 2024) return false;
-  char d[16];
+  char d[40];  // 3x %d = do 33 B w teorii; 16 wystarcza dla prawdziwej daty, ale gcc o tym nie wie (-Wformat-truncation)
   snprintf(d, sizeof(d), "%04d%02d%02d", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday);
   for (int i = 0; i < 8; i++) key[i] = (uint8_t) (d[i] - '0');
   return true;
