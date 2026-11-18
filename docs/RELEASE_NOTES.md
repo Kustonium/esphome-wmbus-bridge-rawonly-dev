@@ -17,8 +17,9 @@
 
 ---
 
-## Example: ESP-NOW repeater for a receiver without the home network
+## Example: ESP-NOW repeater for a receiver without the home network (in progress)
 
+- **Status: in progress.** Tested on one bench pair (Heltec V4 receiver + ESP32-C3 bridge). The other node files are build-checked in CI only; range tests are still to come.
 - **New [examples/repeater-espnow](../examples/repeater-espnow/README.md).** A receiver next to the meters, out of Wi-Fi reach, forwards every frame over ESP-NOW to a bridge board on the home network, which publishes it to MQTT as that receiver. Node files for every example board, one bridge file for any ESP32. Pairing finds the channel by itself; the node keeps frames in a buffer (1500 in PSRAM) until the bridge confirms they reached MQTT; numbering and `received_at` follow the `wmbus_radio` contract, so the add-on sees an ordinary board. Uses `repeater: true`.
 
 ---

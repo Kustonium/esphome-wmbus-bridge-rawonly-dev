@@ -17,8 +17,9 @@
 
 ---
 
-## Przykład: przedłużacz ESP-NOW dla odbiornika bez sieci domowej
+## Przykład: przedłużacz ESP-NOW dla odbiornika bez sieci domowej (w trakcie)
 
+- **Status: w trakcie.** Sprawdzone na jednej parze na stanowisku (odbiornik Heltec V4 + most ESP32-C3). Pozostałe pliki płytek są tylko sprawdzone kompilacją w CI; testy zasięgu dopiero przed nami.
 - **Nowy [examples/repeater-espnow](../examples/repeater-espnow/README_PL.md).** Odbiornik przy licznikach, poza zasięgiem Wi-Fi, przekazuje każdą ramkę przez ESP-NOW do płytki-mostu w sieci domowej, a most publikuje ją do MQTT jako ten odbiornik. Pliki płytki dla każdej płytki z przykładów, jeden plik mostu dla dowolnego ESP32. Parowanie samo znajduje kanał; płytka trzyma ramki w buforze (1500 w PSRAM), dopóki most nie potwierdzi, że trafiły do MQTT; numeracja i `received_at` zgodne z `wmbus_radio`, więc dodatek widzi zwykłą płytkę. Korzysta z `repeater: true`.
 
 ---
