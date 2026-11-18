@@ -15,7 +15,7 @@
 | `highlight_meters` | empty | public | meter IDs for highlighting and statistics in `normal/debug`; **does not filter MQTT** |
 | `forward_meters` | empty | public | whitelist of IDs published on `wmbus/<topic_name>/telegram`; a list or `true` to use `highlight_meters`; empty forwards everything |
 | `publish_rssi` | `false` | public | publish each meter's latest frame RSSI on `wmbus/<topic_name>/rssi/<meter_id>`; see below |
-| `repeater` | `false` | public | radio front end only: no MQTT at all (no topics, no buffer, no outage statistics), frames leave only through `on_frame` (e.g. ESP-NOW to a bridge board); the YAML may then omit `mqtt:` |
+| `repeater` | `false` | public | radio front end only: no MQTT at all (no topics, no buffer, no outage statistics), frames leave only through `on_frame` (e.g. ESP-NOW to a bridge board, ready setup in [`examples/repeater-espnow`](../examples/repeater-espnow/README.md)); the YAML may then omit `mqtt:` |
 | `receiver_task_stack_size` | `3072` | advanced | separate RX task stack size; range `2048..16384` |
 | `listen_mode_filter_after_parse` | `false` | experimental | more aggressive filtering after parsing; evaluate per meter, not just by the global drop percentage |
 | `use_noise_floor_threshold` | `false` | experimental | derive the weak-start abort threshold from the MEASURED noise floor instead of the average of successful receptions; `noise_floor_dbm` is always measured, this option only uses it |

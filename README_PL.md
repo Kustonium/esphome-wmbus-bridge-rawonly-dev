@@ -216,6 +216,27 @@ Płytka nie ma mostka USB-UART, więc `logger:` wymaga
 więcej niż jedno gniazdo u.FL, a torem sub-GHz jest tylko jedno z nich — złe
 gniazdo daje idealną ciszę bez żadnego błędu.
 
+## Odbiornik bez sieci domowej (most ESP-NOW)
+
+Gdy liczniki są poza zasięgiem Wi-Fi (piwnica, garaż, klatka schodowa),
+odbiornik może tam stać zupełnie bez sieci. Druga płytka ESP32, która jest
+w sieci, czyli **most**, odbiera od niego ramki przez ESP-NOW i publikuje je do
+MQTT jako ten odbiornik; dodatek widzi zwykłą płytkę.
+
+```text
+liczniki --868 MHz--> odbiornik (bez sieci) --ESP-NOW--> most (Wi-Fi domowe) --MQTT--> dodatek
+```
+
+- Po żadnej stronie nic się nie ustawia: odbiornik sam znajduje kanał mostu.
+- Nic nie ginie, gdy most albo MQTT chwilowo nie działa: odbiornik trzyma ramki
+  w buforze (1500 w PSRAM), dopóki most nie potwierdzi, że trafiły do MQTT.
+- Na miejscu telefon połączony z hotspotem odbiornika pokazuje łącze i ostatnie
+  liczniki, a także pozwala wgrać nowy wsad.
+
+Gotowe pliki dla każdej płytki z przykładów i dla mostu:
+[`examples/repeater-espnow/`](examples/repeater-espnow/README_PL.md). Odbiornik
+korzysta z `repeater: true`.
+
 ## Dokumentacja
 
 Główna dokumentacja jest w `docs/`. Przykłady są w `examples/`.
@@ -229,6 +250,7 @@ Zacznij tutaj:
 - [`docs/TROUBLESHOOTING_PL.md`](docs/TROUBLESHOOTING_PL.md)
 - [`docs/DIAGNOSTIC_PL.md`](docs/DIAGNOSTIC_PL.md)
 - [`examples/README_PL.md`](examples/README_PL.md)
+- [`examples/repeater-espnow/README_PL.md`](examples/repeater-espnow/README_PL.md) - odbiornik bez sieci domowej (most ESP-NOW)
 
 Głębsze notatki:
 

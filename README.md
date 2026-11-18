@@ -215,6 +215,27 @@ This board has no USB-serial bridge, so `logger:` needs
 has more than one u.FL socket, and only one of them is the sub-GHz path — the
 wrong socket gives perfect silence with no error anywhere.
 
+## Receiver without the home network (ESP-NOW bridge)
+
+When the meters are out of Wi-Fi reach (basement, garage, stairwell), the
+receiver can stay there with no network at all. A second ESP32 inside the
+network, the **bridge**, takes its frames over ESP-NOW and publishes them to MQTT
+as that receiver; the add-on sees an ordinary board.
+
+```text
+meters --868 MHz--> receiver (no network) --ESP-NOW--> bridge (home Wi-Fi) --MQTT--> add-on
+```
+
+- No setup on either side: the receiver finds the bridge's channel by itself.
+- Nothing is lost while the bridge or MQTT is away: the receiver buffers frames
+  (1500 in PSRAM) until the bridge confirms they reached MQTT.
+- On site, a phone on the receiver's hotspot shows the link and the last meters,
+  and updates the firmware.
+
+Ready files for every example board and the bridge:
+[`examples/repeater-espnow/`](examples/repeater-espnow/README.md). The receiver
+side uses `repeater: true`.
+
 ## Documentation
 
 Main documentation lives in `docs/`. Examples live in `examples/`.
@@ -228,6 +249,7 @@ Start here:
 - [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md)
 - [`docs/DIAGNOSTIC.md`](docs/DIAGNOSTIC.md)
 - [`examples/README.md`](examples/README.md)
+- [`examples/repeater-espnow/README.md`](examples/repeater-espnow/README.md) - receiver without the home network (ESP-NOW bridge)
 
 Deeper notes:
 
