@@ -2,6 +2,14 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## Docs: receivers re-ranked after the shared-antenna and clean-S1 measurements
+
+- **S1:** on a clean signal (attenuator bench, 2026-11-17) `LR1121`, `SX1276` and `SX1262` are within about 1 dB; `CC1101` about 5 dB weaker; one XIAO sample 8 dB weaker. The 2026-08 rule "`SX1276` for S1, `SX1262` for T1" (based on RSSI across boards) is withdrawn; on real meters the `SX1276` lead comes from its preamble error tolerance and from antenna/position. Table and method in CHIP_SELECTION and BENCHMARKS.
+- **`LR1121`:** "came last" is withdrawn - that comparison had a worse antenna position. On one antenna through a splitter it heard the most meters. The T1 attenuator result (SX1262 about 4–5 dB further) and the missing off-rate tolerance stay.
+- Antenna (10 cm instead of 6 cm: Heltec +5 dB, XIAO +3 dB) and the 234 kHz SX1262 default added to CHIP_SELECTION.
+
+---
+
 ## Example: ESP-NOW repeater for a receiver without the home network
 
 - **New [examples/repeater-espnow](../examples/repeater-espnow/README.md).** A receiver next to the meters, out of Wi-Fi reach, forwards every frame over ESP-NOW to a bridge board on the home network, which publishes it to MQTT as that receiver. Node files for every example board, one bridge file for any ESP32. Pairing finds the channel by itself; the node keeps frames in a buffer (1500 in PSRAM) until the bridge confirms they reached MQTT; numbering and `received_at` follow the `wmbus_radio` contract, so the add-on sees an ordinary board. Uses `repeater: true`.
