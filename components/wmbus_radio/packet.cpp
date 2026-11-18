@@ -7,6 +7,11 @@
 
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
+// ESPHome 2026.11 moved str_sprintf()/format_hex() to alloc_helpers.h, which
+// helpers.h no longer pulls in. Older releases have no such header.
+#if __has_include("esphome/core/alloc_helpers.h")
+#include "esphome/core/alloc_helpers.h"
+#endif
 
 #include "decode3of6.h"
 // Lightweight DLL CRC validation/removal helpers (EN13757 CRC16)
