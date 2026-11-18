@@ -2,6 +2,12 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## Example: ESP-NOW repeater for a receiver without the home network
+
+- **New [examples/repeater-espnow](../examples/repeater-espnow/README.md).** A receiver next to the meters, out of Wi-Fi reach, forwards every frame over ESP-NOW to a bridge board on the home network, which publishes it to MQTT as that receiver. Node files for every example board, one bridge file for any ESP32. Pairing finds the channel by itself; the node keeps frames in a buffer (1500 in PSRAM) until the bridge confirms they reached MQTT; numbering and `received_at` follow the `wmbus_radio` contract, so the add-on sees an ordinary board. Uses `repeater: true`.
+
+---
+
 ## Hiding meter IDs on screenshots
 
 - **New: `esphome::wmbus_radio::set_log_anonymize(true/false)`**, meant for a template switch on the board's page. While on, every meter ID in the log is replaced by a stand-in (each digit plus the matching digit of today's UTC date, modulo 10), the raw hex of truncated/dropped packets is hidden, and MQTT, the add-on and `on_frame` keep the real IDs. Without a clock IDs show as `????????`. A cover for forum posts, not encryption. See [DIAGNOSTIC](DIAGNOSTIC.md#hiding-meter-ids-on-screenshots).
