@@ -182,7 +182,8 @@ jobs:
           sed -i "s|path: components$|path: ${GITHUB_WORKSPACE}/tests/tools/wmbus_tx/components|" "$flat"
           echo "FLAT_CONFIG=$flat" >> "$GITHUB_ENV"
           echo "----- effective external_components -----"
-          grep -n -A2 "external_components" "$flat"
+          # The repeater bridge uses no external component, so grep may match nothing.
+          grep -n -A2 "external_components" "$flat" || echo "(none - config uses no external component)"
 
       - name: Compile firmware
         run: esphome compile "$FLAT_CONFIG"
