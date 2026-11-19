@@ -222,6 +222,11 @@ static void send_ack(const uint8_t *to) {
   p.push_back((u >> 24) & 0xFF);
   // "Ready": the bridge has MQTT and can publish. 0 -> the node keeps frames buffered.
   p.push_back(mqtt_ready() ? 1 : 0);
+  // Largest packet this bridge takes (espnow max_payload_size): the node does not send
+  // a frame that would not fit, so a long frame cannot block its buffer.
+  const uint16_t mx = (uint16_t) esphome::espnow::ESPNOW_MAX_DATA_LEN;
+  p.push_back(mx & 0xFF);
+  p.push_back(mx >> 8);
   g.now->send(to, p);  // auto_add_peer adds the node as a peer
 }
 
@@ -235,7 +240,7 @@ inline void setup(esphome::espnow::ESPNowComponent *now, uint64_t *accepted_glob
 static void ensure_set_subscription(const Board &b);
 static void send_set(const uint8_t *to);
 
-static void handle_hello(const uint8_t *src, int rssi, const uint8_t *data, uint8_t size) {
+static void handle_hello(const uint8_t *src, int rssi, const uint8_t *data, uint16_t size) {
   Board &b = touch(src, rssi);
   if (size >= 3) {
     const uint8_t n = data[2];
@@ -280,7 +285,7 @@ static void handle_hello(const uint8_t *src, int rssi, const uint8_t *data, uint
   }
 }
 
-static void handle_data(const uint8_t *src, int rssi, const uint8_t *data, uint8_t size) {
+static void handle_data(const uint8_t *src, int rssi, const uint8_t *data, uint16_t size) {
   // 0x01: [type][seq2][rssi][mode][frame]                  (older, no time)
   // 0x02: [type][seq2][rssi][mode][UTC s u32][ms u16][frame]  (reception time on the node)
   const bool timed = data[0] == 0x02;
@@ -427,7 +432,7 @@ static void publish_blob(const Board &b, int kind) {
   }
 }
 
-static void handle_blob(const uint8_t *src, int rssi, const uint8_t *data, uint8_t size) {
+static void handle_blob(const uint8_t *src, int rssi, const uint8_t *data, uint16_t size) {
   // [0x13][kind 1/2][version][part][parts][bytes]
   if (size < 6) {
     g.n_bad++;
@@ -504,7 +509,8 @@ static void ensure_set_subscription(const Board &b) {
 }
 
 // Called from on_receive and on_broadcast of the espnow component.
-inline void on_packet(const esphome::espnow::ESPNowRecvInfo &info, const uint8_t *data, uint8_t size) {
+// size is uint16_t: with espnow max_payload_size > 250 (ESP-NOW v2) a packet is longer than 255 B.
+inline void on_packet(const esphome::espnow::ESPNowRecvInfo &info, const uint8_t *data, uint16_t size) {
   if (size < 1) return;
   const int rssi = info.rx_ctrl != nullptr ? info.rx_ctrl->rssi : 0;
   switch (data[0]) {

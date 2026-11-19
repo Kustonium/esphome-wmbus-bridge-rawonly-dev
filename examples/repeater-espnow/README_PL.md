@@ -146,8 +146,12 @@ płytce (XIAO ESP32-S3, niektóre wersje T-Beam) dodaje 3–6 dB.
 - **Kontrolki w dodatku:** działa tylko *Żyje*; *Radio*, *Nadąża* i *Odbiór*
   zostają szare, bo płytka nie wysyła podsumowań diagnostyki.
 - **Jedna płytka na most.** Most przekazuje jedną przyjętą płytkę.
-- **Ramki do 239 bajtów** (ESP-NOW mieści 250, minus nagłówek). Ramki wM-Bus T1/C1
-  na typowym osiedlu są dużo krótsze.
+- **Długie ramki wymagają ESPHome 2026.11 na moście.** Ramka wM-Bus ma do 256 B;
+  z nagłówkiem 11 B to więcej niż 250 B klasycznego ESP-NOW, więc most korzysta
+  z ESP-NOW v2 (`espnow: max_payload_size: 300`, ESPHome 2026.11+; ESP-IDF 5.4+
+  na płytce już mówi v2). Przy starszym moście albo domyślnych 250 płytka liczy
+  ramki dłuższe niż 239 B jako utracone („Frames lost”) i pisze o tym w logu,
+  zamiast blokować bufor.
 - **Bez szyfrowania.** Szyfrowanie ESP-NOW jest wyłączone. Liczniki i tak nadają
   otwarcie w eterze; liczniki z AES zostają zaszyfrowane od początku do końca.
 - **Strona płytki nie ma logowania**; chroni ją hasło hotspotu, łącznie z wgrywaniem

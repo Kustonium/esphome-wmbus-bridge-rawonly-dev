@@ -148,8 +148,12 @@ ESP32-S3, some T-Beam versions) adds 3–6 dB.
 - **Board lights in the add-on:** only *Alive* works; *Radio*, *Keeps up* and
   *Reception* stay grey, because the node sends no diagnostic summaries.
 - **One node per bridge.** The bridge forwards one accepted node.
-- **Frames up to 239 bytes** (ESP-NOW carries 250, minus the header). wM-Bus T1/C1
-  frames on a typical site are well below.
+- **Long frames need ESPHome 2026.11 on the bridge.** A wM-Bus frame is up to
+  256 B; with the 11 B header that is more than the 250 B of classic ESP-NOW, so
+  the bridge uses ESP-NOW v2 (`espnow: max_payload_size: 300`, ESPHome 2026.11+;
+  the node's ESP-IDF 5.4+ already speaks v2). With an older bridge or the default
+  250 the node counts frames longer than 239 B as lost ("Frames lost") and says so
+  in its log, instead of blocking its buffer.
 - **Not encrypted.** ESP-NOW encryption is off. The meters transmit in the clear
   over the air anyway; AES-encrypted meters stay encrypted end to end.
 - **The node's page has no login**; the hotspot password protects it, including

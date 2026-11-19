@@ -34,9 +34,14 @@
 //               [uptime s u32][radio frames u32][s since last frame u32, 0xFFFFFFFF = none]
 //               [average RSSI i8, 1 = none][len][radio chip][len][listen mode]
 //   0x11 ACK    bridge->node  [0x11][channel][accepted 0/1][UTC s u32 LE, 0 = unknown][ready 0/1]
+//                             [max packet u16 LE] (missing = 250, an older bridge)
 //               The node has no SNTP; the time sets its clock (received_at, log anonymizing).
 //   0x12 D-ACK  bridge->node  [0x12][seq hi][seq lo] - frame seq published to MQTT
 //   0x02 DATA   node->bridge  [0x02][seq hi][seq lo][RSSI][mode][rx UTC s u32 LE][ms u16 LE][frame]
+//               Up to 11 + 256 B: a wM-Bus frame is at most 256 B. Above 250 B this needs
+//               ESP-NOW v2 (ESP-IDF 5.4+ on both sides) and a bridge built with
+//               espnow max_payload_size >= 267; the bridge says its limit in the ACK and a
+//               frame that would not fit is counted as lost instead of blocking the buffer.
 //   0x01 DATA   older format without the time - the bridge still accepts it.
 //   0x13 BLOB   node->bridge  [0x13][kind 1=config 2=settings][version][part][parts][bytes]
 //               The JSON the component would publish on <diag>/config and <diag>/settings,
@@ -89,15 +94,17 @@ static const uint32_t PROBE_MS = 2000;          // HELLO probe while the link is
 static const size_t BLOB_PART = 200;            // config/settings bytes per packet
 static const uint32_t BLOB_REFRESH_MS = 1800000;  // resend config/settings every 30 min
 static const uint32_t BLOB_WAIT_MS = 5000;      // configuration report not ready yet: retry
+static const size_t MAX_FRAME = 256;            // longest wM-Bus frame (L-field 255 + 1)
+static const size_t DATA_HDR = 11;              // 0x02 DATA header
 static const uint32_t INFLIGHT_TIMEOUT_MS = 500;
 static const uint32_t DATA_ACK_TIMEOUT_MS = 400; // time for the bridge to confirm publishing
 static const size_t BUFFER_FRAMES_PSRAM = 1500; // 1500 x 252 B = ~370 kB PSRAM, 30-60 min of traffic
-static const size_t BUFFER_FRAMES_RAM = 100;    // board without PSRAM: ~25 kB of plain RAM
+static const size_t BUFFER_FRAMES_RAM = 100;    // board without PSRAM: ~27 kB of plain RAM
 
 // A frame in the buffer, without copying.
 struct FrameView {
   const uint8_t *d;
-  uint8_t n;
+  uint16_t n;
   size_t size() const { return n; }
   uint8_t operator[](size_t i) const { return d[i]; }
 };
@@ -106,7 +113,7 @@ struct FrameView {
 // fragmentation, all of it in PSRAM (std::deque<std::vector> would use plain RAM).
 class FrameRing {
  public:
-  static const size_t SLOT = 252;  // [length][up to 250 B of packet]
+  static const size_t SLOT = 2 + 11 + 256;  // [length u16 LE][DATA header + longest wM-Bus frame]
   bool init(size_t want_psram, size_t fallback) {
     this->slots_ = (uint8_t *) heap_caps_malloc(want_psram * SLOT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (this->slots_ != nullptr) {
@@ -124,7 +131,7 @@ class FrameRing {
   bool in_psram() const { return this->psram_; }
   FrameView front() const {
     const uint8_t *s = this->slot_(this->head_);
-    return {s + 1, s[0]};
+    return {s + 2, (uint16_t) (s[0] | (s[1] << 8))};
   }
   void pop_front() {
     if (this->n_ == 0) return;
@@ -132,10 +139,11 @@ class FrameRing {
     this->n_--;
   }
   bool push_back(const std::vector<uint8_t> &p) {
-    if (this->cap_ == 0 || this->n_ >= this->cap_ || p.size() > SLOT - 1) return false;
+    if (this->cap_ == 0 || this->n_ >= this->cap_ || p.size() > SLOT - 2) return false;
     uint8_t *s = this->slot_((this->head_ + this->n_) % this->cap_);
-    s[0] = (uint8_t) p.size();
-    memcpy(s + 1, p.data(), p.size());
+    s[0] = (uint8_t) (p.size() & 0xFF);
+    s[1] = (uint8_t) (p.size() >> 8);
+    memcpy(s + 2, p.data(), p.size());
     this->n_++;
     return true;
   }
@@ -188,6 +196,7 @@ struct Ctx {
   bool c3_known{false};
   bool accepted{false};
   bool c3_no_mqtt{false};
+  uint16_t c3_max{250};         // largest packet the bridge takes (from its ACK)
   int link_rssi{0};
   uint16_t seq{1};  // 1..65535, never 0 - like wmbus_radio (the add-on rejects 0)
   uint32_t sent{0};             // frames delivered (published by the bridge)
@@ -224,6 +233,7 @@ static uint8_t ack_accepted;
 static int8_t ack_rssi;
 static uint32_t ack_time;  // 0 = bridge sent no time
 static uint8_t ack_ready;  // 1 = bridge has MQTT
+static uint16_t ack_max;   // largest packet the bridge takes
 static std::atomic<bool> dack_flag{false};
 static std::atomic<uint16_t> dack_seq{0};
 static std::atomic<int> sent_result{-1};  // -1 none, 0 failure, 1 success (packet in the air)
@@ -261,6 +271,7 @@ static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int le
                          ((uint32_t) data[6] << 24))
                       : 0;
   ack_ready = len >= 8 ? data[7] : 1;
+  ack_max = len >= 10 ? (uint16_t) (data[8] | (data[9] << 8)) : 250;
   ack_flag.store(true);
 }
 
@@ -531,6 +542,10 @@ inline uint8_t loop() {
     g.accepted = ack_accepted != 0;
     g.link_rssi = ack_rssi;
     g.last_ack_ms = now;
+    if (ack_max != g.c3_max)
+      ESP_LOGI(TAG, RPT_TR("bridge takes packets up to %u B (frames up to %u B)", "most przyjmuje pakiety do %u B (ramki do %u B)"),
+               (unsigned) ack_max, (unsigned) (ack_max > DATA_HDR ? ack_max - DATA_HDR : 0));
+    g.c3_max = ack_max;
     // Clock from the bridge: set it when unset or more than 60 s off.
     if (ack_time > 1700000000u) {
       const time_t mine = ::time(nullptr);
@@ -602,6 +617,16 @@ inline uint8_t loop() {
       if (g.accepted && !g.queue.empty() && (int32_t) (now - g.retry_at_ms) >= 0)
       {
         const FrameView f = g.queue.front();
+        if (f.n > g.c3_max) {
+          // An older bridge (or a smaller max_payload_size) cannot take it: retrying would
+          // block every frame behind it. Count it as lost, like a full buffer.
+          g.queue.pop_front();
+          g.dropped++;
+          ESP_LOGW(TAG, RPT_TR("frame of %u B is longer than the bridge takes (%u B) - lost; set espnow max_payload_size: 300 on the bridge",
+                               "ramka %u B dluzsza niz przyjmuje most (%u B) - utracona; ustaw na moscie espnow max_payload_size: 300"),
+                   (unsigned) (f.n - DATA_HDR), (unsigned) g.c3_max);
+          break;
+        }
         transmit(g.c3_mac, f.d, f.n, Flight::DATA);
         break;
       }
@@ -648,7 +673,7 @@ inline void send_frame(const std::vector<uint8_t> &raw, int8_t rssi, uint8_t mod
   g.last[0].rssi = rssi;
   g.last[0].ms = esphome::millis();
 
-  if (!g.started || raw.size() > 239) {  // 250 B ESP-NOW - 11 B header
+  if (!g.started || raw.size() > MAX_FRAME) {  // cannot happen with a valid wM-Bus frame
     g.dropped++;
     return;
   }
@@ -656,7 +681,7 @@ inline void send_frame(const std::vector<uint8_t> &raw, int8_t rssi, uint8_t mod
   gettimeofday(&tv, nullptr);
   const bool clock_ok = tv.tv_sec > 1700000000;
   std::vector<uint8_t> p;
-  p.reserve(raw.size() + 11);
+  p.reserve(raw.size() + DATA_HDR);
   p.push_back(0x02);
   p.push_back(g.seq >> 8);
   p.push_back(g.seq & 0xFF);
