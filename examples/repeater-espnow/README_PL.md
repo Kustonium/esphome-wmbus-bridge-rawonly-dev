@@ -110,6 +110,15 @@ w buforze, ma swój prawdziwy czas.
 w seq), `dup` (rozpoznane ponowienia), `foreign`, RSSI łącza oraz liczniki samej
 płytki `a_dropped`, `a_send_fail`, `a_queue` (przeżywają restart mostu).
 
+**W dodatku.** Płytka dokłada do swojego `HELLO` czas pracy, liczbę ramek, średnie
+RSSI, układ radia i tryb nasłuchu; most co 60 s publikuje je jako
+`wmbus/<płytka>/health` (ten sam puls, który wysyła zwykła płytka) z
+`"via":"espnow"`, swoją nazwą i RSSI łącza. Dodatek pokazuje wtedy, że płytka
+żyje, a jej kafelek ma napis *za mostem ESP-NOW*, np. `SX1262 · t1 · most:
+esphome-wmbus-repeater-bridge · łącze -70 dBm`. Układ i tryb pochodzą z `radio_chip` /
+`radio_listen_mode` w `substitutions` płytki; z tych samych wartości korzysta jej
+`wmbus_radio`.
+
 **Zrzuty ekranu.** Obie płytki mają przełącznik *Anonymize*: numery liczników
 w logu i na stronie są zamazane (ta sama metoda co `set_log_anonymize`, patrz
 [DIAGNOSTIC](../../docs/DIAGNOSTIC_PL.md)). MQTT dostaje prawdziwe numery.
@@ -125,6 +134,10 @@ płytce (XIAO ESP32-S3, niektóre wersje T-Beam) dodaje 3–6 dB.
 
 ## Ograniczenia
 
+- **Bez ustawień z dodatku.** Płytka nie ma MQTT, a most nie przekazuje jej poleceń
+  `set/...`, więc dodatek nie zmieni jej ustawień; zmieniasz je w YAML płytki.
+  Z kontrolek płytki w dodatku działa tylko *Żyje*; *Radio*, *Nadąża* i *Odbiór*
+  zostają szare, bo płytka nie wysyła podsumowań diagnostyki.
 - **Jedna płytka na most.** Most przekazuje jedną przyjętą płytkę.
 - **Ramki do 239 bajtów** (ESP-NOW mieści 250, minus nagłówek). Ramki wM-Bus T1/C1
   na typowym osiedlu są dużo krótsze.

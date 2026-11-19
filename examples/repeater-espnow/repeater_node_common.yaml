@@ -14,6 +14,11 @@
 #   - USB.
 # The hotspot password is the only protection of that page and of the upload field.
 
+substitutions:
+  # Defaults; every node_*.yaml overrides them.
+  radio_chip: unknown
+  radio_listen_mode: unknown
+
 esphome:
   includes:
     - repeater_node.h
@@ -33,7 +38,9 @@ esphome:
             }
     - priority: -100
       then:
-        - lambda: wmbus_repeater_node::start("${devicename}", id(repeater_channel));
+        # radio_chip / radio_listen_mode: only for the health pulse the add-on shows
+        # (each node_*.yaml sets them and uses the same values in its wmbus_radio).
+        - lambda: wmbus_repeater_node::start("${devicename}", id(repeater_channel), "${radio_chip}", "${radio_listen_mode}");
 
 wifi:
   # Hotspot only - the node does not know the home network.

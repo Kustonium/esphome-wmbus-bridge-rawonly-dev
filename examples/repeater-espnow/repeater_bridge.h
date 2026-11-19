@@ -41,6 +41,7 @@
 
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/application.h"
 #include "esphome/components/espnow/espnow_component.h"
 #include "esphome/components/mqtt/mqtt_client.h"
 
@@ -90,6 +91,15 @@ struct Board {
   uint32_t a_fail{0};      // failures on the node (retries, probes)
   uint32_t a_dropped{0};   // frames lost on the node (buffer full / too long)
   uint16_t a_queue{0};     // frames waiting in the node buffer
+  // node health pulse (newer node): published by the bridge as <name>/health
+  bool has_health{false};
+  uint32_t hello_ms{0};      // when the last HELLO with a pulse arrived
+  uint32_t a_uptime_s{0};
+  uint32_t a_rx_total{0};
+  int32_t a_rx_age_s{-1};    // -1 = the node has not received a frame yet
+  int8_t a_rssi{1};          // 1 = none
+  std::string a_chip;
+  std::string a_mode;
 };
 
 struct Ctx {
@@ -203,6 +213,30 @@ static void handle_hello(const uint8_t *src, int rssi, const uint8_t *data, uint
       b.a_dropped = st[4] | (st[5] << 8) | (st[6] << 16) | ((uint32_t) st[7] << 24);
       b.a_queue = st[8] | (st[9] << 8);
       b.has_stats = true;
+      // pulse (optional): uptime u32, rx u32, age of the last frame u32 (0xFFFFFFFF = none),
+      // RSSI i8, [len][chip], [len][listen mode]
+      size_t o = 3 + n + 10;
+      if (o + 13 + 2 <= size) {
+        auto rd32 = [&](size_t i) {
+          return (uint32_t) data[i] | ((uint32_t) data[i + 1] << 8) | ((uint32_t) data[i + 2] << 16) |
+                 ((uint32_t) data[i + 3] << 24);
+        };
+        b.a_uptime_s = rd32(o);
+        b.a_rx_total = rd32(o + 4);
+        const uint32_t age = rd32(o + 8);
+        b.a_rx_age_s = age == 0xFFFFFFFFu ? -1 : (int32_t) age;
+        b.a_rssi = (int8_t) data[o + 12];
+        o += 13;
+        const uint8_t cl = data[o];
+        if (o + 1 + cl + 1 <= size) {
+          b.a_chip.assign((const char *) data + o + 1, cl);
+          o += 1 + cl;
+          const uint8_t ml = data[o];
+          if (o + 1 + ml <= size) b.a_mode.assign((const char *) data + o + 1, ml);
+        }
+        b.has_health = true;
+        b.hello_ms = esphome::millis();
+      }
     }
   }
   if (*g.accepted == 0) accept(src);
@@ -416,6 +450,31 @@ inline std::string candidates_text() {
     s += t;
   }
   return s.empty() ? RPT_TR("none", "brak") : s;
+}
+
+// The accepted node's pulse as wmbus/<name>/health - same fields as wmbus_radio
+// (uptime_s, rx_total, sec_since_last_rx, rssi, chip, listen_mode) plus
+// "via":"espnow", the bridge name and the link RSSI, so the add-on knows the
+// board is behind a bridge (and has no settings it could change). Call every
+// 60 s; nothing is published when the last pulse is older than 60 s (the node is
+// silent - the add-on then sees the pulse stop).
+inline void publish_health() {
+  auto *m = esphome::mqtt::global_mqtt_client;
+  if (m == nullptr || !m->is_connected()) return;
+  for (auto &b : g.boards) {
+    if (!is_accepted(b.mac) || !b.has_health || b.name.empty()) continue;
+    const uint32_t age_ms = esphome::millis() - b.hello_ms;
+    if (age_ms > 60000) continue;
+    const uint32_t age_s = age_ms / 1000U;
+    const long since = b.a_rx_age_s < 0 ? -1L : (long) (b.a_rx_age_s + age_s);
+    char payload[320];
+    snprintf(payload, sizeof(payload),
+             "{\"uptime_s\":%lu,\"rx_total\":%lu,\"sec_since_last_rx\":%ld,\"rssi\":%d,"
+             "\"chip\":\"%s\",\"listen_mode\":\"%s\",\"via\":\"espnow\",\"bridge\":\"%s\",\"link_rssi\":%d}",
+             (unsigned long) (b.a_uptime_s + age_s), (unsigned long) b.a_rx_total, since, (int) b.a_rssi,
+             b.a_chip.c_str(), b.a_mode.c_str(), esphome::App.get_name().c_str(), b.rssi);
+    m->publish("wmbus/" + b.name + "/health", std::string(payload), 0, false);
+  }
 }
 
 inline std::string link_json_and_reset() {

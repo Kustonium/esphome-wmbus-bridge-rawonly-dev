@@ -104,6 +104,7 @@ interval:
           auto *m = mqtt::global_mqtt_client;
           if (m != nullptr && m->is_connected()) m->publish("wmbus/repeater/link", j, 0, false);
           ESP_LOGI("repeater_bridge", "60 s: %s", j.c_str());
+          wmbus_repeater_bridge::publish_health();  // node pulse as wmbus/<node>/health (via espnow)
 
 debug:
   update_interval: 60s

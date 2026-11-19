@@ -30,6 +30,9 @@
 //
 // Packets (first byte = type):
 //   0x10 HELLO  node->bridge  [0x10][ver=1][name len][name][send fails u32][dropped u32][queued u16]
+//               then (optional, the health pulse the bridge publishes as <name>/health):
+//               [uptime s u32][radio frames u32][s since last frame u32, 0xFFFFFFFF = none]
+//               [average RSSI i8, 1 = none][len][radio chip][len][listen mode]
 //   0x11 ACK    bridge->node  [0x11][channel][accepted 0/1][UTC s u32 LE, 0 = unknown][ready 0/1]
 //               The node has no SNTP; the time sets its clock (received_at, log anonymizing).
 //   0x12 D-ACK  bridge->node  [0x12][seq hi][seq lo] - frame seq published to MQTT
@@ -185,6 +188,13 @@ struct Ctx {
   LastMeter last[5]{};
   uint8_t last_n{0};
   bool started{false};
+  // health pulse for the add-on (HELLO -> bridge -> <name>/health)
+  std::string chip{"unknown"};
+  std::string listen_mode{"unknown"};
+  uint32_t rx_total{0};     // frames from the radio (also those that did not fit the buffer)
+  uint32_t last_rx_ms{0};
+  int32_t rssi_avg_x16{0};  // moving average of RSSI x16
+  bool rssi_valid{false};
 };
 static Ctx g;
 
@@ -291,6 +301,18 @@ static bool send_hello(const uint8_t *to) {
   const uint16_t q = (uint16_t) std::min<size_t>(g.queue.size(), 0xFFFF);
   p.push_back(q & 0xFF);
   p.push_back(q >> 8);
+  // health pulse
+  const uint32_t now = esphome::millis();
+  put32(p, now / 1000U);
+  put32(p, g.rx_total);
+  put32(p, g.rx_total > 0 ? (uint32_t) ((now - g.last_rx_ms) / 1000U) : 0xFFFFFFFFu);
+  p.push_back((uint8_t) (int8_t) (g.rssi_valid ? g.rssi_avg_x16 / 16 : 1));
+  const uint8_t cl = (uint8_t) std::min<size_t>(g.chip.size(), 16);
+  p.push_back(cl);
+  p.insert(p.end(), g.chip.begin(), g.chip.begin() + cl);
+  const uint8_t ml = (uint8_t) std::min<size_t>(g.listen_mode.size(), 16);
+  p.push_back(ml);
+  p.insert(p.end(), g.listen_mode.begin(), g.listen_mode.begin() + ml);
   return transmit(to, p.data(), p.size(), Flight::HELLO);
 }
 
@@ -319,9 +341,13 @@ static void start_scan() {
 }
 
 // Call once, after Wi-Fi is up (on_boot with a low priority).
-inline void start(const std::string &topic_name, uint8_t saved_channel) {
+// chip / listen_mode: only for the health pulse in the add-on (e.g. "SX1262", "t1").
+inline void start(const std::string &topic_name, uint8_t saved_channel, const char *chip = nullptr,
+                  const char *listen_mode = nullptr) {
   if (g.started) return;
   g.name = topic_name;
+  if (chip != nullptr) g.chip = chip;
+  if (listen_mode != nullptr) g.listen_mode = listen_mode;
   g.channel = (saved_channel >= 1 && saved_channel <= 13) ? saved_channel : 1;
   esp_err_t err = esp_now_init();
   if (err != ESP_OK) {
@@ -508,6 +534,14 @@ inline uint8_t loop() {
 
 // From on_frame: the frame goes into the buffer; loop() sends it when the link allows.
 inline void send_frame(const std::vector<uint8_t> &raw, int8_t rssi, uint8_t mode, const char *meter_id) {
+  g.rx_total++;
+  g.last_rx_ms = esphome::millis();
+  if (!g.rssi_valid) {
+    g.rssi_avg_x16 = rssi * 16;
+    g.rssi_valid = true;
+  } else {
+    g.rssi_avg_x16 += (rssi * 16 - g.rssi_avg_x16) / 8;
+  }
   if (g.last_n < 5) g.last_n++;
   for (int i = 4; i > 0; i--) g.last[i] = g.last[i - 1];
   snprintf(g.last[0].id, sizeof(g.last[0].id), "%s", meter_id != nullptr ? meter_id : "????????");

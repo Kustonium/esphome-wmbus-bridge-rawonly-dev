@@ -112,6 +112,15 @@ from the bridge), so a frame that waited in the buffer keeps its real time.
 node's own counters `a_dropped`, `a_send_fail`, `a_queue` (they survive a bridge
 restart).
 
+**In the add-on.** The node adds its uptime, frame count, average RSSI, radio chip
+and listen mode to its `HELLO`; the bridge publishes them every 60 s as
+`wmbus/<node>/health` (the same pulse an ordinary board sends) with
+`"via":"espnow"`, its own name and the link RSSI. The add-on then shows the node
+as alive and its tile reads *behind ESP-NOW bridge*, e.g. `SX1262 · t1 · bridge:
+esphome-wmbus-repeater-bridge · link -70 dBm`. Chip and listen mode come from
+`radio_chip` / `radio_listen_mode` in the node's `substitutions`, which its
+`wmbus_radio` uses as well.
+
 **Screenshots.** Both boards have an *Anonymize* switch: meter IDs in the log and
 on the page are masked (same method as `set_log_anonymize`, see
 [DIAGNOSTIC](../../docs/DIAGNOSTIC.md)). MQTT gets the real IDs.
@@ -127,6 +136,11 @@ ESP32-S3, some T-Beam versions) adds 3–6 dB.
 
 ## Limits
 
+- **No settings from the add-on.** The node has no MQTT and the bridge does not
+  pass `set/...` commands on, so the add-on cannot change its settings; change them
+  in the node's YAML. Of the add-on's board lights only *Alive* works; *Radio*,
+  *Keeps up* and *Reception* stay grey, because the node sends no diagnostic
+  summaries.
 - **One node per bridge.** The bridge forwards one accepted node.
 - **Frames up to 239 bytes** (ESP-NOW carries 250, minus the header). wM-Bus T1/C1
   frames on a typical site are well below.
