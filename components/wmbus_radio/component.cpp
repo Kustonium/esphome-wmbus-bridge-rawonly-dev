@@ -1883,8 +1883,11 @@ std::string Radio::settings_json_() {
                         listen_mode_key_(this->radio->get_yaml_listen_mode()) +
                         "\",\"options\":[\"t1\",\"c1\",\"both\",\"s1\"],\"unsupported\":" + unsupported +
                         ",\"weak\":" + weak + ",\"apply\":\"restart\"}" +
-                        this->radio->runtime_settings_json() + this->diag_mode_opt_.json() +
-                        this->publish_rssi_opt_.json() + (chip == "SX1276" ? this->busy_ether_opt_.json() : "") + "}";
+                        this->radio->runtime_settings_json() +
+                        // repeater: true - no MQTT, so diagnostic_mode and publish_rssi change
+                        // nothing on this board; do not offer them (the radio settings stay).
+                        (g_repeater_mode ? "" : this->diag_mode_opt_.json() + this->publish_rssi_opt_.json()) +
+                        (chip == "SX1276" ? this->busy_ether_opt_.json() : "") + "}";
   return payload;
 }
 
@@ -1934,6 +1937,10 @@ void Radio::apply_remote_setting(const std::string &key, const std::string &payl
       this->on_set_radio_setting_(key, payload);
       return;
     }
+  }
+  if (g_repeater_mode && (key == "diagnostic_mode" || key == "publish_rssi")) {
+    ESP_LOGW(TAG, "remote set/%s: ignored with repeater: true (this board has no MQTT)", key.c_str());
+    return;
   }
   if (key == "diagnostic_mode" || key == "publish_rssi" ||
       (key == "sx1276_busy_ether_mode" && strcmp(this->radio->get_name(), "SX1276") == 0)) {
