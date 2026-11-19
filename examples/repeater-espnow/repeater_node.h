@@ -714,7 +714,8 @@ inline std::string status_text() {
   char b[160];
   if (!g.started) return RPT_TR("ESP-NOW did not start", "radio ESP-NOW nie wystartowalo");
   if (g.state == State::LINKED && g.accepted)
-    snprintf(b, sizeof(b), RPT_TR("CONNECTED - channel %u, link %d dBm%s", "POLACZONA - kanal %u, lacze %d dBm%s"), (unsigned) g.channel, g.link_rssi,
+    snprintf(b, sizeof(b), RPT_TR("CONNECTED - channel %u, link %d dBm, frames up to %u B%s", "POLACZONA - kanal %u, lacze %d dBm, ramki do %u B%s"),
+             (unsigned) g.channel, g.link_rssi, (unsigned) (g.c3_max > DATA_HDR ? g.c3_max - DATA_HDR : 0),
              g.queue.size() > 1 ? RPT_TR(", draining buffer", ", oproznia bufor") : "");
   else if (g.state == State::LINKED)
     snprintf(b, sizeof(b), RPT_TR("bridge hears this board but has NOT accepted it - accept it on the bridge page", "most slyszy, ale NIE PRZYJAL tej plytki - przyjmij ja na stronie mostu"));
