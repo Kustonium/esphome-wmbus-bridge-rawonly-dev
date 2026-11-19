@@ -9,6 +9,16 @@
 
 ---
 
+## Przedłużacz ESP-NOW (w trakcie): dodatek widzi płytkę jak zwykłą
+
+- **Jeśli używasz przykładu z 1.36:** dopisz do `secrets.yaml` `repeater_web_username` i `repeater_web_password`, zbuduj most w ESPHome 2026.11 lub nowszym i wgraj obie płytki, najpierw most. Po tej aktualizacji strona płytki pyta o logowanie; bez tego hasła płytkę zaktualizujesz już tylko przez USB.
+- **Puls przez most.** Czas pracy, liczba ramek, RSSI, układ i tryb nasłuchu płytki trafiają do dodatku jako `wmbus/<płytka>/health` z `"via":"espnow"`: płytka jest widoczna jako żywa, a jej kafelek ma napis „za mostem ESP-NOW <most> · łącze -70 dBm” zamiast „starszy firmware”.
+- **Konfiguracja i ustawienia przez most.** Opis konfiguracji i ustawienia radia płytki są widoczne w dodatku; tryb nasłuchu, wzmocnienie RX i długie ramki można tam zmieniać (płytka zapisuje ustawienie i się restartuje, jak płytka z MQTT). Przy `repeater: true` nie są oferowane `diagnostic_mode` i `publish_rssi`, bo taka płytka nie ma MQTT. W komponencie: `remote_config_json()`, `remote_settings_json()`, `apply_remote_setting()`.
+- **Pełne ramki wM-Bus.** Most korzysta z ESP-NOW v2 (`espnow: max_payload_size: 300`), więc mieszczą się ramki do 256 B; wcześniej ramki dłuższe niż 239 B przepadały. Stan płytki pokazuje limit („ramki do 289 B”); przy starszym moście płytka liczy dłuższą ramkę jako utraconą, zamiast blokować bufor.
+- **Logowanie na stronie płytki.** Uwierzytelnianie digest chroni stronę i wgrywanie wsadu; README przykładu ma sekcję o bezpieczeństwie.
+
+---
+
 ## Dokumentacja: nowa ocena odbiorników po pomiarach na wspólnej antenie i czystym S1
 
 - **S1:** na czystym sygnale (stanowisko tłumikowe, 17.11.2026) `LR1121`, `SX1276` i `SX1262` mieszczą się w ok. 1 dB; `CC1101` o ok. 5 dB słabszy; jeden egzemplarz XIAO o 8 dB słabszy. Zasada z 08.2026 „`SX1276` do S1, `SX1262` do T1” (oparta na RSSI z różnych płytek) jest wycofana; na prawdziwych licznikach przewaga `SX1276` wynika z tolerancji błędu detektora preambuły oraz z anteny i miejsca. Tabela i metoda w CHIP_SELECTION i BENCHMARKS.
