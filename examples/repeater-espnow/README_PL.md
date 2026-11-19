@@ -34,7 +34,9 @@ folderu w ESPHome; tak samo YAML mostu z `repeater_bridge.h`.
 W `secrets.yaml`, poza zwykłymi wpisami:
 
 ```yaml
-repeater_ap_password: "co najmniej 8 znaków"   # hotspot płytki
+repeater_ap_password: "12+ znaków"    # hotspot płytki (WPA2)
+repeater_web_username: "admin"        # logowanie na stronie płytki
+repeater_web_password: "12+ znaków"   # chroni też wgrywanie wsadu
 ```
 
 Nie ma pliku płytki dla LilyGO T3 V3 TCXO: jej przykład się nie waliduje
@@ -57,7 +59,7 @@ Nazwą płytki w dodatku jest jej `esphome.name`.
 ## Na miejscu, z telefonem
 
 Płytka zawsze wystawia hotspot nazwany jak ona (`esphome-wmbus-heltec-v4`, …).
-Połącz telefon albo laptopa i otwórz `http://192.168.4.1`:
+Połącz telefon albo laptopa i otwórz `http://192.168.4.1` (zapyta o logowanie strony):
 
 | Encja | Znaczenie |
 |---|---|
@@ -141,6 +143,21 @@ w otwartej przestrzeni i ok. 9 dB w budynku; ściana działowa 3–5 dB, ceglana
 jedno piętro przez klatkę schodową; zewnętrzna antena 2,4 GHz na którejkolwiek
 płytce (XIAO ESP32-S3, niektóre wersje T-Beam) dodaje 3–6 dB.
 
+## Bezpieczeństwo
+
+- **Hotspot:** WPA2 z `repeater_ap_password`. Szyfruje łącze radiowe, więc HTTP
+  strony nie jest czytelne bez tego hasła. Daj 12+ znaków.
+- **Logowanie na stronie:** `repeater_web_username` / `repeater_web_password`,
+  uwierzytelnianie digest: hasło nie leci otwartym tekstem i chroni też
+  **wgrywanie wsadu**, więc samo hasło hotspotu nie wystarczy, żeby wgrać coś na
+  płytkę. Bez hasła strony płytkę zaktualizujesz już tylko przez USB.
+- **Bez HTTPS:** serwer www ESPHome nie obsługuje TLS (a certyfikat samopodpisany
+  zamieniłby to tylko na ostrzeżenie przeglądarki). Ochroną są dwa hasła wyżej.
+- **Płytka nie jest w Twojej sieci:** jedyne wyjście to ESP-NOW do mostu, który
+  przekazuje ramki i nic więcej, więc przejęta płytka nie jest drogą do LAN.
+- **ESP-NOW bez szyfrowania:** niesie ramki, które liczniki i tak nadają otwarcie
+  w eterze; liczniki z AES zostają zaszyfrowane od początku do końca.
+
 ## Ograniczenia
 
 - **Kontrolki w dodatku:** działa tylko *Żyje*; *Radio*, *Nadąża* i *Odbiór*
@@ -152,9 +169,5 @@ płytce (XIAO ESP32-S3, niektóre wersje T-Beam) dodaje 3–6 dB.
   na płytce już mówi v2). Przy starszym moście albo domyślnych 250 płytka liczy
   ramki dłuższe niż 239 B jako utracone („Frames lost”) i pisze o tym w logu,
   zamiast blokować bufor.
-- **Bez szyfrowania.** Szyfrowanie ESP-NOW jest wyłączone. Liczniki i tak nadają
-  otwarcie w eterze; liczniki z AES zostają zaszyfrowane od początku do końca.
-- **Strona płytki nie ma logowania**; chroni ją hasło hotspotu, łącznie z wgrywaniem
-  wsadu.
 - Wymaga komponentu z `repeater:` (`wmbus_radio` z `repeater: true` nic nie
   publikuje przez MQTT; patrz [CONFIG_REFERENCE_MINIMAL](../../docs/CONFIG_REFERENCE_MINIMAL_PL.md)).

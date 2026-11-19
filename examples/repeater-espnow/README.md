@@ -34,7 +34,9 @@ folder in ESPHome; the bridge YAML with `repeater_bridge.h` likewise.
 `secrets.yaml` needs, on top of the usual entries:
 
 ```yaml
-repeater_ap_password: "at least 8 characters"   # the node's hotspot
+repeater_ap_password: "12+ characters"    # the node's hotspot (WPA2)
+repeater_web_username: "admin"            # login of the node's page
+repeater_web_password: "12+ characters"   # also guards the firmware upload
 ```
 
 There is no node file for the LilyGO T3 V3 TCXO: its board example does not
@@ -57,7 +59,7 @@ The node's own `esphome.name` is the board name the add-on shows.
 ## On site, with a phone
 
 The node always runs a hotspot named after the board (`esphome-wmbus-heltec-v4`,
-…). Connect a phone or laptop and open `http://192.168.4.1`:
+…). Connect a phone or laptop and open `http://192.168.4.1` (it asks for the page login):
 
 | Entity | Meaning |
 |---|---|
@@ -143,6 +145,23 @@ concrete floor 15–25 dB. In practice: within a house through a few walls, one
 floor through a stairwell; an external 2.4 GHz antenna on either board (XIAO
 ESP32-S3, some T-Beam versions) adds 3–6 dB.
 
+## Security
+
+- **Hotspot:** WPA2 with `repeater_ap_password`. It encrypts the radio link, so
+  the page's plain HTTP is not readable without that password. Use 12+ characters.
+- **Page login:** `repeater_web_username` / `repeater_web_password`, digest
+  authentication: the password is not sent in clear, and it guards the
+  **firmware upload** too, so knowing the hotspot password alone is not enough to
+  flash the node. Without the page password the node can only be updated over USB.
+- **No HTTPS:** ESPHome's web server does not offer TLS (and a self-signed
+  certificate would only trade this for a browser warning). The two passwords
+  above are the protection.
+- **The node is not on your network:** its only way out is ESP-NOW to the bridge,
+  which forwards frames and nothing else, so a compromised node is no path into
+  your LAN.
+- **ESP-NOW is not encrypted:** it carries the frames the meters already transmit
+  in the clear; AES-encrypted meters stay encrypted end to end.
+
 ## Limits
 
 - **Board lights in the add-on:** only *Alive* works; *Radio*, *Keeps up* and
@@ -154,9 +173,5 @@ ESP32-S3, some T-Beam versions) adds 3–6 dB.
   the node's ESP-IDF 5.4+ already speaks v2). With an older bridge or the default
   250 the node counts frames longer than 239 B as lost ("Frames lost") and says so
   in its log, instead of blocking its buffer.
-- **Not encrypted.** ESP-NOW encryption is off. The meters transmit in the clear
-  over the air anyway; AES-encrypted meters stay encrypted end to end.
-- **The node's page has no login**; the hotspot password protects it, including
-  the firmware upload.
 - Needs the component with `repeater:` (`wmbus_radio` with `repeater: true`
   publishes nothing over MQTT; see [CONFIG_REFERENCE_MINIMAL](../../docs/CONFIG_REFERENCE_MINIMAL.md)).
