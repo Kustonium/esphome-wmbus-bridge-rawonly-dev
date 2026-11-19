@@ -4,7 +4,7 @@
 
 ## `forward_meters` can be replaced at runtime from your own lambda
 
-- **New `set_forward_meters("id1,id2,...")`** (contributed by Alexander Streit). For several boards fed from one meter list kept in wmbusmeters: wire it yourself, e.g. `mqtt: on_message:` with `id(radio).set_forward_meters(x);`. An empty string forwards every frame. The component has no topic or option for this on purpose; nothing changes unless you write the lambda.
+- **New `set_forward_meters("id1,id2,...")`** - the idea and the implementation are the work of **Alexander Streit** ([@probutus](https://github.com/probutus), [PR #40](https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/pull/40)); this release adds only the `<diag>/config` report of the change. For several boards fed from one meter list kept in wmbusmeters: wire it yourself, e.g. `mqtt: on_message:` with `id(radio).set_forward_meters(x);`. An empty string forwards every frame. The component has no topic or option for this on purpose; nothing changes unless you write the lambda.
 - The change is logged, and `<diag>/config` is published again with `forward_meters: … (CHANGED at runtime; YAML: …)`, so a board filtered this way is never filtered silently. The same list arriving again (a retained message after a reconnect) does nothing.
 
 ---

@@ -4,7 +4,7 @@
 
 ## `forward_meters` można podmienić w trakcie pracy własną lambdą
 
-- **Nowe `set_forward_meters("id1,id2,...")`** (autor: Alexander Streit). Dla kilku płytek zasilanych jedną listą liczników z wmbusmeters: podłączasz to sam, np. `mqtt: on_message:` z `id(radio).set_forward_meters(x);`. Pusty tekst przepuszcza każdą ramkę. Komponent celowo nie ma do tego tematu ani opcji; nic się nie zmienia, dopóki nie napiszesz lambdy.
+- **Nowe `set_forward_meters("id1,id2,...")`** - pomysł i implementacja to praca **Alexandra Streita** ([@probutus](https://github.com/probutus), [PR #40](https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/pull/40)); w tym wydaniu dodano tylko zgłaszanie zmiany w `<diag>/config`. Dla kilku płytek zasilanych jedną listą liczników z wmbusmeters: podłączasz to sam, np. `mqtt: on_message:` z `id(radio).set_forward_meters(x);`. Pusty tekst przepuszcza każdą ramkę. Komponent celowo nie ma do tego tematu ani opcji; nic się nie zmienia, dopóki nie napiszesz lambdy.
 - Zmiana trafia do logu, a `<diag>/config` jest publikowane ponownie z `forward_meters: … (CHANGED at runtime; YAML: …)`, więc płytka filtrowana w ten sposób nigdy nie filtruje po cichu. Ta sama lista przysłana ponownie (wiadomość retained po ponownym połączeniu) nic nie robi.
 
 ---
