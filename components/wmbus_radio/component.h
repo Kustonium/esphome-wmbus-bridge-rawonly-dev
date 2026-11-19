@@ -161,6 +161,12 @@ public:
   // provided as a CSV string in YAML (list is joined in python). An empty list
   // forwards every decoded frame, which is the pre-existing behaviour.
   void set_forward_meters_csv(const std::string &csv) { this->forward_meters_csv_ = csv; }
+  // Replace the forward_meters list while running, for a lambda in the user's own
+  // YAML (e.g. mqtt: on_message: -> id(radio).set_forward_meters(x);). Empty
+  // string = forward every decoded frame. The component has no topic of its own
+  // for this on purpose; the change is logged and shown as CHANGED at runtime in
+  // <diag>/config, so a board filtered this way is never filtered silently.
+  void set_forward_meters(const std::string &csv);
   // True when the list was inherited from highlight_meters (forward_meters: true).
   // Only affects logging, so a later edit to highlight_meters that silently changes
   // what gets published is traceable in the boot log.
@@ -580,6 +586,8 @@ protected:
   std::vector<uint32_t> forward_meter_ids_{};
   std::vector<uint32_t> forward_meter_raw_ids_{};
   bool forward_meters_inherited_{false};
+  bool forward_meters_runtime_modified_{false};  // set_forward_meters() was called
+  std::string forward_meters_yaml_line_;           // the report line as YAML set it
 
   // Highlight configuration
   std::string highlight_meters_csv_{};

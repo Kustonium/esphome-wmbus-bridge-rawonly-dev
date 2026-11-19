@@ -2,6 +2,13 @@
 
 [English version](RELEASE_NOTES.md)
 
+## `forward_meters` można podmienić w trakcie pracy własną lambdą
+
+- **Nowe `set_forward_meters("id1,id2,...")`** (autor: Alexander Streit). Dla kilku płytek zasilanych jedną listą liczników z wmbusmeters: podłączasz to sam, np. `mqtt: on_message:` z `id(radio).set_forward_meters(x);`. Pusty tekst przepuszcza każdą ramkę. Komponent celowo nie ma do tego tematu ani opcji; nic się nie zmienia, dopóki nie napiszesz lambdy.
+- Zmiana trafia do logu, a `<diag>/config` jest publikowane ponownie z `forward_meters: … (CHANGED at runtime; YAML: …)`, więc płytka filtrowana w ten sposób nigdy nie filtruje po cichu. Ta sama lista przysłana ponownie (wiadomość retained po ponownym połączeniu) nic nie robi.
+
+---
+
 ## Dokumentacja: nowa ocena odbiorników po pomiarach na wspólnej antenie i czystym S1
 
 - **S1:** na czystym sygnale (stanowisko tłumikowe, 17.11.2026) `LR1121`, `SX1276` i `SX1262` mieszczą się w ok. 1 dB; `CC1101` o ok. 5 dB słabszy; jeden egzemplarz XIAO o 8 dB słabszy. Zasada z 08.2026 „`SX1276` do S1, `SX1262` do T1” (oparta na RSSI z różnych płytek) jest wycofana; na prawdziwych licznikach przewaga `SX1276` wynika z tolerancji błędu detektora preambuły oraz z anteny i miejsca. Tabela i metoda w CHIP_SELECTION i BENCHMARKS.

@@ -2,6 +2,13 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## `forward_meters` can be replaced at runtime from your own lambda
+
+- **New `set_forward_meters("id1,id2,...")`** (contributed by Alexander Streit). For several boards fed from one meter list kept in wmbusmeters: wire it yourself, e.g. `mqtt: on_message:` with `id(radio).set_forward_meters(x);`. An empty string forwards every frame. The component has no topic or option for this on purpose; nothing changes unless you write the lambda.
+- The change is logged, and `<diag>/config` is published again with `forward_meters: … (CHANGED at runtime; YAML: …)`, so a board filtered this way is never filtered silently. The same list arriving again (a retained message after a reconnect) does nothing.
+
+---
+
 ## Docs: receivers re-ranked after the shared-antenna and clean-S1 measurements
 
 - **S1:** on a clean signal (attenuator bench, 2026-11-17) `LR1121`, `SX1276` and `SX1262` are within about 1 dB; `CC1101` about 5 dB weaker; one XIAO sample 8 dB weaker. The 2026-08 rule "`SX1276` for S1, `SX1262` for T1" (based on RSSI across boards) is withdrawn; on real meters the `SX1276` lead comes from its preamble error tolerance and from antenna/position. Table and method in CHIP_SELECTION and BENCHMARKS.

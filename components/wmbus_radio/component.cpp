@@ -189,11 +189,45 @@ static void parse_meter_priority_csv_(const std::string &csv,
   }
 }
 
+// Runtime replacement of forward_meters (contributed by Alexander Streit for
+// several boards fed from one wmbusmeters meter list). Runs on the main loop
+// (an mqtt on_message lambda), the same thread that filters frames, so the
+// lists can be swapped without a lock.
+void Radio::set_forward_meters(const std::string &csv) {
+  // A retained command comes back on every MQTT reconnect: same list, nothing to do.
+  if (this->forward_meters_runtime_modified_ && csv == this->forward_meters_csv_) return;
+  this->forward_meters_csv_ = csv;
+  this->forward_meters_inherited_ = false;
+  this->forward_meters_runtime_modified_ = true;
+  this->forward_meter_ids_.clear();
+  this->forward_meter_raw_ids_.clear();
+  parse_meter_id_csv_(this->forward_meters_csv_, this->forward_meter_ids_, this->forward_meter_raw_ids_,
+                      "forward_meters");
+  if (this->setup_done_) this->recompute_buffer_quotas_();
+  const std::string summary = this->forward_whitelist_summary_();
+  ESP_LOGI(TAG, LOG_TR("forward_meters changed at runtime: %s", "forward_meters zmienione w trakcie pracy: %s"),
+           summary.c_str());
+  // The configuration report is a snapshot from the build; patch its
+  // forward_meters line and publish it again, so the add-on (and anyone reading
+  // <diag>/config) sees that this board is filtered by a list set at runtime.
+  const std::string head = "  forward_meters: ";
+  for (auto &line : this->config_report_) {
+    if (line.rfind(head, 0) != 0) continue;
+    if (this->forward_meters_yaml_line_.empty()) this->forward_meters_yaml_line_ = line.substr(head.size());
+    line = head + summary + " (CHANGED at runtime; YAML: " + this->forward_meters_yaml_line_ + ")";
+    this->config_report_mqtt_pending_ = true;
+    break;
+  }
+}
+
 std::string Radio::forward_whitelist_summary_() const {
   const size_t bcd_n = this->forward_meter_ids_.size();
   const size_t raw_n = this->forward_meter_raw_ids_.size();
   if (bcd_n == 0 && raw_n == 0)
-    return LOG_TR("disabled - every decoded frame is published", "wylaczona - publikowana jest kazda ramka");
+    return this->forward_meters_runtime_modified_
+               ? LOG_TR("disabled (modified at runtime) - every decoded frame is published",
+                        "wylaczona (zmieniona w trakcie pracy) - publikowana jest kazda ramka")
+               : LOG_TR("disabled - every decoded frame is published", "wylaczona - publikowana jest kazda ramka");
 
   // List the parsed IDs, not just the count: a mistyped entry is only obvious
   // when the resulting values are visible. Each form is printed the way the log
@@ -223,8 +257,9 @@ std::string Radio::forward_whitelist_summary_() const {
   if (bcd_n + raw_n > log_limit)
     ids += ", ... (+" + std::to_string(bcd_n + raw_n - log_limit) + ")";
 
-  return std::to_string(bcd_n + raw_n) + " ids" +
-         (this->forward_meters_inherited_ ? " (from highlight_meters)" : "") + ": " + ids;
+  std::string suffix = this->forward_meters_inherited_ ? " (from highlight_meters)" : "";
+  if (this->forward_meters_runtime_modified_) suffix += " (modified at runtime)";
+  return std::to_string(bcd_n + raw_n) + " ids" + suffix + ": " + ids;
 }
 
 static bool radio_supports_preamble_retry_(const RadioTransceiver *radio) {
