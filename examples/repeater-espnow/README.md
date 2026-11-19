@@ -68,7 +68,7 @@ The node always runs a hotspot named after the board (`esphome-wmbus-heltec-v4`,
 | **Link to bridge** | ESP-NOW signal from the bridge |
 | **Frames delivered** | published to MQTT by the bridge |
 | **Buffered / Buffer peak / Buffer capacity** | frames waiting now / the highest so far / the size |
-| **Frames lost (buffer full)** | the only real loss counter |
+| **Frames lost (buffer full / too long)** | the only real loss counter |
 | **Send failures (retried)** | traffic on the link, not losses |
 | **OTA Update** | upload a firmware file (ESPHome: *Install → Manual download → OTA format*). After the upload the page stays on "Update Successful!"; go back to `http://192.168.4.1/` |
 

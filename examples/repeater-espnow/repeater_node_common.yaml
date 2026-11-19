@@ -125,7 +125,7 @@ sensor:
     lambda: return wmbus_repeater_node::capacity();
     update_interval: 60s
   - platform: template
-    name: "Frames lost (buffer full)"
+    name: "Frames lost (buffer full / too long)"
     accuracy_decimals: 0
     lambda: return wmbus_repeater_node::dropped();
     update_interval: 10s

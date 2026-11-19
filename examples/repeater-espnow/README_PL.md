@@ -68,7 +68,7 @@ Połącz telefon albo laptopa i otwórz `http://192.168.4.1` (zapyta o logowanie
 | **Link to bridge** | sygnał ESP-NOW od mostu |
 | **Frames delivered** | opublikowane przez most do MQTT |
 | **Buffered / Buffer peak / Buffer capacity** | czeka teraz / najwięcej dotąd / pojemność |
-| **Frames lost (buffer full)** | jedyny licznik prawdziwych strat |
+| **Frames lost (buffer full / too long)** | jedyny licznik prawdziwych strat |
 | **Send failures (retried)** | ruch na łączu, nie straty |
 | **OTA Update** | wgranie pliku wsadu (ESPHome: *Install → Manual download → format OTA*). Po wgraniu strona zostaje na „Update Successful!”; wróć na `http://192.168.4.1/` |
 
