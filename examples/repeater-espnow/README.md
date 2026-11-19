@@ -121,6 +121,15 @@ esphome-wmbus-repeater-bridge · link -70 dBm`. Chip and listen mode come from
 `radio_chip` / `radio_listen_mode` in the node's `substitutions`, which its
 `wmbus_radio` uses as well.
 
+The node also sends the component's configuration report and settings (the JSON
+a board with MQTT publishes on `<diag>/config` and `<diag>/settings`) in parts
+when its buffer is empty: after start, after the link comes back and every
+30 min. The bridge publishes them retained, so the add-on shows the node's
+configuration and its settings panel. A setting changed in the add-on
+(`wmbus/<node>/set/<key>`) goes through the bridge to the node, which stores it
+and restarts, exactly like a board with MQTT; the bridge repeats the command with
+the next `HELLO`s (up to 3 times) until the node reports its settings again.
+
 **Screenshots.** Both boards have an *Anonymize* switch: meter IDs in the log and
 on the page are masked (same method as `set_log_anonymize`, see
 [DIAGNOSTIC](../../docs/DIAGNOSTIC.md)). MQTT gets the real IDs.
@@ -136,11 +145,8 @@ ESP32-S3, some T-Beam versions) adds 3–6 dB.
 
 ## Limits
 
-- **No settings from the add-on.** The node has no MQTT and the bridge does not
-  pass `set/...` commands on, so the add-on cannot change its settings; change them
-  in the node's YAML. Of the add-on's board lights only *Alive* works; *Radio*,
-  *Keeps up* and *Reception* stay grey, because the node sends no diagnostic
-  summaries.
+- **Board lights in the add-on:** only *Alive* works; *Radio*, *Keeps up* and
+  *Reception* stay grey, because the node sends no diagnostic summaries.
 - **One node per bridge.** The bridge forwards one accepted node.
 - **Frames up to 239 bytes** (ESP-NOW carries 250, minus the header). wM-Bus T1/C1
   frames on a typical site are well below.

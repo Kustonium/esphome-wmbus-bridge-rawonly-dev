@@ -38,6 +38,13 @@
 //   0x12 D-ACK  bridge->node  [0x12][seq hi][seq lo] - frame seq published to MQTT
 //   0x02 DATA   node->bridge  [0x02][seq hi][seq lo][RSSI][mode][rx UTC s u32 LE][ms u16 LE][frame]
 //   0x01 DATA   older format without the time - the bridge still accepts it.
+//   0x13 BLOB   node->bridge  [0x13][kind 1=config 2=settings][version][part][parts][bytes]
+//               The JSON the component would publish on <diag>/config and <diag>/settings,
+//               in parts of up to BLOB_PART bytes; the bridge joins them and publishes them
+//               retained as wmbus/<name>/diag/config and .../diag/settings.
+//   0x14 SET    bridge->node  [0x14][key len][key][value len][value]
+//               A wmbus/<name>/set/<key> message from the add-on; the node hands it to the
+//               component exactly as a board with MQTT would (stored, then a restart).
 //
 // Log/status language: Polish with `log_language: pl` in wmbus_radio, English otherwise.
 
@@ -58,6 +65,7 @@
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
 #include "esphome/components/wmbus_radio/log_anon.h"  // same ID masking as the component log
+#include "esphome/components/wmbus_radio/component.h"  // global_radio: config, settings, set/<key>
 
 namespace wmbus_repeater_node {
 
@@ -78,6 +86,9 @@ static const uint32_t RESCAN_AFTER_MS = 120000; // search again after this long 
 static const uint8_t FAIL_LIMIT = 3;            // failures in a row = link lost
 static const uint32_t RETRY_MS = 50;            // retry gap while the link is still up
 static const uint32_t PROBE_MS = 2000;          // HELLO probe while the link is lost
+static const size_t BLOB_PART = 200;            // config/settings bytes per packet
+static const uint32_t BLOB_REFRESH_MS = 1800000;  // resend config/settings every 30 min
+static const uint32_t BLOB_WAIT_MS = 5000;      // configuration report not ready yet: retry
 static const uint32_t INFLIGHT_TIMEOUT_MS = 500;
 static const uint32_t DATA_ACK_TIMEOUT_MS = 400; // time for the bridge to confirm publishing
 static const size_t BUFFER_FRAMES_PSRAM = 1500; // 1500 x 252 B = ~370 kB PSRAM, 30-60 min of traffic
@@ -149,7 +160,7 @@ class FrameRing {
 };
 
 enum class State : uint8_t { BOOT, SCAN, PAUSE, LINKED, LOST };
-enum class Flight : uint8_t { NONE, DATA, HELLO };
+enum class Flight : uint8_t { NONE, DATA, HELLO, BLOB };
 
 struct LastMeter {
   char id[9];
@@ -195,6 +206,13 @@ struct Ctx {
   uint32_t last_rx_ms{0};
   int32_t rssi_avg_x16{0};  // moving average of RSSI x16
   bool rssi_valid{false};
+  // config / settings for the add-on (0x13), sent part by part when the link is idle
+  std::string blob[2];      // [0] config JSON, [1] settings JSON
+  uint8_t blob_kind{0};     // 0 or 1 while sending
+  uint8_t blob_part{0};
+  uint8_t blob_version{0};
+  bool blob_sending{false};
+  uint32_t blob_due_ms{0};  // next (re)send; 0 = as soon as linked
 };
 static Ctx g;
 
@@ -210,8 +228,25 @@ static std::atomic<bool> dack_flag{false};
 static std::atomic<uint16_t> dack_seq{0};
 static std::atomic<int> sent_result{-1};  // -1 none, 0 failure, 1 success (packet in the air)
 static std::atomic<uint32_t> tx_fail{0};  // all failures (frames + HELLO)
+// set/<key> from the bridge (0x14), applied in loop()
+static std::atomic<bool> set_flag{false};
+static char set_key[33];
+static char set_value[201];
 
 static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (len >= 3 && data[0] == 0x14) {  // set/<key> from the add-on, via the bridge
+    if (set_flag.load() || !g.c3_known || memcmp(info->src_addr, g.c3_mac, 6) != 0) return;
+    const int kl = data[1];
+    if (kl < 1 || kl > 32 || 2 + kl + 1 > len) return;
+    const int vl = data[2 + kl];
+    if (vl > 200 || 3 + kl + vl > len) return;
+    memcpy(set_key, data + 2, kl);
+    set_key[kl] = '\0';
+    memcpy(set_value, data + 3 + kl, vl);
+    set_value[vl] = '\0';
+    set_flag.store(true);
+    return;
+  }
   if (len >= 3 && data[0] == 0x12) {  // frame published confirmation
     dack_seq.store(((uint16_t) data[1] << 8) | data[2]);
     dack_flag.store(true);
@@ -325,6 +360,11 @@ static void set_lost(uint32_t now, const char *why) {
 }
 
 static void set_linked(uint32_t now) {
+  if (g.state == State::LOST) {
+    // The bridge may have restarted meanwhile: send config/settings again, whole.
+    g.blob_sending = false;
+    g.blob_due_ms = now;
+  }
   if (g.state == State::LOST)
     ESP_LOGI(TAG, RPT_TR("link to bridge back after %u s - %u frame(s) in the buffer", "lacze z mostem wrocilo po %u s - w buforze %u ramek"), (unsigned) ((now - g.lost_since_ms) / 1000),
              (unsigned) g.queue.size());
@@ -363,6 +403,50 @@ inline void start(const std::string &topic_name, uint8_t saved_channel, const ch
   start_scan();  // start from the last known channel
   ESP_LOGI(TAG, RPT_TR("start: name '%s', looking for the bridge from channel %u, buffer %u frames (%s)", "start: nazwa '%s', szukam mostu od kanalu %u, bufor %u ramek (%s)"), g.name.c_str(),
            (unsigned) g.channel, (unsigned) g.queue.capacity(), g.queue.in_psram() ? "PSRAM" : "RAM");
+}
+
+// Config / settings for the add-on: taken from the component when a send starts,
+// so a refresh always carries what is in effect now.
+static bool blob_prepare() {
+  auto *radio = esphome::wmbus_radio::global_radio;
+  if (radio == nullptr) return false;
+  g.blob[0] = radio->remote_config_json();
+  g.blob[1] = radio->remote_settings_json();
+  if (g.blob[0].empty() || g.blob[1].empty()) return false;
+  g.blob_kind = 0;
+  g.blob_part = 0;
+  g.blob_version++;
+  g.blob_sending = true;
+  return true;
+}
+
+static uint8_t blob_parts(const std::string &b) { return (uint8_t) ((b.size() + BLOB_PART - 1) / BLOB_PART); }
+
+static void blob_send_part() {
+  const std::string &b = g.blob[g.blob_kind];
+  const uint8_t parts = blob_parts(b);
+  const size_t off = (size_t) g.blob_part * BLOB_PART;
+  const size_t n = std::min(BLOB_PART, b.size() - off);
+  std::vector<uint8_t> p;
+  p.reserve(n + 5);
+  p.push_back(0x13);
+  p.push_back(g.blob_kind + 1);
+  p.push_back(g.blob_version);
+  p.push_back(g.blob_part);
+  p.push_back(parts);
+  p.insert(p.end(), b.begin() + off, b.begin() + off + n);
+  transmit(g.c3_mac, p.data(), p.size(), Flight::BLOB);
+}
+
+static void blob_advance(uint32_t now) {
+  if (++g.blob_part < blob_parts(g.blob[g.blob_kind])) return;
+  g.blob_part = 0;
+  if (++g.blob_kind < 2) return;
+  g.blob_sending = false;
+  g.blob[0].clear();
+  g.blob[1].clear();
+  g.blob_due_ms = now + BLOB_REFRESH_MS;
+  ESP_LOGD(TAG, RPT_TR("configuration and settings sent to the bridge", "konfiguracja i ustawienia wyslane do mostu"));
 }
 
 // Outcome of the packet in the air.
@@ -406,6 +490,7 @@ static void settle_flight(uint32_t now) {
   // A broadcast while scanning has no radio ACK - its outcome says nothing about the bridge.
   if (g.state == State::SCAN || g.state == State::PAUSE) return;
 
+  if (ok && kind == Flight::BLOB) blob_advance(now);
   if (ok) {
     if (kind == Flight::DATA && !g.queue.empty()) {
       g.queue.pop_front();
@@ -431,6 +516,13 @@ inline uint8_t loop() {
   uint8_t to_save = 0;
 
   settle_flight(now);
+
+  if (set_flag.load()) {
+    auto *radio = esphome::wmbus_radio::global_radio;
+    ESP_LOGI(TAG, RPT_TR("set/%s = '%s' from the add-on (via the bridge)", "set/%s = '%s' z dodatku (przez most)"), set_key, set_value);
+    if (radio != nullptr) radio->apply_remote_setting(set_key, set_value);
+    set_flag.store(false);
+  }
 
   if (ack_flag.load()) {
     memcpy(g.c3_mac, ack_mac, 6);
@@ -511,6 +603,13 @@ inline uint8_t loop() {
       {
         const FrameView f = g.queue.front();
         transmit(g.c3_mac, f.d, f.n, Flight::DATA);
+        break;
+      }
+      // Frames first; config/settings only when the buffer is empty.
+      if (g.accepted && g.queue.empty() && (int32_t) (now - g.retry_at_ms) >= 0) {
+        if (!g.blob_sending && (int32_t) (now - g.blob_due_ms) >= 0 && !blob_prepare())
+          g.blob_due_ms = now + BLOB_WAIT_MS;
+        if (g.blob_sending) blob_send_part();
       }
       break;
 

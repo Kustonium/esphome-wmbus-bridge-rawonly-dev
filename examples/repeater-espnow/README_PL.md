@@ -119,6 +119,15 @@ esphome-wmbus-repeater-bridge · łącze -70 dBm`. Układ i tryb pochodzą z `ra
 `radio_listen_mode` w `substitutions` płytki; z tych samych wartości korzysta jej
 `wmbus_radio`.
 
+Płytka wysyła też opis konfiguracji i ustawienia komponentu (ten JSON, który płytka
+z MQTT publikuje na `<diag>/config` i `<diag>/settings`) w kawałkach, gdy jej bufor
+jest pusty: po starcie, po powrocie łącza i co 30 min. Most publikuje je jako
+retained, więc dodatek pokazuje konfigurację płytki i jej panel ustawień.
+Ustawienie zmienione w dodatku (`wmbus/<płytka>/set/<klucz>`) idzie przez most do
+płytki, która je zapisuje i się restartuje, tak samo jak płytka z MQTT; most
+powtarza polecenie przy kolejnych `HELLO` (do 3 razy), dopóki płytka znów nie
+zgłosi ustawień.
+
 **Zrzuty ekranu.** Obie płytki mają przełącznik *Anonymize*: numery liczników
 w logu i na stronie są zamazane (ta sama metoda co `set_log_anonymize`, patrz
 [DIAGNOSTIC](../../docs/DIAGNOSTIC_PL.md)). MQTT dostaje prawdziwe numery.
@@ -134,9 +143,7 @@ płytce (XIAO ESP32-S3, niektóre wersje T-Beam) dodaje 3–6 dB.
 
 ## Ograniczenia
 
-- **Bez ustawień z dodatku.** Płytka nie ma MQTT, a most nie przekazuje jej poleceń
-  `set/...`, więc dodatek nie zmieni jej ustawień; zmieniasz je w YAML płytki.
-  Z kontrolek płytki w dodatku działa tylko *Żyje*; *Radio*, *Nadąża* i *Odbiór*
+- **Kontrolki w dodatku:** działa tylko *Żyje*; *Radio*, *Nadąża* i *Odbiór*
   zostają szare, bo płytka nie wysyła podsumowań diagnostyki.
 - **Jedna płytka na most.** Most przekazuje jedną przyjętą płytkę.
 - **Ramki do 239 bajtów** (ESP-NOW mieści 250, minus nagłówek). Ramki wM-Bus T1/C1

@@ -60,6 +60,7 @@ namespace wmbus_radio {
 static const char *TAG = "wmbus";
 
 bool g_repeater_mode = false;  // see mqtt_access.h
+Radio *global_radio = nullptr;  // see component.h
 bool g_log_anonymize = false;  // see log_anon.h
 
 // Logging policy for this component:
@@ -248,6 +249,7 @@ static inline uint8_t rssi_abort_bucket_(int rssi_dbm) {
 }
 
 void Radio::setup() {
+  global_radio = this;
   // One random identifier per boot separates sequence-number domains. It is
   // metadata only; no radio setting or packet path depends on its value.
   this->rx_boot_id_ = esp_random();
@@ -802,23 +804,7 @@ if (!this->boot_log_done_ && this->radio != nullptr) {
     if (this->config_report_mqtt_pending_ && !this->config_report_.empty()) {
       // Usually sent before the boot log (~10 s after setup), so the stored
       // listen_mode goes into the report here too (idempotent).
-      this->apply_settings_to_config_report_();
-      std::string cfg_payload = "{\"radio\":\"";
-      cfg_payload += (this->radio != nullptr) ? this->radio->get_name() : "unknown";
-      cfg_payload += "\",\"lines\":[";
-      bool cfg_first = true;
-      for (const auto &cfg_line : this->config_report_) {
-        if (!cfg_first) cfg_payload += ",";
-        cfg_first = false;
-        cfg_payload += "\"";
-        for (char ch : cfg_line) {
-          if (ch == '\\' || ch == '\"') cfg_payload += '\\';
-          if (ch == '\n' || ch == '\r' || ch == '\t') { cfg_payload += ' '; continue; }
-          cfg_payload += ch;
-        }
-        cfg_payload += "\"";
-      }
-      cfg_payload += "]}";
+      std::string cfg_payload = this->config_json_();
       std::string cfg_topic = this->settings_topic_("config");
       mqtt->publish(cfg_topic, cfg_payload, this->diag_qos_, true);
       this->config_report_mqtt_pending_ = false;
@@ -1881,6 +1867,11 @@ void Radio::publish_settings_() {
     this->settings_publish_pending_ = true;
     return;
   }
+  mqtt->publish(this->settings_topic_("settings"), this->settings_json_(), this->diag_qos_, true);
+}
+
+// <diag>/settings payload (also remote_settings_json()).
+std::string Radio::settings_json_() {
   const std::string chip = this->radio->get_name();
   // S1 on CC1101 has its own modem profile since 2026-11-13 but is still
   // experimental, so it is offered with a warning like SX1262's weaker S1.
@@ -1894,7 +1885,62 @@ void Radio::publish_settings_() {
                         ",\"weak\":" + weak + ",\"apply\":\"restart\"}" +
                         this->radio->runtime_settings_json() + this->diag_mode_opt_.json() +
                         this->publish_rssi_opt_.json() + (chip == "SX1276" ? this->busy_ether_opt_.json() : "") + "}";
-  mqtt->publish(this->settings_topic_("settings"), payload, this->diag_qos_, true);
+  return payload;
+}
+
+// <diag>/config payload (also remote_config_json()): the effective
+// configuration as the boot log shows it, with the stored settings applied.
+std::string Radio::config_json_() {
+  this->apply_settings_to_config_report_();
+  std::string cfg_payload = "{\"radio\":\"";
+  cfg_payload += (this->radio != nullptr) ? this->radio->get_name() : "unknown";
+  cfg_payload += "\",\"lines\":[";
+  bool cfg_first = true;
+  for (const auto &cfg_line : this->config_report_) {
+    if (!cfg_first) cfg_payload += ",";
+    cfg_first = false;
+    cfg_payload += "\"";
+    for (char ch : cfg_line) {
+      if (ch == '\\' || ch == '\"') cfg_payload += '\\';
+      if (ch == '\n' || ch == '\r' || ch == '\t') { cfg_payload += ' '; continue; }
+      cfg_payload += ch;
+    }
+    cfg_payload += "\"";
+  }
+  cfg_payload += "]}";
+  return cfg_payload;
+}
+
+std::string Radio::remote_config_json() {
+  if (this->config_report_.empty()) return "";
+  return this->config_json_();
+}
+
+std::string Radio::remote_settings_json() {
+  if (this->radio == nullptr) return "";
+  return this->settings_json_();
+}
+
+// Same dispatch as the <topic>/set/<key> subscriptions in loop(): only the keys
+// a board with MQTT would subscribe to.
+void Radio::apply_remote_setting(const std::string &key, const std::string &payload) {
+  if (this->radio == nullptr) return;
+  if (key == "listen_mode") {
+    this->on_set_listen_mode_(payload);
+    return;
+  }
+  for (const auto &k : this->radio->runtime_setting_keys()) {
+    if (k == key) {
+      this->on_set_radio_setting_(key, payload);
+      return;
+    }
+  }
+  if (key == "diagnostic_mode" || key == "publish_rssi" ||
+      (key == "sx1276_busy_ether_mode" && strcmp(this->radio->get_name(), "SX1276") == 0)) {
+    this->on_set_component_setting_(key, payload);
+    return;
+  }
+  ESP_LOGW(TAG, "remote set/%s: unknown setting", key.c_str());
 }
 
 runtime_settings::Option *Radio::component_option_(const std::string &key) {
