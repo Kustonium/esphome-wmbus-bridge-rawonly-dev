@@ -231,6 +231,10 @@ inline void setup(esphome::espnow::ESPNowComponent *now, uint64_t *accepted_glob
   g.boot_id = esp_random();
 }
 
+// Defined further down (add-on settings through the bridge).
+static void ensure_set_subscription(const Board &b);
+static void send_set(const uint8_t *to);
+
 static void handle_hello(const uint8_t *src, int rssi, const uint8_t *data, uint8_t size) {
   Board &b = touch(src, rssi);
   if (size >= 3) {
