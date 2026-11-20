@@ -11,6 +11,7 @@
 
 [![CI][ci-shield]][ci]
 [![Aktywność commitów][commits-shield]][commits]
+[![Wersja ESPHome budowana w CI][esphome-shield]][ci]
 
 <!-- Dynamiczne plakietki wskazują repozytorium stable, z którego instalują
      użytkownicy. Przy przenoszeniu dokumentacji z dev zachowaj te adresy.
@@ -27,6 +28,7 @@
 [lr1121-shield]: https://img.shields.io/badge/LR1121-experimental-yellow.svg
 [ci-shield]: https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/actions/workflows/ci.yml/badge.svg
 [ci]: https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/actions/workflows/ci.yml
+[esphome-shield]: https://img.shields.io/pypi/v/esphome?label=ESPHome%20%28CI%20nightly%29&logo=esphome&color=blue
 [commits-shield]: https://img.shields.io/github/commit-activity/y/Kustonium/esphome-wmbus-bridge-rawonly
 [commits]: https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/commits/main
 
