@@ -42,7 +42,7 @@ RAW-to-MQTT wireless M-Bus / wM-Bus radio bridge for ESPHome, focused on SX1262 
 > [**Quick start — meters in HA in 15 minutes**](docs/QUICKSTART.md): broker, add-on, a ready
 > board YAML and adding meters with a click. The rest of this README is for when you want more.
 
-> ✅ **Verified on ESPHome 2026.7.0** — clean builds on all three test boards in CI.
+> ✅ **Builds on ESPHome 2026.11** — every example board, checked in CI on each change and nightly against the latest stable ESPHome. The development repository also builds nightly against the newest ESPHome **beta**, to catch compile breaks before a release. That catches only compile errors: a change in behaviour that still compiles (such as `skip_cert_cn_check` turning TLS on in 2026.11) shows up only in the beta changelog.
 
 ## What this project is
 

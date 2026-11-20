@@ -1,0 +1,102 @@
+name: CI (ESPHome beta)
+
+# Early warning, not a gate. ESPHome 2026.11.0 broke the build (helpers moved
+# to another header) and ci.yml, which installs the latest stable ESPHome,
+# only saw it on release day - together with the users. ESPHome publishes
+# betas for a week or more before a release; building against the newest one
+# catches compile breaks while there is still time to fix them.
+#
+# A separate workflow on purpose: a red beta build makes this run fail, so
+# GitHub sends the usual failure e-mail, while ci.yml (and the promote, which
+# never looks at this file) stay untouched. Lives in the dev repository only -
+# promote.yml syncs ci.yml by name, not this file.
+#
+# What it does NOT catch: behaviour changes that still compile, such as
+# skip_cert_cn_check turning TLS on in 2026.11. Those only show up in the beta
+# changelog.
+
+on:
+  schedule:
+    - cron: "41 4 * * *"   # after ci.yml's 04:23 run, odd minute (cron backlog at :00)
+  workflow_dispatch: {}
+
+jobs:
+  firmware-build-beta:
+    if: github.repository == 'Kustonium/esphome-wmbus-bridge-rawonly-dev'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One build per chip family and framework path is enough: a moved
+        # helper or a renamed API breaks every configuration that uses it.
+        include:
+          - name: SX1276 / esp32
+            config: examples/SX1276/HeltecV2/SX1276_Heltec_V2_clean.yaml
+          - name: SX1262 / esp32-s3
+            config: examples/SX1262/Heltec V3/SX1262_Heltec_V3_clean.yaml
+          - name: CC1101 / esp32-c3
+            config: examples/CC1101/CC1101_clean.yaml
+          - name: LR1121 / esp32-s3
+            config: examples/LR1121/Waveshare ESP32-S3-LR1121-HF/LR1121_Waveshare_HF_clean.yaml
+          - name: repeater example, bridge (espnow, esp32-c3)
+            config: examples/repeater-espnow/bridge_esp32c3.yaml
+    name: beta build (${{ matrix.name }})
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO and ESPHome (beta)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-beta-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('.github/workflows/ci-beta.yml') }}
+          restore-keys: |
+            pio-beta-${{ runner.os }}-${{ matrix.config }}-
+            pio-beta-${{ runner.os }}-
+
+      - name: Install ESPHome (newest pre-release; stable when there is no beta)
+        run: |
+          pip install --pre --upgrade esphome
+          echo "ESPHOME_VERSION=$(esphome version | sed 's/^Version: //')" >> "$GITHUB_ENV"
+
+      # Same preparation as ci.yml's firmware-build; keep the two in step.
+      - name: Prepare config (local component + dummy secrets)
+        env:
+          CONFIG: ${{ matrix.config }}
+        run: |
+          mkdir -p ci-build
+          flat="ci-build/$(basename "$CONFIG")"
+          cp "$CONFIG" "$flat"
+          cp "$(dirname "$CONFIG")"/*.h ci-build/ 2>/dev/null || true
+          cp "$(dirname "$CONFIG")"/*_common.yaml ci-build/ 2>/dev/null || true
+          cat > ci-build/secrets.yaml <<'EOF'
+          wifi_ssid: "ci-build"
+          wifi_password: "ci-build-password"
+          mqtt_broker: "127.0.0.1"
+          mqtt_user: "ci"
+          mqtt_password: "ci"
+          repeater_ap_password: "ci-build-password"
+          repeater_web_username: "ci"
+          repeater_web_password: "ci-build-password"
+          EOF
+          sed -i "s|github://Kustonium/esphome-wmbus-bridge-rawonly@main|{ type: local, path: ${GITHUB_WORKSPACE}/components }|" "$flat"
+          sed -i "/refresh: 0s/d" "$flat"
+          echo "FLAT_CONFIG=$flat" >> "$GITHUB_ENV"
+
+      - name: Compile firmware
+        id: compile
+        run: esphome compile "$FLAT_CONFIG"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.compile.outcome }}" = "success" ]; then r="build OK"; else r="build FAILED"; fi
+          echo "ESPHome ${ESPHOME_VERSION:-unknown} - ${{ matrix.name }}: ${r}" >> "$GITHUB_STEP_SUMMARY"
