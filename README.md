@@ -272,7 +272,7 @@ Older detailed README content was moved to [`docs/README_FULL.md`](docs/README_F
 
 This project is intentionally RAW-only and is not a general ESPHome/Home Assistant support desk.
 
-Before opening an issue, read [`SUPPORT.md`](SUPPORT.md).
+Before opening an issue, read [`SUPPORT.md`](SUPPORT.md). Security problems and what the board sends over MQTT: [`SECURITY.md`](SECURITY.md).
 
 ## Contributing
 

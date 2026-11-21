@@ -271,7 +271,7 @@ Starszy szczegółowy opis README przeniesiono do [`docs/README_FULL_PL.md`](doc
 
 Ten projekt jest celowo RAW-only i nie jest ogólnym helpdeskiem ESPHome/Home Assistant.
 
-Przed otwarciem issue przeczytaj [`SUPPORT_PL.md`](SUPPORT_PL.md).
+Przed otwarciem issue przeczytaj [`SUPPORT_PL.md`](SUPPORT_PL.md). Problemy bezpieczeństwa i to, co płytka wysyła przez MQTT: [`SECURITY_PL.md`](SECURITY_PL.md).
 
 ## Wkład w projekt
 
