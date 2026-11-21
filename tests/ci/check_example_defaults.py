@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Keep the commented options in the example YAMLs honest.
 
 The `*_commented.yaml` examples show optional settings as commented-out lines so

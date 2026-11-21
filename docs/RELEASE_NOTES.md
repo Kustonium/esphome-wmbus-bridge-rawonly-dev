@@ -2,6 +2,12 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## Licensing: SPDX header in every source file, contributors listed
+
+- Every component, example and test source file now carries the `GPL-3.0-or-later` SPDX line (three component files and five test files had none). `NOTICE` and [ATTRIBUTION](ATTRIBUTION.md) list the current receive paths (SX1262, SX1276, LR1121, CC1101; T1/C1 and S1; the ESP-NOW repeater) and gain a contributors section. No code change.
+
+---
+
 ## SX1262 in `c1`/`both` stops every capture at the frame's length; the repeater bridge publishes with QoS 1
 
 - **SX1262 with `long_gfsk_packets: true` in `c1` or `both`:** the long-frame stream path cut a capture at the frame's length only in `t1` and `s1`. In `c1`/`both` every capture ran to the 512-byte limit, which kept the long-frame mode on for good and held the receiver for the whole limit on every frame. Now the capture ends with the frame (C1 or T1 told apart by the first byte, as the LR1121 already did); a capture whose length cannot be read still runs to the limit as before. SPI reads drop by about 60 %, reception stays the same on the reporter's site. Found, fixed and tested by **[@hackbaellchen](https://github.com/hackbaellchen)** ([issue #45](https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/issues/45)), including a host test of the lengths. With `long_gfsk_packets: false` (the default) nothing changes.
