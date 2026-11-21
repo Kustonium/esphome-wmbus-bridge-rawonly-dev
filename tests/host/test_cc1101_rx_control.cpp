@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "cc1101_rx_control.h"
 #include <cassert>
 #include <cstdint>
