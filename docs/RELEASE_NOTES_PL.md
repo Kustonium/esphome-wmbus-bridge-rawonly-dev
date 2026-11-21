@@ -2,6 +2,12 @@
 
 [English version](RELEASE_NOTES.md)
 
+## Licencja: nagłówek SPDX w każdym pliku źródłowym, lista kontrybutorów
+
+- Każdy plik źródłowy komponentu, przykładów i testów ma teraz linię SPDX `GPL-3.0-or-later` (trzy pliki komponentu i pięć testów jej nie miały). `NOTICE` i [ATTRIBUTION](ATTRIBUTION_PL.md) wymieniają aktualne ścieżki odbioru (SX1262, SX1276, LR1121, CC1101; T1/C1 i S1; przedłużacz ESP-NOW) i mają sekcję kontrybutorów. Bez zmian w kodzie.
+
+---
+
 ## SX1262 w `c1`/`both` kończy każde przechwycenie na długości ramki; most przedłużacza publikuje z QoS 1
 
 - **SX1262 z `long_gfsk_packets: true` w `c1` lub `both`:** ścieżka strumieniowa dla długich ramek przycinała przechwycenie do długości ramki tylko w `t1` i `s1`. W `c1`/`both` każde przechwycenie szło do limitu 512 bajtów, przez co tryb długich ramek był włączony na stałe, a odbiornik przy każdej ramce był zajęty przez cały limit. Teraz przechwycenie kończy się razem z ramką (C1 i T1 rozróżnia pierwszy bajt, tak jak robił już LR1121); przechwycenie, z którego nie da się odczytać długości, nadal idzie do limitu jak dotąd. Odczytów SPI jest ok. 60 % mniej, odbiór u zgłaszającego bez zmian. Znalazł, poprawił i przetestował **[@hackbaellchen](https://github.com/hackbaellchen)** ([zgłoszenie #45](https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/issues/45)), razem z testem hosta długości. Przy `long_gfsk_packets: false` (domyślnie) nic się nie zmienia.
