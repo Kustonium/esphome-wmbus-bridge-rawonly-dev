@@ -2,6 +2,12 @@
 
 [English version](RELEASE_NOTES.md)
 
+## CC1101: liczba bajtów w FIFO czytana do dwóch zgodnych odczytów
+
+- **CC1101:** liczba bajtów czekających w FIFO odbiornika (`RXBYTES`) zmienia się, gdy przychodzi ramka, a nota katalogowa (rozdział 10.3, errata) ostrzega, że pojedynczy odczyt SPI takiego rejestru może być przekłamany (ok. 80 ppm na odczyt). Przekłamana liczba większa niż zawartość FIFO oznaczałaby czytanie poza jego koniec i śmieci w ramce. Teraz liczba jest czytana, aż dwa kolejne odczyty się zgodzą (najwyżej sześć odczytów), a bit przepełnienia i liczba pochodzą z tego jednego odczytu. To rzadkie zdarzenie, więc widocznej zmiany nie należy się spodziewać; znika jeden sposób na utratę ramki.
+
+---
+
 ## SX1262 w `c1`/`both` kończy każde przechwycenie na długości ramki; most przedłużacza publikuje z QoS 1
 
 - **SX1262 z `long_gfsk_packets: true` w `c1` lub `both`:** ścieżka strumieniowa dla długich ramek przycinała przechwycenie do długości ramki tylko w `t1` i `s1`. W `c1`/`both` każde przechwycenie szło do limitu 512 bajtów, przez co tryb długich ramek był włączony na stałe, a odbiornik przy każdej ramce był zajęty przez cały limit. Teraz przechwycenie kończy się razem z ramką (C1 i T1 rozróżnia pierwszy bajt, tak jak robił już LR1121); przechwycenie, z którego nie da się odczytać długości, nadal idzie do limitu jak dotąd. Odczytów SPI jest ok. 60 % mniej, odbiór u zgłaszającego bez zmian. Znalazł, poprawił i przetestował **[@hackbaellchen](https://github.com/hackbaellchen)** ([zgłoszenie #45](https://github.com/Kustonium/esphome-wmbus-bridge-rawonly/issues/45)), razem z testem hosta długości. Przy `long_gfsk_packets: false` (domyślnie) nic się nie zmienia.
