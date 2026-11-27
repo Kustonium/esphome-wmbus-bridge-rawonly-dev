@@ -5,6 +5,7 @@
 ## CC1101: the FIFO byte count is read until two reads agree
 
 - **CC1101:** the number of bytes waiting in the receive FIFO (`RXBYTES`) changes while a frame arrives, and the datasheet (section 10.3, errata) warns that a single SPI read of such a register can come back corrupt (about 80 ppm per read). A corrupt count larger than what the FIFO holds would read past its end and put garbage into the frame. The count is now read until two consecutive reads agree (at most six reads), and the overflow bit and the count come from that one read. Rare, so no visible change is expected; it removes one way a frame could be lost.
+- **ESP-NOW repeater bridge (C3 example): `idf_send_async: true` under `mqtt:`.** On ESP-IDF, `publish()` blocks the loop by default, and the bridge sends two QoS 1 messages per frame, so a slow network could trip the task watchdog (bench: about 6 reboots a day; with the option, none in the following day). If your bridge YAML was made from the old example, add this line and **flash only the bridge**.
 
 ## Documentation: support terms, security, licensing
 

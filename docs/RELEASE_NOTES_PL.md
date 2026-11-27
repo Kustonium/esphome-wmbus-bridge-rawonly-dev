@@ -5,6 +5,7 @@
 ## CC1101: liczba bajtów w FIFO czytana do dwóch zgodnych odczytów
 
 - **CC1101:** liczba bajtów czekających w FIFO odbiornika (`RXBYTES`) zmienia się, gdy przychodzi ramka, a nota katalogowa (rozdział 10.3, errata) ostrzega, że pojedynczy odczyt SPI takiego rejestru może być przekłamany (ok. 80 ppm na odczyt). Przekłamana liczba większa niż zawartość FIFO oznaczałaby czytanie poza jego koniec i śmieci w ramce. Teraz liczba jest czytana, aż dwa kolejne odczyty się zgodzą (najwyżej sześć odczytów), a bit przepełnienia i liczba pochodzą z tego jednego odczytu. To rzadkie zdarzenie, więc widocznej zmiany nie należy się spodziewać; znika jeden sposób na utratę ramki.
+- **Most przedłużacza ESP-NOW (przykład C3): `idf_send_async: true` pod `mqtt:`.** Na ESP-IDF `publish()` domyślnie blokuje pętlę, a most wysyła dwie wiadomości QoS 1 na ramkę, więc wolna sieć mogła wywołać task watchdog (stanowisko: ok. 6 restartów dziennie; z tą opcją w kolejnej dobie zero). Jeśli Twój YAML mostu powstał ze starego przykładu, dopisz tę linię i **wgraj tylko most**.
 
 ## Dokumentacja: zasady wsparcia, bezpieczeństwo, licencja
 
