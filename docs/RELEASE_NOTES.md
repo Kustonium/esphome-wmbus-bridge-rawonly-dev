@@ -6,6 +6,12 @@
 
 - **CC1101:** the number of bytes waiting in the receive FIFO (`RXBYTES`) changes while a frame arrives, and the datasheet (section 10.3, errata) warns that a single SPI read of such a register can come back corrupt (about 80 ppm per read). A corrupt count larger than what the FIFO holds would read past its end and put garbage into the frame. The count is now read until two consecutive reads agree (at most six reads), and the overflow bit and the count come from that one read. Rare, so no visible change is expected; it removes one way a frame could be lost.
 
+## Documentation: support terms, security, licensing
+
+- **New [SECURITY.md](../SECURITY.md):** how to report a vulnerability privately, what the board publishes over MQTT (meter IDs always readable, readings readable for unencrypted meters; no AES keys on the board), and the recommended setup: broker on the local network with a login, TLS through ESPHome's `mqtt:`, the ESPHome 2026.11 `skip_cert_cn_check` trap, OTA and web passwords, `forward_meters`. The OTA password stays optional: the commented examples carry a ready `# password: !secret ota_password` line, the clean ones need no extra secret.
+- **[SUPPORT.md](../SUPPORT.md):** support is best effort from one person in spare time, the project is not a business and issues no invoices, and the code comes without warranty (GPL-3.0-or-later).
+- Every component, example and test source file now carries the `GPL-3.0-or-later` SPDX line (three component files and five test files had none). `NOTICE` and [ATTRIBUTION](ATTRIBUTION.md) list the current receive paths (SX1262, SX1276, LR1121, CC1101; T1/C1 and S1; the ESP-NOW repeater) and gain a contributors section. No code change.
+
 ---
 
 ## SX1262 in `c1`/`both` stops every capture at the frame's length; the repeater bridge publishes with QoS 1

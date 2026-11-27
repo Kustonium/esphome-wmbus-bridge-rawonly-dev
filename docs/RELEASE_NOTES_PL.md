@@ -6,6 +6,12 @@
 
 - **CC1101:** liczba bajtów czekających w FIFO odbiornika (`RXBYTES`) zmienia się, gdy przychodzi ramka, a nota katalogowa (rozdział 10.3, errata) ostrzega, że pojedynczy odczyt SPI takiego rejestru może być przekłamany (ok. 80 ppm na odczyt). Przekłamana liczba większa niż zawartość FIFO oznaczałaby czytanie poza jego koniec i śmieci w ramce. Teraz liczba jest czytana, aż dwa kolejne odczyty się zgodzą (najwyżej sześć odczytów), a bit przepełnienia i liczba pochodzą z tego jednego odczytu. To rzadkie zdarzenie, więc widocznej zmiany nie należy się spodziewać; znika jeden sposób na utratę ramki.
 
+## Dokumentacja: zasady wsparcia, bezpieczeństwo, licencja
+
+- **Nowy [SECURITY_PL.md](../SECURITY_PL.md):** jak prywatnie zgłosić podatność, co płytka publikuje w MQTT (numery liczników zawsze czytelne, odczyty czytelne dla liczników bez szyfrowania; na płytce nie ma kluczy AES) i zalecana konfiguracja: broker w sieci lokalnej z logowaniem, TLS przez `mqtt:` ESPHome, pułapka `skip_cert_cn_check` z ESPHome 2026.11, hasła OTA i strony płytki, `forward_meters`. Hasło OTA zostaje opcjonalne: przykłady z komentarzami mają gotową linię `# password: !secret ota_password`, przykłady „clean” nie wymagają dodatkowego sekretu.
+- **[SUPPORT_PL.md](../SUPPORT_PL.md):** wsparcie najlepiej, jak się da (best effort), od jednej osoby po godzinach, projekt nie jest firmą i nie wystawia faktur, a kod jest bez gwarancji (GPL-3.0-or-later).
+- Każdy plik źródłowy komponentu, przykładów i testów ma teraz linię SPDX `GPL-3.0-or-later` (trzy pliki komponentu i pięć testów jej nie miały). `NOTICE` i [ATTRIBUTION](ATTRIBUTION_PL.md) wymieniają aktualne ścieżki odbioru (SX1262, SX1276, LR1121, CC1101; T1/C1 i S1; przedłużacz ESP-NOW) i mają sekcję kontrybutorów. Bez zmian w kodzie.
+
 ---
 
 ## SX1262 w `c1`/`both` kończy każde przechwycenie na długości ramki; most przedłużacza publikuje z QoS 1
