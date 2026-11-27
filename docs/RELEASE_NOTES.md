@@ -2,6 +2,10 @@
 
 [Polska wersja](RELEASE_NOTES_PL.md)
 
+## CC1101: the FIFO byte count is read until two reads agree
+
+- **CC1101:** the number of bytes waiting in the receive FIFO (`RXBYTES`) changes while a frame arrives, and the datasheet (section 10.3, errata) warns that a single SPI read of such a register can come back corrupt (about 80 ppm per read). A corrupt count larger than what the FIFO holds would read past its end and put garbage into the frame. The count is now read until two consecutive reads agree (at most six reads), and the overflow bit and the count come from that one read. Rare, so no visible change is expected; it removes one way a frame could be lost.
+
 ## Documentation: support terms, security, licensing
 
 - **New [SECURITY.md](../SECURITY.md):** how to report a vulnerability privately, what the board publishes over MQTT (meter IDs always readable, readings readable for unencrypted meters; no AES keys on the board), and the recommended setup: broker on the local network with a login, TLS through ESPHome's `mqtt:`, the ESPHome 2026.11 `skip_cert_cn_check` trap, OTA and web passwords, `forward_meters`. The OTA password stays optional: the commented examples carry a ready `# password: !secret ota_password` line, the clean ones need no extra secret.
